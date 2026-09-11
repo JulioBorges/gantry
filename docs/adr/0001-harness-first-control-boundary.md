@@ -1,0 +1,3 @@
+# Preserve harness-first orchestration with capability-dependent execution guarantees
+
+The host harness directs the workflow and coordinates agents; Gantry validates transitions and authorizes merges through its protocol boundary. We chose this over making Gantry an independent execution supervisor to preserve native harness orchestration without claiming control that an integration does not expose. Context monitoring and interruption are explicit integration capabilities: integrations that cannot enforce a strict context ceiling must not advertise one, and self-reported usage or checks between turns do not establish that guarantee.
