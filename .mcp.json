@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@modelcontextprotocol/server-playwright"
+      ],
+      "description": "Playwright MCP Server - Browser automation and E2E testing",
+      "disabled": false,
+      "alwaysAllow": false
+    }
+  }
+}
