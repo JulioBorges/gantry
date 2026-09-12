@@ -40,15 +40,14 @@
   - Roadmap management
   - **Frontend Implementation Testing** - Mandatory Playwright rule
 
-### Roadmap & Tracking
-- **[ROADMAP.md](../ROADMAP.md)** - Project delivery tracking
-  - Organized by wave
-  - Checklist-based progress
-  - Blocker tracking
+### Product & Decisions
+- **[PRD.md](../PRD.md)** - Requirements for Gantry as a skill pack
+  - Workflow, gates, guard hooks, dashboard, setup
+  - Harness support tiers and acceptance criteria
+- **[docs/adr/](./adr/)** - Architecture Decision Records (ADR-0004 explains the pivot from engine to skill pack)
 
-### Specifications
-- **[CONTEXT.md](../CONTEXT.md)** - Unified project context
-- **[docs/adr/](./adr/)** - Architecture Decision Records
+### Vocabulary
+- **[CONTEXT.md](../CONTEXT.md)** - The glossary (Issue, Spec, Run, Round, Guard Hook, Run Log…)
 
 ---
 
@@ -79,8 +78,8 @@
 |------|---------|
 | `/.mcp.json` | MCP server configuration (Playwright) |
 | `/AGENTS.md` | Agent rules including frontend testing |
-| `/ROADMAP.md` | Project delivery tracking |
-| `/CONTEXT.md` | Unified project context |
+| `/PRD.md` | Product requirements |
+| `/CONTEXT.md` | Glossary |
 | `/docs/playwright-mcp-setup.md` | Complete Playwright guide |
 | `/docs/mcp-quick-reference.md` | Quick reference |
 | `/docs/playwright-troubleshooting.md` | Problem solving |
@@ -123,7 +122,7 @@ docs/
 
 .mcp.json (root)
 AGENTS.md (root)
-ROADMAP.md (root)
+PRD.md (root)
 CONTEXT.md (root)
 ```
 
@@ -131,7 +130,7 @@ CONTEXT.md (root)
 
 ## Updates & Maintenance
 
-**Last Updated:** 2026-09-12
+**Last Updated:** 2026-09-12 (pivot to skill pack)
 
 Documentation should be updated when:
 - MCP configuration changes
@@ -160,5 +159,5 @@ Documentation should be updated when:
 
 1. Check relevant guide above
 2. See [Playwright Troubleshooting](./playwright-troubleshooting.md)
-3. Check project issues in `.scratch/*/issues/`
+3. Check project issues in `.scratch/*/issues/` (created per spec by the `asdlc`/`gantry` skill)
 4. Review team CONTEXT.md for additional context

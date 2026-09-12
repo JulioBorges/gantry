@@ -1,6 +1,6 @@
 # Issue tracker: Local Markdown
 
-Issues and specs (you may know a spec as a PRD) for this repo live as markdown files in `.scratch/`.
+Issues and specs for this repo live as markdown files in `.scratch/`. A spec is the parent document of a set of issues; a PRD is the product-level document a spec may be derived from (see `CONTEXT.md`).
 
 ## Conventions
 
