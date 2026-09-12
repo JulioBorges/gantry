@@ -34,3 +34,7 @@ Add the operator-channel operation `pbi.answer`, which returns a PBI from `await
 - `gtp-protocol#02` — the builder task envelope shape carried by a dispatch.
 - `gtp-protocol#03` — the non-mutating role task envelope shapes for the remaining dispatchable roles.
 - `config-and-snapshot#01` — the capacity limit values consulted by slot accounting.
+
+## Notes
+
+- 2026-09-12 — `gtp-protocol#01` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `gtp-protocol#01` notes and `slice-index.md`, *Dependency graph repair*).

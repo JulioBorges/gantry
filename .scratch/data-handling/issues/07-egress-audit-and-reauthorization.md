@@ -30,4 +30,7 @@ The enforcement boundary is stated in the projection rather than implied: covera
 
 - `data-handling#06` — the egress matrix, its resolution, and the dispatch enforcement point these records describe.
 - `config-and-snapshot#04` — the Execution Rule Snapshot capture that freezes the egress matrix for an in-flight execution.
-- `harness-adapters#06` — the explicit driver replacement flow that triggers egress reauthorization.
+
+## Notes
+
+- 2026-09-12 — Dependency on `harness-adapters#06` removed to break a cycle in the blocker graph. Egress reauthorization is exposed as an operation triggered by a driver-change event declared here; harness-adapters#06 emits that event from the explicit replacement flow. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

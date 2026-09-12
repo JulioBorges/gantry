@@ -33,3 +33,7 @@ This slice is declared blocked by `mcp-server#02` so that two agents do not both
 - `gtp-protocol#02` — provides the role task envelope and result envelope contracts carried unchanged by these tools.
 - `gtp-protocol#06` — provides Result Submission identity, receipts, and the idempotency rule that replay must honor.
 - `harness-adapters#02` — provides the `resultChannel` probe outcome (`"file" | "mcp" | "both"`) that selects this channel for an integration.
+
+## Notes
+
+- 2026-09-12 — `harness-adapters#02` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `harness-adapters#02` notes and `slice-index.md`, *Dependency graph repair*).

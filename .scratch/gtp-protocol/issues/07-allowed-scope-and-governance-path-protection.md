@@ -30,5 +30,8 @@ This slice and `gtp-protocol#05` run in parallel. This slice records the violati
 
 - `gtp-protocol#02` — provides the builder task's allowed scope and the builder result's reported changed paths.
 - `repository-readiness#01` — provides the Artifact Location Mapping schema that resolves protected governance paths.
-- `baseline-transitions#01` — provides the governance-path permission carried in a transition declaration.
 - `verification-adapters#01` — provides the normalized finding shape used to record the violation.
+
+## Notes
+
+- 2026-09-12 — Dependency on `baseline-transitions#01` removed to break a cycle in the blocker graph. The governance-path permission shape honored by the protection rule is declared here; baseline-transitions#01 produces it inside a transition declaration. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

@@ -31,3 +31,7 @@ The state projection carries estimated and observed context as separate fields, 
 
 - `slicing-and-approval#01` — provides the persisted plan proposal and the per-PBI record the estimate attaches to.
 - `config-and-snapshot#01` — provides the Initial Context Budget limit value and the assumed model and window configuration.
+
+## Notes
+
+- 2026-09-12 — `gtp-protocol#03` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `gtp-protocol#03` notes and `slice-index.md`, *Dependency graph repair*).

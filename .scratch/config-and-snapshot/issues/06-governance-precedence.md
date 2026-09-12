@@ -44,4 +44,7 @@ Two boundaries hold here. **Level 2 arrives later**: the snapshot identity that 
 ## Blocked by
 
 - `config-and-snapshot#01` — the effective configuration document that supplies level-6 assertions.
-- `execution-core#07` — a real transition (Merge Authorization) that consults a governance rule key, so the resolution has a consumer to be driven through.
+
+## Notes
+
+- 2026-09-12 — Dependency on `execution-core#07` removed to break a cycle in the blocker graph. The resolution is driven through the `gantry config` read path and a fixture rule key instead of waiting for Merge Authorization; execution-core#07 consumes the resolver. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

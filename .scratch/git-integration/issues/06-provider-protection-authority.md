@@ -28,3 +28,7 @@ A missing, weaker, or otherwise divergent protection blocks until the operator a
 
 - `git-integration#05` — provides the provider interface and the protection observation call.
 - `config-and-snapshot#06` — provides Governance Precedence resolution for conflicting rule sources.
+
+## Notes
+
+- 2026-09-12 — `execution-core#07` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `execution-core#07` notes and `slice-index.md`, *Dependency graph repair*).

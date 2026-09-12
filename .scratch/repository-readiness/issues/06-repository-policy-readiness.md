@@ -34,3 +34,7 @@ This slice also collects the repository's Data Egress Policy and Telemetry Reten
 - `data-handling#04` — the Telemetry Retention record shape the retention declaration is collected against.
 - `entropy-gate#01` — the differential classification this slice applies to license findings instead of reimplementing.
 - `config-and-snapshot#01` — ConfigStore layering the resolved policy is persisted through.
+
+## Notes
+
+- 2026-09-12 — `data-handling#06` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `data-handling#06` notes and `slice-index.md`, *Dependency graph repair*).

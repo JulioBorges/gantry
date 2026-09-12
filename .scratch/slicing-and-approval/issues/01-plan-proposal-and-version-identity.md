@@ -35,3 +35,12 @@ This slice does not lint, estimate, or approve. It also publishes the `ProposedP
 - `spec-validation#02` — provides the criterion identity rule (required, never generated, stable).
 - `data-handling#01` — provides normalized content hashing (line endings) and the redaction sink enforcement interface for the persisted proposal.
 - `repository-readiness#01` — provides the Artifact Location Mapping schema used to locate spec and PBI documents.
+- `gtp-protocol#01` — provides the `PlanVersionId` definition (hash over the canonical plan document) this slice computes and persists for a proposal.
+
+## Notes
+
+- 2026-09-12 — `gtp-protocol#01` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `gtp-protocol#01` notes and `slice-index.md`, *Dependency graph repair*).
+
+- 2026-09-12 — `gtp-protocol#03` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `gtp-protocol#03` notes and `slice-index.md`, *Dependency graph repair*).
+
+- 2026-09-12 — `execution-core#02` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `execution-core#02` notes and `slice-index.md`, *Dependency graph repair*).

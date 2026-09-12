@@ -30,7 +30,14 @@ The union is closed and exhaustive, so adding a role later cannot weaken validat
 
 - `gtp-protocol#01` — provides the common envelope layer and the validation order these payloads plug into.
 - `spec-validation#02` — provides the criterion identity rule carried in slicer results.
-- `slicing-and-approval#01` — provides the plan version hash definition.
-- `slicing-and-approval#02` — provides the story coverage map shape.
-- `slicing-and-approval#03` — provides the per-PBI context estimate fields, including method and uncertainty.
-- `verification-adapters#01` — provides the normalized finding shape for the deterministic findings passed into the adversarial critic task.
+- `execution-core#05` — provides the `NormalizedFinding` shape carried into the adversarial critic task.
+
+## Notes
+
+- 2026-09-12 — Dependency on `slicing-and-approval#01` removed to break a cycle in the blocker graph. The plan version hash definition is owned by gtp-protocol#01 (envelope identity), which this slice already depends on. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.
+
+- 2026-09-12 — Dependency on `slicing-and-approval#02` removed to break a cycle in the blocker graph. The story coverage map is a slicer result payload shape and is therefore defined here; slicing-and-approval#02 populates and lints it. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.
+
+- 2026-09-12 — Dependency on `slicing-and-approval#03` removed to break a cycle in the blocker graph. The per-PBI context estimate fields (value, method, uncertainty) are slicer result payload fields defined here; slicing-and-approval#03 computes them. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.
+
+- 2026-09-12 — Dependency on `verification-adapters#01` removed to break a cycle in the blocker graph. The normalized finding shape carried into the adversarial critic task is owned by execution-core#05. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

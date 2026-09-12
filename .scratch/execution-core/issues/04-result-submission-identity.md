@@ -33,3 +33,7 @@ Extend `state.project` to show the current submission, its receipt, and the chai
 - `gtp-protocol#04` — status semantics and precedence over the reported result.
 - `gtp-protocol#05` — the Implementation Completion evidence rules that gate the transition.
 - `gtp-protocol#01` — the `extensions` lifting rule that fixes the persisted envelope shape.
+
+## Notes
+
+- 2026-09-12 — `gtp-protocol#01` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `gtp-protocol#01` notes and `slice-index.md`, *Dependency graph repair*).

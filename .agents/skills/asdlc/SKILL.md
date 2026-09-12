@@ -35,7 +35,7 @@ The models are asked once at the start and passed into every `agent()` call thro
 | `frontier.py --scope … --json` | which issues are in scope, their dependency rounds, cycles, parked and externally blocked issues | orchestrator, plan critic |
 | `acceptance.py <ref> --json` | the authoritative acceptance-criteria list of an issue; `--check` exits 1 unless done and fully ticked | critic, orchestrator |
 | `gates.py --run --diff-base <ref> --cwd <dir> --json` | detects and runs the repo's real gates (package scripts, pytest, Makefile, pre-commit), lists CI jobs and hooks, flags dirty tree and frontend changes | implementer, critic, orchestrator after integration |
-| `roadmap.py done <ref>` | the only way an issue becomes done: ticks criteria, sets `Status: done`, ticks ROADMAP.md, bumps `done/total`, refreshes Progress. `check` reports drift; `status` / `comment` edit the issue only | orchestrator |
+| `roadmap.py done <ref>` | the only way an issue becomes done: ticks criteria, sets `Status: done`, regenerates ROADMAP.md (checkbox, per-spec and per-wave counts, Progress). `check` reports drift; `waves` regenerates the wave layout after a blocker change; `status` / `comment` edit the issue only | orchestrator |
 
 Run them with `python3 <skillDir>/scripts/<name>.py`. `<skillDir>` is this skill's absolute directory
 (`<repo>/.agents/skills/asdlc`; harness-specific folders such as `.claude/skills/asdlc` are symlinks to it).
@@ -96,7 +96,9 @@ python3 <skillDir>/scripts/frontier.py --scope <token> [--scope <token>…] --li
 - **Unplanned** — any of: the scope names a spec whose `issues/` directory is missing or empty; an
   in-scope issue has `criteria_total: 0`; the scope is free text `frontier.py` rejects. Go to Step 3 for
   that target, then come back here.
-- Otherwise `rounds` is the plan. Continue to Step 4.
+- Otherwise `rounds` is the plan. Continue to Step 4. With `wave:N` the plan is always exactly one
+  round: `ROADMAP.md` waves are generated from the blocker graph so that wave N depends only on waves
+  below N (`roadmap.py waves` regenerates them; `roadmap.py check` must be clean before starting).
 
 ## Step 3 — Unplanned work: research → plan → critique → stop
 

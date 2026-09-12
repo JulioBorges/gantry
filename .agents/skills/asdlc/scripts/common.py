@@ -168,7 +168,7 @@ def resolve_issue_arg(arg: str, root: Path, issues: dict[str, Issue]) -> Issue |
 
 
 def roadmap_waves(roadmap_text: str) -> dict[int, list[str]]:
-    """Map wave number -> spec slugs, from `### Wave N` / `#### NN `slug`` headings."""
+    """Map wave number -> issue refs listed under each `### Wave N` heading of ROADMAP.md."""
     waves: dict[int, list[str]] = {}
     current: int | None = None
     for line in roadmap_text.splitlines():
@@ -177,7 +177,42 @@ def roadmap_waves(roadmap_text: str) -> dict[int, list[str]]:
             current = int(wm.group(1))
             waves.setdefault(current, [])
             continue
-        sm = re.match(r"^####\s+\d+\s+`([a-z0-9-]+)`", line)
-        if sm and current is not None:
-            waves[current].append(sm.group(1))
+        im = re.match(r"^- \[( |x|X)\] \*\*`([a-z0-9-]+#\d+)`\*\*", line)
+        if im and current is not None:
+            spec, num = im.group(2).split("#")
+            waves[current].append(f"{spec}#{int(num):02d}")
     return waves
+
+
+SPEC_NUMBER_RE = re.compile(r"\(spec\s+(\d+)")
+
+
+def spec_numbers(scratch: Path) -> dict[str, int]:
+    """Spec slug -> number, from the `Map: … (spec NN, …)` line of each spec.md."""
+    out: dict[str, int] = {}
+    for spec_md in sorted(scratch.glob("*/spec.md")):
+        m = SPEC_NUMBER_RE.search(spec_md.read_text(encoding="utf-8"))
+        if m:
+            out[spec_md.parent.name] = int(m.group(1))
+    return out
+
+
+def issue_levels(issues: dict[str, Issue]) -> dict[str, int]:
+    """Longest-path depth of every issue over the blocker graph. Raises on a cycle."""
+    level: dict[str, int] = {}
+    visiting: set[str] = set()
+
+    def depth(ref: str) -> int:
+        if ref in level:
+            return level[ref]
+        if ref in visiting:
+            raise ValueError(f"dependency cycle through {ref}")
+        visiting.add(ref)
+        blockers = [b for b in issues[ref].blocked_by if b in issues]
+        level[ref] = 0 if not blockers else 1 + max(depth(b) for b in blockers)
+        visiting.discard(ref)
+        return level[ref]
+
+    for ref in sorted(issues):
+        depth(ref)
+    return level

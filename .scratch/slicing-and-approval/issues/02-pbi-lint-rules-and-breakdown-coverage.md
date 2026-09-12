@@ -32,3 +32,7 @@ Test duration is not a rule and no rule may reference it. `PBI-BUDGET` and `PBI-
 - `slicing-and-approval#01` — provides the persisted plan proposal, the `ProposedPbi` shape, and the plan version identity that lint results are recorded against.
 - `config-and-snapshot#01` — provides the PBI file-count threshold and the Initial Context Budget values under context policy in the effective configuration document.
 - `repository-readiness#04` — provides the approved verification command reference (`ApprovedCommandRef`) under Verification Command Approval.
+
+## Notes
+
+- 2026-09-12 — `gtp-protocol#03` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `gtp-protocol#03` notes and `slice-index.md`, *Dependency graph repair*).

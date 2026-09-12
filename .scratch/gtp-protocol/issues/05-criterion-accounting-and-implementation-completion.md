@@ -31,6 +31,10 @@ This slice and `gtp-protocol#07` run in parallel. `gtp-protocol#07` records a sc
 
 - `gtp-protocol#02` — provides the builder result payload with per-criterion status and evidence references.
 - `gtp-protocol#04` — provides `complete` as a claim rather than a transition.
-- `verification-adapters#01` — provides the check adapter signature: run one approved verification command against a named revision and return a normalized pass/fail plus findings. Consumed here as an injected fake.
 - `config-and-snapshot#01` — provides the approved mandatory verification command set.
 - `spec-validation#02` — provides the criterion identity rule (required, never generated, stable).
+- `execution-core#05` — provides the `CheckAdapter` signature consumed here as an injected fake, and ships the fake.
+
+## Notes
+
+- 2026-09-12 — Dependency on `verification-adapters#01` removed to break a cycle in the blocker graph. The check adapter signature consumed here as an injected fake is owned by execution-core#05, which also ships the fake. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

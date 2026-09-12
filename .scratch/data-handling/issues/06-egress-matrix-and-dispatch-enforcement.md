@@ -43,4 +43,7 @@ type PayloadClass =
 - `config-and-snapshot#01` — the egress matrix configuration section and its validation.
 - `harness-adapters#01` — the resolved driver identity and its declared processing destination on the dispatch record.
 - `gtp-protocol#01` — the role identity in the envelope's common identity layer and the dispatch payload assembly point enforcement hooks into.
-- `repository-readiness#06` — the onboarding declaration that collects the repository's Data Egress Policy and produces the matrix.
+
+## Notes
+
+- 2026-09-12 — Dependency on `repository-readiness#06` removed to break a cycle in the blocker graph. The matrix is resolved from a declared Data Egress Policy document shape owned here; repository-readiness#06 collects that document during onboarding. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

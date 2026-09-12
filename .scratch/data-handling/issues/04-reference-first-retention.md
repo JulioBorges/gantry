@@ -39,4 +39,7 @@ type ReplayableReference =
 - `execution-core#01` — the record persistence families and the audit read this slice's records are written into and read back through.
 - `execution-core#06` — the Operation Reconciliation flow and its `reconciliation_required` rejection, which a missing-source reference must trigger.
 - `execution-core#08` — the Cleanup Authorization proposal manifest that must list records depending on a worktree reference.
-- `pbi-execution-loop#04` — the handoff memo field set, needed for the memo criterion only; the other criteria do not wait on it.
+
+## Notes
+
+- 2026-09-12 — Dependency on `pbi-execution-loop#04` removed to break a cycle in the blocker graph. Retention applies to memos through a declared memo-reference shape (memo number, file reference) owned here; pbi-execution-loop#04 defines the memo field set and produces references in that shape. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

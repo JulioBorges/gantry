@@ -36,3 +36,12 @@ The adapter contract also includes an optional rule-mapping declaration: an adap
 - `execution-core#01` — operation catalog registration, the in-process invoke seam, record families, and persistence conventions.
 - `data-handling#01` — normalized content hashing over line endings, and the redaction sink enforcement interface.
 - `repository-readiness#04` — the approved verification command reference and its declared coverage.
+- `execution-core#05` — provides the `CheckAdapter` seam interface, the `NormalizedFinding` shape and the fake adapter this slice implements for real tools.
+
+## Notes
+
+- 2026-09-12 — `execution-core#05` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `execution-core#05` notes and `slice-index.md`, *Dependency graph repair*).
+
+- 2026-09-12 — `gtp-protocol#03` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `gtp-protocol#03` notes and `slice-index.md`, *Dependency graph repair*).
+
+- 2026-09-12 — `gtp-protocol#05` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `gtp-protocol#05` notes and `slice-index.md`, *Dependency graph repair*).

@@ -35,3 +35,7 @@ The declared paths are then materialized as an explicit permission on every assi
 - `execution-core#01` — the operation catalog, record families, state machine registration, and the atomic transition-plus-audit persistence the transition record is written through.
 - `execution-core#02` — actor provenance derived from the transport channel, and the operator-only channel table.
 - `data-handling#01` — the redaction sink enforcement interface the transition record is written through.
+
+## Notes
+
+- 2026-09-12 — `gtp-protocol#07` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `gtp-protocol#07` notes and `slice-index.md`, *Dependency graph repair*).

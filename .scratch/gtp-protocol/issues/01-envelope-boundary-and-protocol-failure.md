@@ -38,8 +38,13 @@ A single minimal builder payload exists only so the dispatch-and-submit round tr
 ## Blocked by
 
 - `execution-core#01` — provides the operation core `invoke` seam, the `Rejection` code set, and atomic acceptance (transition, receipt and audit in one transaction).
-- `execution-core#03` — provides the `pbi.dispatch` operation shell and the PBI Execution Ownership generation and supersession rule.
-- `execution-core#04` — provides the `pbi.submitResult` operation shell and stale assignment rejection.
 - `data-handling#01` — provides the redaction sink interface the retained envelope record must write through.
 - `config-and-snapshot#04` — provides the Execution Rule Snapshot identity bound on every envelope.
-- `slicing-and-approval#01` — provides the plan version identity bound on every envelope.
+
+## Notes
+
+- 2026-09-12 — Dependency on `slicing-and-approval#01` removed to break a cycle in the blocker graph. Gtp-protocol#01 now owns the plan version identity (`PlanVersionId`: the hash definition over the canonical plan document) as an envelope-bound identity; slicing-and-approval#01 computes and persists it for a proposal but consumes the definition. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.
+
+- 2026-09-12 — Dependency on `execution-core#03` removed to break a cycle in the blocker graph. The envelope boundary is validated in process against the operation core seam (execution-core#01) with a fixture operation; `pbi.dispatch` consumes the envelope rather than providing it. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.
+
+- 2026-09-12 — Dependency on `execution-core#04` removed to break a cycle in the blocker graph. Same as above: `pbi.submitResult` consumes the envelope and the Protocol Failure taxonomy; the boundary is tested with a fixture operation. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

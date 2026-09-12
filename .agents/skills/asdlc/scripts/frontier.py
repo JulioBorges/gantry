@@ -11,7 +11,7 @@ Scope forms (repeatable):
   all                every issue that is not done
   <spec-slug>        every issue of one spec (e.g. release-engineering)
   <spec-slug>#NN     one issue
-  wave:N             every spec listed under `### Wave N` in ROADMAP.md
+  wave:N             every issue listed under `### Wave N` in ROADMAP.md (one wave = one ASDLC round)
   frontier           only the issues that can start right now (unblocked, not done)
 
 Examples:
@@ -56,8 +56,11 @@ def select_scope(scopes: list[str], issues: dict[str, Issue], roadmap: str) -> t
             if n not in waves:
                 errors.append(f"wave {n} not found in ROADMAP.md")
                 continue
-            for spec in waves[n]:
-                selected |= {r for r, i in issues.items() if i.spec == spec and not i.done}
+            for ref in waves[n]:
+                if ref in issues and not issues[ref].done:
+                    selected.add(ref)
+                elif ref not in issues:
+                    errors.append(f"ROADMAP.md wave {n} lists {ref} but no issue file exists")
         elif normalise_ref(s):
             ref = normalise_ref(s)
             if ref in issues:

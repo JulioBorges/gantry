@@ -36,16 +36,26 @@ Single-context documentation uses `CONTEXT.md` at the repository root and `docs/
 
 ## Roadmap
 
-`ROADMAP.md` at the repository root tracks delivery: one checkbox per implementation issue, grouped by
-wave, with each issue's blockers listed. It also records where work can start and which decisions are
-still open.
+`ROADMAP.md` at the repository root tracks delivery: one checkbox per implementation issue, grouped into
+**execution waves** computed from the blocker graph (wave N only depends on waves below N, so each wave is
+one round of parallel implementation). It also records where work can start and which decisions are still
+open.
 
-**Whenever you complete something that appears in the roadmap, update the roadmap in the same change.**
-That means all three of these, not just the first:
+**Whenever you complete something that appears in the roadmap, update the roadmap in the same change** by
+running
 
-1. Set `Status: done` in the issue file at `.scratch/<slug>/issues/NN-<slug>.md`.
-2. Tick the item's checkbox in `ROADMAP.md` and bump the `done/total` count on its spec heading.
-3. Update the **Progress** table at the top of `ROADMAP.md`.
+```
+python3 .agents/skills/asdlc/scripts/roadmap.py done <spec-slug>#NN
+```
+
+which does all three required edits at once — and nothing else does them:
+
+1. Sets `Status: done` and ticks the acceptance criteria in the issue file at `.scratch/<slug>/issues/NN-<slug>.md`.
+2. Ticks the item's checkbox in `ROADMAP.md` and refreshes the per-spec and per-wave counts.
+3. Updates the **Progress** table at the top of `ROADMAP.md`.
+
+`roadmap.py check` must report no drift afterwards. When a blocker line changes or an issue is added, run
+`roadmap.py waves` to recompute the wave layout; it refuses a graph with a cycle.
 
 Rules that keep the roadmap trustworthy:
 
@@ -53,8 +63,11 @@ Rules that keep the roadmap trustworthy:
   own, so a partially delivered one stays unticked. There is no "in progress" mark — that state lives in
   the issue, not here.
 - **The issue's `Status:` line wins.** If the roadmap and an issue disagree, the issue is authoritative
-  and the roadmap is stale; fix the roadmap.
+  and the roadmap is stale; regenerate the roadmap.
 - **Never tick an item on another agent's behalf** or because a report claims it is done. Verify the
   acceptance criteria against the delivered revision first.
+- **The blocker graph must stay a DAG.** `python3 .agents/skills/asdlc/scripts/frontier.py --scope all`
+  must report zero errors; a new `Blocked by` line that closes a cycle is a defect in the breakdown, not a
+  scheduling problem.
 - If work reveals that an issue needs to be split, merged, or added, say so rather than silently editing
   the roadmap — the breakdown was approved by the operator, and changing it needs the same approval.

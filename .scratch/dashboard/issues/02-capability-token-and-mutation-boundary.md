@@ -36,3 +36,7 @@ Test seam: dashboard-owned for everything except the one `execution.cancel` pari
 - `dashboard#01` — the loopback server, the `Host` guard every request passes through first, and the application shell that holds the token.
 - `execution-core#02` — the dashboard operator-channel rule that lets a token-bearing request assert `actor.kind: "operator"`, and the `ActorProvenance` shape recorded with it.
 - `execution-core#08` — the `execution.cancel` operation this slice delegates to.
+
+## Notes
+
+- 2026-09-12 — `execution-core#02` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `execution-core#02` notes and `slice-index.md`, *Dependency graph repair*).

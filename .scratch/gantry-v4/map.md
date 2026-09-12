@@ -22,6 +22,12 @@ delegation rather than behavior. This follows §8.1: "no interface may bypass an
 invariants are tested below the transports, once. `execution-core` establishes this seam; later specs
 extend it rather than adding new ones.
 
+> **Execution order lives in `ROADMAP.md`, not here (2026-09-12).** The waves below group specs by
+> theme and record which specs each one *builds on*. They are not the order the issues run in: the
+> execution waves in [`ROADMAP.md`](../../ROADMAP.md) are computed per issue from the blocker graph, and
+> the dependency repair that made that graph acyclic is recorded in
+> [`slice-index.md`](./slice-index.md), *Dependency graph repair*.
+
 ## Wave 0 — Foundation
 
 Nothing runs without these. No real harness, no transport.

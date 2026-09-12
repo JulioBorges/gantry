@@ -38,3 +38,7 @@ This slice additionally owns the production wiring of the merge candidate and cu
 - `pbi-execution-loop#05` — provides the micro-commits and save points that must remain reachable from the candidate.
 - `verification-adapters#01` — provides check execution against a named revision.
 - `config-and-snapshot#04` — provides the Execution Rule Snapshot identity bound into the authorization.
+
+## Notes
+
+- 2026-09-12 — `execution-core#07` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `execution-core#07` notes and `slice-index.md`, *Dependency graph repair*).

@@ -31,3 +31,8 @@ Report reuse is decided at the point of consumption rather than trusted from a c
 
 - `verification-adapters#01` — the `StructuredReport` binding and finding fields whose absence this slice judges.
 - `execution-core#02` — actor provenance and the operator-only channel with its `operator_channel_required` rejection.
+- `execution-core#05` — provides the fail-closed rule and the required-field list that completeness is judged against.
+
+## Notes
+
+- 2026-09-12 — `execution-core#05` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `execution-core#05` notes and `slice-index.md`, *Dependency graph repair*).

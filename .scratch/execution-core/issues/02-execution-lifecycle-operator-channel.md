@@ -31,5 +31,9 @@ Every approval record stores artifact identity, content hash, actor provenance, 
 - `execution-core#01` — the `invoke` seam, the atomic transition primitive, the rejection vocabulary, and the state builders.
 - `config-and-snapshot#04` — Execution Rule Snapshot capture and identity, the reference this slice stores on the execution.
 - `data-handling#01` — normalized content hashing (line-ending normalization) for approval content hashes.
-- `slicing-and-approval#01` — the plan version hash definition the approval binds to.
-- `dashboard#02` — the Dashboard Capability Token verification interface for `dashboard`-channel provenance.
+
+## Notes
+
+- 2026-09-12 — Dependency on `slicing-and-approval#01` removed to break a cycle in the blocker graph. The plan version identity the approval binds to is owned by gtp-protocol#01; this slice stores an opaque `PlanVersionId` and never computes it. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.
+
+- 2026-09-12 — Dependency on `dashboard#02` removed to break a cycle in the blocker graph. This slice declares the capability-token verifier interface it injects for `dashboard`-channel provenance and tests it with a fake verifier; dashboard#02 implements issuance and verification against that interface. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

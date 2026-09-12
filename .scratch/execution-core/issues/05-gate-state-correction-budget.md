@@ -31,6 +31,10 @@ A `passed` gate returns to `pending` when the merge candidate revision, the targ
 ## Blocked by
 
 - `execution-core#01` — the `invoke` seam, the atomic transition primitive with counter changes in one transaction, the fake check adapter, and the state builders.
-- `verification-adapters#01` — the normalized finding shape the gate records and compares.
-- `verification-adapters#03` — the Evidence Completeness rules that drive the fail-closed path.
 - `config-and-snapshot#01` — the Correction Budget default value.
+
+## Notes
+
+- 2026-09-12 — Dependency on `verification-adapters#01` removed to break a cycle in the blocker graph. This slice now owns the `CheckAdapter` seam interface (run one approved command against a named revision → normalized pass/fail plus findings) and the `NormalizedFinding` shape the gate records, plus a named fake adapter for the shared testing seam; verification-adapters#01 implements the seam for real tools. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.
+
+- 2026-09-12 — Dependency on `verification-adapters#03` removed to break a cycle in the blocker graph. The fail-closed rule (incomplete evidence leaves the gate unapproved) and the required-field list it checks are owned here; verification-adapters#03 judges completeness of real reports against that list. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

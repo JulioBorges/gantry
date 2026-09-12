@@ -9,7 +9,7 @@ This is the authority for resolving a cross-spec dependency to a concrete issue 
 Issues live at `.scratch/<slug>/issues/NN-<slug>.md`. A cross-spec blocker is written as
 `` `<spec-slug>#NN` `` — for example `` `data-handling#01` ``.
 
-Total: **132 issues across 19 specs**.
+Total: **132 issues across 19 specs**, forming a DAG of 19 execution waves (see *Dependency graph repair*).
 
 ## Operator decisions already settled
 
@@ -21,6 +21,8 @@ These were decided on 2026-09-12 and must not be re-litigated in an issue.
 | Repository bootstrap owner | `release-engineering#01`. No other spec bootstraps the repository. |
 | Test seam boundary | `release-engineering#01` proves the dependencies work (open a WAL database, parse with tree-sitter, create a temporary Git repository, spawn a second OS process against the same database file). `execution-core#01` builds the real fixture builders on top. |
 | Wave 0 opening order | `release-engineering#01` → `data-handling#01` → `execution-core#01`. |
+| Execution waves | Computed from the blocker graph, one wave per round, by `python3 .agents/skills/asdlc/scripts/roadmap.py waves` and rendered into `ROADMAP.md`. The thematic spec waves in `map.md` are not an execution order. Decided 2026-09-12. |
+| Blocker graph is a DAG | Enforced. The 21 mutual dependencies found on 2026-09-12 were resolved by the ownership flips under *Dependency graph repair* below; `frontier.py --scope all` must report zero errors before any round starts. |
 | Granularity | 132 slices: the 131 as drafted, plus `git-integration#09` added on 2026-09-12 to cover the provider conformance suite the spec requires at line 333 and the drafted breakdown omitted. Do not merge or split without operator approval. |
 | Issue language | English, per §12.4 and the map's conventions. |
 
@@ -47,6 +49,17 @@ Each row was needed by one spec and owned by none. The owner column is now bindi
 | Production wiring of the merge candidate and current target revision pair | `git-integration#02` | `entropy-gate#06`, `verification-adapters#08` |
 | Secret scanner rule source reference — scanner identity plus resolved rule-configuration location, distinct from the `ApprovedCommandProposal` that runs it | `repository-readiness#03` | `data-handling#02` (detector source 3) |
 | Context usage read operation registered in the shared catalog, returning a `ContextUsage` value including the `unknown` variant — never a bare number | `pbi-execution-loop#03` | `mcp-server#04` |
+| `PlanVersionId` — the hash definition over the canonical plan document, bound on every envelope | `gtp-protocol#01` | `slicing-and-approval#01` (computes and persists it), `gtp-protocol#03`, `execution-core#02` (stores it opaquely) |
+| Slicer result payload shapes: story coverage map and per-PBI context estimate fields (value, method, uncertainty) | `gtp-protocol#03` | `slicing-and-approval#02`, `slicing-and-approval#03` |
+| `CheckAdapter` seam interface, `NormalizedFinding` shape, the fail-closed required-field list, and the named fake adapter | `execution-core#05` | `verification-adapters#01` (real implementation), `verification-adapters#03`, `gtp-protocol#03`, `gtp-protocol#05` |
+| Capability-token verifier interface injected for `dashboard`-channel provenance | `execution-core#02` | `dashboard#02` (issuance and real verification) |
+| Snapshot section registry (name, schema version, canonical serialization) | `config-and-snapshot#04` | `repository-readiness#01` (registers the Artifact Location Mapping section) |
+| Merge Candidate observation interface and Provider Protection Authority observation interface | `execution-core#07` | `git-integration#02`, `git-integration#06` |
+| Governance-path permission shape honored by the protection rule | `gtp-protocol#07` | `baseline-transitions#01` |
+| Result-channel interface probed by `resultChannel` | `harness-adapters#02` | `mcp-server#03` |
+| Memo-reference shape (memo number, file reference) that retention applies to | `data-handling#04` | `pbi-execution-loop#04` |
+| Data Egress Policy document shape the matrix is resolved from | `data-handling#06` | `repository-readiness#06` |
+| Driver-change event and the egress reauthorization operation it triggers | `data-handling#07` | `harness-adapters#06` |
 
 ## Resolved ownership collisions
 
@@ -67,6 +80,46 @@ Each row was needed by one spec and owned by none. The owner column is now bindi
 - **`machine-setup#02`** (harness compatibility matrix) has no blockers and five specs read it. It is
   pulled forward into wave 0, delivered as validated data plus a detection function, with its
   operation-core surfacing deferred.
+
+## Dependency graph repair — 2026-09-12
+
+The drafted breakdown contained seven strongly connected components in the blocker graph (one of 21
+issues, one of 4, five pairs) and ten direct mutual dependencies. No wave order can execute a cycle, so
+each was resolved the same way the ownership collisions above were: the lower layer owns and **declares**
+the contract and tests against a fake; the higher layer **implements or produces to** it. The rule used to
+pick the direction:
+
+1. Foundation never waits on a surface or a planning slice (`execution-core`, `gtp-protocol`,
+   `config-and-snapshot`, `data-handling` do not depend on `dashboard`, `slicing-and-approval`,
+   `verification-adapters`, `git-integration`).
+2. The protocol owns payload shapes; planning and verification slices fill them.
+3. Where an issue's own text already said "develop against the declared interface and integrate when it
+   lands", the blocker was never real and was dropped.
+
+Edges removed (dependent ← former blocker), all recorded in the dependent's `## Notes`:
+
+| Dependent | Former blocker | Now |
+|---|---|---|
+| `gtp-protocol#01` | `slicing-and-approval#01`, `execution-core#03`, `execution-core#04` | owns `PlanVersionId`; validates the envelope through the `execution-core#01` seam with a fixture operation |
+| `gtp-protocol#03` | `slicing-and-approval#01`, `#02`, `#03`, `verification-adapters#01` | owns the slicer payload shapes; takes `NormalizedFinding` from `execution-core#05` |
+| `gtp-protocol#05` | `verification-adapters#01` | takes the `CheckAdapter` signature and fake from `execution-core#05` |
+| `gtp-protocol#07` | `baseline-transitions#01` | declares the governance-path permission shape |
+| `execution-core#02` | `slicing-and-approval#01`, `dashboard#02` | stores `PlanVersionId` opaquely; declares the token verifier interface |
+| `execution-core#05` | `verification-adapters#01`, `#03` | owns the `CheckAdapter` seam, `NormalizedFinding`, fail-closed field list, fake adapter |
+| `execution-core#07` | `git-integration#02`, `#06` | declares both observation interfaces |
+| `config-and-snapshot#04` | `repository-readiness#01` | snapshot section registry; ALM registers into it |
+| `config-and-snapshot#06` | `execution-core#07` | driven through the `gantry config` read path and a fixture rule key |
+| `harness-adapters#02` | `mcp-server#03` | probes a declared result-channel interface with a fake MCP channel |
+| `data-handling#04` | `pbi-execution-loop#04` | declares the memo-reference shape |
+| `data-handling#06` | `repository-readiness#06` | declares the Data Egress Policy document shape |
+| `data-handling#07` | `harness-adapters#06` | declares the driver-change event and exposes the reauthorization operation |
+
+Edges added: `slicing-and-approval#01 ← gtp-protocol#01`, `verification-adapters#01 ← execution-core#05`,
+`verification-adapters#03 ← execution-core#05`, `gtp-protocol#03 ← execution-core#05`,
+`gtp-protocol#05 ← execution-core#05`.
+
+Result: 132 issues, zero cycles, 19 execution waves (critical path length). Every wave is one ASDLC round;
+`ROADMAP.md` lists them.
 
 ## Slice index
 

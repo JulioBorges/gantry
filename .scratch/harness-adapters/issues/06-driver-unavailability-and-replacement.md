@@ -30,3 +30,7 @@ Make driver replacement an explicit operator-channel action. It updates the Exec
 - `execution-core#06` — the Infrastructure Retry allowance, the infrastructure-versus-permanent failure classification, and Operation Reconciliation for uncertain operations.
 - `config-and-snapshot#05` — Execution Rule Snapshot update and the invalidation of affected approvals on replacement.
 - `data-handling#07` — driver-change egress reauthorization and the egress audit trail for the new destination.
+
+## Notes
+
+- 2026-09-12 — `data-handling#07` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `data-handling#07` notes and `slice-index.md`, *Dependency graph repair*).

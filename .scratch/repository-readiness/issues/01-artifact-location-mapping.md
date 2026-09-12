@@ -34,3 +34,7 @@ This slice also lands the report skeleton the mapping lives inside — `Readines
 - `config-and-snapshot#01` — ConfigStore layering the resolved mapping is persisted through.
 - `config-and-snapshot#04` — Execution Rule Snapshot capture and identity, which the mapping is captured into.
 - `data-handling#01` — redaction sink enforcement interface for persisted report evidence.
+
+## Notes
+
+- 2026-09-12 — `config-and-snapshot#04` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `config-and-snapshot#04` notes and `slice-index.md`, *Dependency graph repair*).

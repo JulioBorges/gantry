@@ -31,4 +31,7 @@ This slice owns the probe framework only. The probe scenarios themselves are reg
 
 - `harness-adapters#01` — the `HarnessAdapter` interface and the injected adapter port the probes run against.
 - `machine-setup#02` — the harness compatibility matrix and the harness presence type a probe run is keyed to.
-- `mcp-server#03` — Result Submission over the MCP channel, needed only for the `resultChannel` probe that checks the MCP path.
+
+## Notes
+
+- 2026-09-12 — Dependency on `mcp-server#03` removed to break a cycle in the blocker graph. The `resultChannel` probe runs against a declared result-channel interface with a fake MCP channel; mcp-server#03 implements the real channel and extends the conformance run. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

@@ -48,3 +48,7 @@ The memo carries the handoff index, the trigger, the context usage at handoff, c
 - `config-and-snapshot#04` — the Execution Rule Snapshot identity that must be byte-identical across the handoff.
 - `data-handling#01` — the redaction sink the memo is written through.
 - `data-handling#04` — reference-first retention rules for the numbered memos and their file references.
+
+## Notes
+
+- 2026-09-12 — `data-handling#04` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `data-handling#04` notes and `slice-index.md`, *Dependency graph repair*).

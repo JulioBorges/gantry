@@ -31,5 +31,11 @@ Serialization is a lease row acquired in an immediate transaction and scoped to 
 
 - `execution-core#06` — the operation state machine the lease reclaim rule consults before taking an expired lease.
 - `execution-core#05` — the gate states past which merge becomes reachable.
-- `git-integration#02` — Merge Candidate preparation and target revision observation; develop against the declared observation interface and integrate when it lands, since that slice consumes this one's invalidation predicate.
-- `git-integration#06` — Provider Protection Authority observation for the `externally_integrated` path; same interface-first treatment.
+
+## Notes
+
+- 2026-09-12 — `config-and-snapshot#06` no longer waits on this slice: it declares the interface it needs and tests against a fake; this slice implements or produces to that declared interface (see `config-and-snapshot#06` notes and `slice-index.md`, *Dependency graph repair*).
+
+- 2026-09-12 — Dependency on `git-integration#02` removed to break a cycle in the blocker graph. This slice declares the Merge Candidate observation interface it consumes (candidate revision, current target revision) and tests against a fake observer; git-integration#02 implements it — the issue text already said to develop against the declared interface. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.
+
+- 2026-09-12 — Dependency on `git-integration#06` removed to break a cycle in the blocker graph. This slice declares the Provider Protection Authority observation interface for the `externally_integrated` path and tests it with a fake; git-integration#06 implements it. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.

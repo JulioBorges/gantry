@@ -31,5 +31,8 @@ Every dispatch, approval, finding, gate result, and Merge Authorization records 
 
 - `config-and-snapshot#01` — the resolved effective configuration document that the snapshot captures.
 - `data-handling#01` — the normalized content hashing rule (line endings) used for governance document hashes.
-- `repository-readiness#01` — the Artifact Location Mapping schema captured in the snapshot.
 - `execution-core#01` — the atomic transition-plus-audit persistence the snapshot record is written through.
+
+## Notes
+
+- 2026-09-12 — Dependency on `repository-readiness#01` removed to break a cycle in the blocker graph. The snapshot captures registered sections through a section registry declared here (name, schema version, canonical serialization); repository-readiness#01 registers the Artifact Location Mapping section. The capture is tested with a fixture section. Recorded in `.scratch/gantry-v4/slice-index.md`, *Dependency graph repair*.
