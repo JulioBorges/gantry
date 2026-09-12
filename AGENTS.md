@@ -1,3 +1,10 @@
+## Product documents
+
+Read before working on Gantry itself: [`PRD.md`](PRD.md) (what the skill pack is and does), [`CONTEXT.md`](CONTEXT.md)
+(the glossary — use its terms: Issue not PBI, Spec not Living Spec, Run not pipeline) and [`docs/adr/`](docs/adr/)
+(standing decisions; ADR-0004 explains why Gantry is a skill pack and not an engine). The pack is being built from the
+`asdlc` skill in `.agents/skills/asdlc/`; until the migration lands, `asdlc` is the skill that runs this workflow.
+
 ## Agent skills
 
 ### Issue tracker
@@ -36,7 +43,7 @@ Single-context documentation uses `CONTEXT.md` at the repository root and `docs/
 
 ## Roadmap
 
-`ROADMAP.md` at the repository root tracks delivery: one checkbox per implementation issue, grouped into
+`ROADMAP.md` at the repository root, when it exists (it is regenerated once the repository has issues), tracks delivery: one checkbox per implementation issue, grouped into
 **execution waves** computed from the blocker graph (wave N only depends on waves below N, so each wave is
 one round of parallel implementation). It also records where work can start and which decisions are still
 open.
