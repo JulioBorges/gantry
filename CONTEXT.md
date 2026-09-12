@@ -1,158 +1,147 @@
 # Gantry
 
-Gantry provides governance for a software factory operated through the operator's harness.
+Gantry is a skill pack that runs an agentic software development life cycle inside the operator's harness.
 
 ## Language
 
 **Host Harness**:
-The operator's agent environment responsible for directing the factory workflow and coordinating its agents.
-_Avoid_: Gantry orchestrator
+The operator's agent environment in which Gantry runs: it hosts the skills, spawns the subagents, runs the guard hooks it supports and holds the operator conversation where decisions are taken. Gantry declares each harness's capabilities in the pack and never assumes one it did not declare.
+_Avoid_: Gantry orchestrator, engine, external service
 
 **Gantry**:
-The factory that validates workflow transitions and authorizes merges according to its governance rules.
-_Avoid_: Autonomous agent supervisor
+A harness-neutral skill pack that runs an agentic software development life cycle: deterministic scripts decide which work is ready and whether a delivery is done; agents do the planning, building, reviewing and refuting. It is installed as a directory of skills, either inside a repository or in the user's agent directory.
+_Avoid_: Engine, orchestrator, autonomous supervisor, npm application
+
+**Support Tier**:
+The declared level at which Gantry runs in a harness, derived from its capability file and exercised on the fixture before it is announced: reference (parallel rounds, native structured output, native worktree isolation, guard hooks), supported (skills, per-role subagents, hooks through the harness's plugin mechanism, results validated by the workflow script) or compatible (skills and a manually driven chain, with whatever the version supports). A run report states the tier it ran at.
+_Avoid_: Assumed parity, "works everywhere", unverified support
+
+**Issue**:
+The unit of work Gantry plans, implements and verifies: one Markdown file under the repository's issue location, with a `Status:` line, a `## Blocked by` list and a `## Acceptance criteria` checklist, referenced as `<spec-slug>#NN`. Every issue must be a vertical slice: a narrow, complete behaviour demonstrable on its own.
+_Avoid_: PBI, ticket, task, story, layer
+
+**Spec**:
+The parent document of a set of issues, written in the repository's effective template, describing the problem, the behaviour, the non-goals and the scenarios that the issues must cover. It is the operator's document; agents read and critique it, they do not rewrite it.
+_Avoid_: Living Spec, PRD (the product-level document a spec may be derived from), requirements dump
 
 **Integration Capability**:
-An explicitly supported ability of a harness integration, such as observing context usage or interrupting an agent, that determines which execution guarantees are available.
+An explicitly supported ability of a harness, such as running guard hooks on tool events, spawning a subagent with a chosen model, or isolating a subagent in its own worktree, that determines which Gantry guarantees hold in that harness.
+_Avoid_: Assumed support, universal guarantee
+
+**Workflow Script**:
+A deterministic, dependency-free script that is the sole authority on a workflow question: which work is ready, what a delivery must prove, whether the repository's gates pass, and when an issue becomes done. Agents call it; they never re-decide what it decided.
+_Avoid_: Helper, suggestion, LLM judgement
+
+**Guard Hook**:
+A harness event handler shipped by Gantry that blocks shortcuts around the workflow rules and records events for observation. It never decides whether work is ready or done; that authority stays with the workflow scripts. Available only where the harness supports hooks.
+_Avoid_: Gate, orchestrator, source of truth
 
 **Context Watermark**:
-The configured context usage threshold for requesting a handoff; a strict ceiling is only a guarantee when the integration can enforce it.
-_Avoid_: Universal context ceiling
+Not a Gantry guarantee: no harness reports context usage to a hook, so Gantry never promises a context ceiling. What it does record is that a compaction happened, in which phase of which issue, as a signal in the run log and dashboard.
+_Avoid_: Enforced ceiling, self-reported usage, handoff trigger
 
 **Initial Context Budget**:
-The planning limit for a PBI's estimated complete initial context package relative to its model window, with estimation method and uncertainty recorded.
-_Avoid_: Source-file count, measured runtime usage
+The planning limit, 15% of the chosen model's window by default, for an issue's estimated initial package: the issue, its spec and the files it tells the implementer to read, measured deterministically by a workflow script. An issue over budget is refuted by the plan critic with the number.
+_Avoid_: Source-file count, measured runtime usage, agent self-estimate
+
+**Result Contract**:
+The versioned JSON Schema, shipped in the pack per role (planner, plan critic, implementer, reviewer, critic, learner), that every agent result must satisfy. Harnesses that can enforce structured output load it directly; everywhere else the orchestrator validates the result with the workflow script before accepting it.
+_Avoid_: Inline schema, task envelope, free-text report
 
 **Protocol Failure**:
-An invocation whose required result is missing or invalid, preventing workflow advancement while preserving completed work for recovery.
-_Avoid_: Agent-reported blocked result, successful invocation
+A missing or invalid agent result, judged against the role's result contract by a workflow script. It never advances the workflow: the work stays in the worktree, the agent is asked once more, and then the issue is reported as failed for that phase.
+_Avoid_: Agent-reported blocked result, successful invocation, silent acceptance
 
 **Implementation Completion**:
-The point at which a PBI has all its criteria met, no pending criteria, and passing mandatory tests verified on the delivered revision, supported by a valid agent result; it makes the PBI ready for quality gates.
-_Avoid_: Merge authorization, tests green
+The point at which the Critic has accepted an issue with evidence for every acceptance criterion, the declared gates pass, and the worktree is clean; only then does the orchestrator integrate the branch and let the roadmap script mark the issue done.
+_Avoid_: Tests green, implementer summary, merge
 
-**Merge Authorization**:
-Gantry's permission to integrate a PBI after implementation completion and required validation, bound to a specific merge candidate and target revision; changing either invalidates the permission.
-_Avoid_: Implementation completion
+**Issue Worktree**:
+The dedicated Git worktree and branch an implementer works in when a round has more than one issue, so concurrent implementers never share a working directory; a single-issue round works directly on the run branch. Created by the orchestrator, kept after refutation for inspection, removed only through cleanup authorization.
+_Avoid_: Shared checkout, the run worktree
 
-**PBI Worktree**:
-The dedicated working copy and branch assigned to an active PBI, separating its implementation changes from other concurrent PBIs.
-_Avoid_: Shared builder checkout
-
-**Merge Candidate**:
-The proposed integrated revision of a PBI and the current target, subject to gates and integration tests before merge authorization.
-_Avoid_: Approved PBI branch
+**Run Pull Request**:
+The draft Pull Request Gantry offers to open from a run's branch to the configured target when the run ends, one per run, carrying each issue's critic evidence. Opening it requires the operator's explicit yes in the conversation; merging it is never Gantry's to do.
+_Avoid_: Merge, per-issue PR, stacked PR
 
 **Git Workflow Policy**:
-The repository's chosen rules for naming and starting PBI branches, preparing Pull Requests, and integrating deliveries into the designated target with required checks and approvals.
-_Avoid_: Harness preset
+The two Git settings in the repository policy: the target branch the run pull request is opened against and the prefix used for run and issue branches. Everything else about integration is the repository's own protection rules on the provider.
+_Avoid_: Harness preset, merge policy, release lifecycle
 
-**PBI Dependency**:
-A prerequisite PBI whose integration into the applicable target must precede implementation of a dependent PBI.
-_Avoid_: Suggested execution order
+**Issue Dependency**:
+A prerequisite listed in an issue's `## Blocked by` section, by `<spec-slug>#NN` reference; the blocker graph must stay acyclic and the frontier script refuses a graph with a cycle or a dangling reference.
+_Avoid_: Suggested order, soft hint
 
 **Dependency Readiness**:
-The condition in which all of a PBI's declared prerequisites have been integrated and are included in its starting base, making it eligible to begin implementation.
-_Avoid_: Implementation completion, agent-reported blocked result
+The condition in which every issue in an issue's `## Blocked by` list has `Status: done`, which within a run means integrated into the run branch with gates green; only then does the frontier schedule the issue into a round.
+_Avoid_: Implementation completion of the blocker, open branch, agent claim
 
 **Adversarial Review**:
-An optional LLM evaluation that may add findings to deterministic review; once enabled, a valid review without blockers is required alongside passing deterministic checks for merge authorization.
-_Avoid_: Replacement for deterministic gates
+The mandatory verification of every delivery by the Critic, a fresh agent whose job is to refute completion: it runs the acceptance and gates scripts itself, demands evidence per criterion, and defaults to not complete when uncertain. It can only refute; it never marks anything done, and its acceptance is the only thing that lets the roadmap script do so.
+_Avoid_: Optional LLM review, replacement for deterministic gates, implementer self-report
 
 **Correction Budget**:
-The maximum correction attempts shared by all gates of an individual PBI under the global policy, retained across handoffs and resumes; exhaustion with unresolved failures stops automatic correction and leaves the gate failed.
-_Avoid_: Machine-wide attempt pool, per-agent allowance
+The maximum number of critic-driven correction attempts for one issue in a run, two by default, set in the repository policy or per run; it is a ceiling that is never raised silently. Exhausting it leaves the issue blocked for the operator. The single fix pass after code review is separate and fixed.
+_Avoid_: Machine-wide pool, per-gate allowance, retry on agent failure
 
 **Correction Attempt**:
-A cycle of correcting a PBI's gate findings followed by revalidation, consuming one unit of its correction budget; the initial gate evaluation consumes none.
-_Avoid_: Individual gate execution, initial evaluation
-
-**Infrastructure Retry**:
-A repeat execution after an infrastructure failure prevented evaluation, governed by a separate retry budget without consuming a PBI's correction budget or granting gate approval.
-_Avoid_: Correction attempt
-
-**Operation Reconciliation**:
-The determination of whether a previously requested factory operation occurred, using authoritative Git or provider state when its result is uncertain; unresolved outcomes prevent repetition.
-_Avoid_: Blind retry
-
-**AFK Execution**:
-Workflow progression without ongoing operator interaction while the host harness remains active; closure requires explicit resumption rather than background orchestration.
-_Avoid_: Unattended background service
+One cycle of a fresh implementer addressing the critic's required fixes in the issue's existing worktree, followed by a new critic verification; it consumes one unit of the issue's correction budget. The first verification consumes none.
+_Avoid_: Individual gate execution, review fix pass
 
 **Execution Resumption**:
-The operator-requested continuation of persisted factory work after pending agents and operations have been reconciled, retaining existing progress and correction counts.
-_Avoid_: New pipeline, budget reset
+Running Gantry again over the same scope: the frontier is recomputed from the issues' status lines, and the run log's in-flight record lets the orchestrator offer to continue an issue in its existing worktree instead of starting over. The operator chooses; budgets already spent are not reset.
+_Avoid_: New run from scratch, budget reset, automatic takeover
 
-**Execution Rule Snapshot**:
-The fixed version of configuration and governance rules assigned to an execution, retained on resumption; replacing it requires explicit operator action and revalidation of affected approvals.
-_Avoid_: Live settings
+**Lesson Candidate**:
+A proposed standing rule drafted by the Learner phase from refutations and review findings recorded in the run log, kept only when the same problem recurred across issues or attempts, and carrying its evidence and its proposed target (the Gantry section of AGENTS.md, CONTEXT.md or an effective template). It stays a draft until the operator accepts it; nothing is injected automatically.
+_Avoid_: Auto-injected lesson, single-occurrence note, agent-written rule
 
-**Governance Precedence**:
-The fixed order used to resolve applicable provider, execution, constitution, ADR, plan, and operational rules; unresolved conflicts block the affected transition.
-_Avoid_: Agent preference, document order on disk
+**Run**:
+One invocation of the Gantry workflow over a scope, executed on its own branch and usually in its own worktree, made of one or more rounds, and progressing only while the host harness stays open. Stopping the harness stops the run and undoes nothing.
+_Avoid_: Pipeline, session, background job
 
-**Execution Cancellation**:
-The operator-requested stop of workflow progression that preserves execution artifacts and reconciles pending work without automatically undoing external mutations.
-_Avoid_: Rollback, cleanup, implicit resume
+**Round**:
+The set of in-scope issues whose blockers are all done, implemented concurrently and then integrated one at a time; a run advances round by round.
+_Avoid_: Wave (the roadmap's static projection of rounds), batch
 
-**Dashboard Capability Token**:
-An ephemeral CLI-issued token held in dashboard memory and required for mutating requests, scoped to a session and repository execution unit without persistent storage.
-_Avoid_: Frontend-generated secret, user authentication
+**Dashboard**:
+A read-only kanban that shows, across runs and harness sessions, which issues are in which phase and which are waiting for the operator. It reads the recorded events and never changes an issue's status or makes a decision; decisions are taken in the harness conversation.
+_Avoid_: Control panel, settings screen, approval surface
 
 **Cleanup Authorization**:
-The operator's explicit approval to remove identified execution artifacts after dependency and pending-operation checks; cleanup never occurs implicitly after a workflow outcome.
+The operator's explicit acceptance of a printed cleanup plan listing exactly which worktrees and branches of done, already-merged issues will be removed; Gantry never removes anything outside that plan or without it.
 _Avoid_: Automatic garbage collection, rollback
 
-**Execution State Machine**:
-The validated set of states and transitions governing executions, PBIs, gates, and external operations; invalid or insufficiently evidenced transitions are rejected.
-_Avoid_: Status label, dashboard display
+**Effective Template**:
+The spec, PRD or issue template in force for a repository: the repository's own copy under its Gantry templates directory when present, otherwise the pack's default. Structural validation derives its required sections from it and the planner writes issues in it, so changing the template is changing the check.
+_Avoid_: Hardcoded section list, mandatory rewrite of existing documents
 
 **Spec Structural Validation**:
-The pass/fail assessment of a Living Spec against mandatory, objectively checkable requirements; passing it alone does not establish semantic quality or approval for slicing.
+The workflow script's pass/fail assessment of a spec against mandatory, objectively checkable requirements, accepting equivalent sections under different headings; passing it alone does not establish semantic quality or approval for slicing.
 _Avoid_: Spec quality score, spec approval
 
 **Requirement Review**:
-The Requirement Critic's evaluation of a Living Spec's ambiguity, coherence, and verifiability; a valid review without blockers is required alongside structural validation for technical readiness to slice.
-_Avoid_: Structural lint
+The Requirement Critic's evaluation of a spec's ambiguity, coherence, verifiability and non-goal coverage, run after structural validation and before slicing. A blocking finding stops the run; the operator amends the spec, the critic never does.
+_Avoid_: Structural lint, automatic spec revision
 
 **Planning Approval**:
-The operator's explicit acceptance of a particular spec and PBI breakdown, including behavior, coverage, granularity, and dependencies, required before AFK implementation may start.
+The operator's explicit acceptance of a particular spec and issue breakdown, including behavior, coverage, granularity, and dependencies, required before AFK implementation may start.
 _Avoid_: Lint success, requirement review, Pull Request approval
 
 **Plan Amendment**:
-A proposed change to approved behavior, acceptance criteria, contracts, dependencies, or PBI decomposition that requires renewed operator approval before affected work proceeds.
+A proposed change to approved behavior, acceptance criteria, contracts, dependencies, or issue decomposition that requires renewed operator approval before affected work proceeds.
 _Avoid_: Internal implementation choice
 
 **Repository Readiness**:
-The repository's preparation for governed execution, covering workflow instructions, documentation locations, required artifacts, and executable verification checks.
-_Avoid_: Machine setup, gate approval
+The state produced by the setup skill: a repository policy exists, the artifact locations and effective templates are known, the declared checks run, and AGENTS.md carries the marked Gantry section. Setup is conversational, item by item with trade-offs, idempotent, and enables nothing the operator did not accept.
+_Avoid_: Machine setup, gate approval, generic template dump
 
 **Verification Command Approval**:
-The operator's explicit acceptance of a verification command, its execution context, and expected evidence before first or changed execution; changing it invalidates prior evidence.
-_Avoid_: Tool detection, implicit execution
-
-**Preparation Authorization**:
-The operator's approval for a specific repository-readiness proposal, limited to its listed commands, files, dependency changes, and effects; newly discovered work requires an amended approval.
-_Avoid_: Open-ended setup permission
-
-**Output Redaction**:
-The mandatory removal or masking of sensitive values before factory output is persisted or displayed; uncertain sanitization blocks full output retention and requires review.
-_Avoid_: Best-effort log filtering, secret-free claim
-
-**Telemetry Retention**:
-The configured amount of execution content retained for audit, defaulting to redacted references and metadata while requiring explicit repository opt-in for detailed content.
-_Avoid_: Full diff by default, unlimited log retention
-
-**Data Egress Policy**:
-The repository-approved rules for which roles and drivers may send which classes of repository content outside the local execution environment.
-_Avoid_: Implicit provider routing, credential policy
-
-**License Policy**:
-The repository-approved rules for dependency licenses and license changes, evaluated as mandatory evidence where configured and blocking newly introduced incompatibilities.
-_Avoid_: Vulnerability policy, existing finding waiver
+The operator's explicit acceptance, during setup, of each declared check command, whether it is absolute or differential, and its comparison-evidence mapping; a check Gantry runs is always one the operator declared.
+_Avoid_: Tool detection alone, implicit execution
 
 **Artifact Location Mapping**:
-The repository's effective canonical locations for specs, PBIs, and governance documents, reusing existing conventions and providing defaults only where no convention exists.
+The repository's effective canonical locations for specs, issues, and governance documents, reusing existing conventions and providing defaults only where no convention exists.
 _Avoid_: Duplicate documentation tree, mandatory Gantry layout
 
 **Spec Adaptation**:
@@ -160,65 +149,34 @@ The preparation of an existing canonical spec for Gantry validation by identifyi
 _Avoid_: Mandatory template rewrite, automatic approval
 
 **Execution State**:
-The authoritative record of a factory execution's progress, attempts, approvals, and operations, advanced through validated transitions rather than document status edits or agent claims alone.
-_Avoid_: Markdown status, agent-reported completion
+The issue's `Status:` line and acceptance checkboxes, written only by the roadmap script, are the authority on where work stands; the run log records how it got there and what is in flight, and is never consulted to decide whether something is done.
+_Avoid_: Run log as source of truth, agent-reported completion, dashboard display
 
 **Repository Execution Unit**:
-A clone and its associated worktrees sharing operational history and merge serialization; separate clones remain independent units even when they use the same remote.
+A clone and its associated worktrees, identified by their shared Git common directory; it keys the machine-level state so every worktree of one clone reports into the same run log. Separate clones remain independent units even when they use the same remote.
 _Avoid_: Remote URL, individual worktree
 
-**PBI Execution Ownership**:
-The exclusive authority of a current execution to advance a PBI within its repository execution unit; a superseded agent assignment cannot advance state through late results.
-_Avoid_: Permanent agent ownership, merge authorization
+**Repository Policy**:
+The repository's tracked, sparse Gantry configuration: the artifact location mapping, gate overrides and which guard hooks are enabled. Anything it does not set falls back to Gantry's defaults; it never holds execution state or secrets.
+_Avoid_: State, machine settings, prose in AGENTS.md
+
+**Run Log**:
+The append-only record of a run's events (rounds, phases, subagent start and stop, hook decisions), written only by workflow scripts and guard hooks into machine-level state keyed by repository execution unit. It is the dashboard's sole source and is never the authority on an issue's status.
+_Avoid_: Telemetry database, source of truth, audit ledger
 
 **Entropy Gate**:
-The final decision on new or aggravated architecture and quality problems, consolidating configured check evidence for a merge candidate and current target while preserving absolute mandatory rules.
-_Avoid_: Feature test suite, secret entropy scan
+The differential mode of a declared check: the workflow script runs the same command on the round's base and on the delivery, matches findings by rule, file and problem identity, and blocks new or aggravated findings while leaving preexisting ones visible. Checks declared absolute (tests, secrets) stay pass/fail.
+_Avoid_: Feature test suite, aggregate quality score, LLM opinion
 
 **Quality Regression**:
-An architecture or quality problem introduced or aggravated by a proposed delivery relative to its current integration target under the same approved checks.
-_Avoid_: All existing debt, aggregate quality score
+A finding present in the delivery and absent from, or less severe in, the round's base under the same declared check.
+_Avoid_: All existing debt, any failing check
 
 **Comparison Evidence**:
-Structured check results identifying findings by rule, location, severity, and problem identity, tied to the assessed revision and verification rules so existing and changed problems can be compared.
-_Avoid_: Exit code alone, absent report
-
-**Check Stability**:
-The declared reproducibility and consistency requirement for a mandatory verification check, including its environment, inputs, and accepted repetition behavior.
-_Avoid_: Single green run, unlimited rerun
-
-**Check Resource**:
-A declared resource needed for verification, such as a port, database, or temporary directory, isolated per execution where possible or shared through serialized access.
-_Avoid_: Worktree isolation alone
-
-**Provider Identity**:
-The authenticated GitHub identity and authorization context selected for a provider operation, shown before first mutation without exposing credential values.
-_Avoid_: Credential value, repository-wide authority
-
-**Mutation Approval Boundary**:
-The distinction between plan-authorized Pull Request preparation and the separate confirmation required before a direct local merge changes the target branch.
-_Avoid_: Gate approval, generic execution approval
+A check's structured output, declared in the repository policy with a generic mapping of where rule, file, line and message live, that lets the entropy gate compare base and delivery. A check without it is pass/fail only.
+_Avoid_: Exit code alone, tool-specific adapter
 
 **Dirty Working Tree**:
 A relevant checkout containing uncommitted or untracked changes that have not been explicitly classified for a Gantry execution and therefore cannot serve as an implicit baseline.
-_Avoid_: PBI changes, approved baseline
+_Avoid_: issue changes, approved baseline
 
-**Provider Protection Authority**:
-The observed GitHub target-branch rules governing checks, approvals, and integration; divergence from local policy blocks delivery until reconciled.
-_Avoid_: Local policy override, assumed protection
-
-**Pull Request Observation**:
-The authenticated polling of a GitHub Pull Request's checks, reviews, mergeability, and protection state, where missing updates never count as approval.
-_Avoid_: Webhook delivery, stale approval
-
-**Evidence Completeness**:
-The requirement that comparison findings include enough identity and context to be matched and evaluated; incomplete evidence fails closed unless explicitly classified for that report version.
-_Avoid_: Missing fields treated as clean, global manual waiver
-
-**Result Submission**:
-An individually identified delivery of an agent result for a dispatch; identical accepted replays reuse the prior receipt, while corrected content requires a new linked submission.
-_Avoid_: Task identity, new execution
-
-**Governance Baseline Transition**:
-An approved change to the tools, versions, rules, or verification coverage that define repository quality checks, with comparative analysis and explicit adoption before it becomes authoritative.
-_Avoid_: Separate spec type, retroactive approval, silent rule change
