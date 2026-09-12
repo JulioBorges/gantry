@@ -20,6 +20,7 @@ coverage/
 *.lcov
 
 # Caches
+__pycache__/
 .cache/
 .eslintcache
 .vitest/
