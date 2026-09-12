@@ -1,7 +1,8 @@
 # Spec: Gantry skill pack — migrating `asdlc` into `gantry`
 
 Type: spec
-Status: draft
+Status: ready-for-agent
+Map: `ROADMAP.md` (spec 01)
 Source: `PRD.md` §4–§14, `CONTEXT.md`, `docs/adr/0003`, `docs/adr/0004`
 Created: 2026-09-12
 
