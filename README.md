@@ -1,34 +1,68 @@
 # Gantry
 
-**Deterministic, harness-agnostic autonomous software factory with SQLite telemetry and context watermark handoffs.**
+**A harness-neutral skill pack that runs an agentic software development life cycle — deterministic scripts decide, agents build and refute, the operator approves.**
 
-Gantry is a planned open-source factory operated by a coding harness: approved specs become vertical slices implemented in isolated worktrees, checked against repository quality rules, and integrated through the configured Git workflow. The harness coordinates agents; Gantry validates operations and evidence through a shared CLI, MCP, and dashboard core. Codex and OpenCode are the initial validation targets, including execution across both harnesses.
+Gantry turns an approved spec into verified, roadmap-tracked deliveries from inside your coding harness (Claude Code, OpenCode, Codex). A run slices the spec into vertical-slice issues and stops for your approval; then, round by round, a fresh implementer builds each issue with TDD, a reviewer checks standards and spec, and an adversarial critic tries to refute completion by running the acceptance criteria and the repository's real gates itself. Only the critic's acceptance lets a script mark an issue done. The run ends with a draft pull request and a report you can trace back to evidence.
 
-The Gantry engine uses TypeScript and Node.js and is distributed through npm, so the intended entry point is `npx gantry`. Initial repository adapters target TypeScript/JavaScript and Python projects. Git integration supports local Git and GitHub Pull Requests through `gh`, targeting GitHub.com and GitHub Enterprise; Windows support is expected and remains pending validation.
+Named after the [gantry crane](https://en.wikipedia.org/wiki/Gantry_crane): it does not lift the cargo itself — it provides the rails so every piece lands in the right place.
 
-Named after the [gantry crane](https://en.wikipedia.org/wiki/Gantry_crane): it doesn't lift the cargo itself — it provides the rails, the structure, and the automation so every piece lands in the right place, at the right time.
-
-> **Project status:** requirements and domain documentation. Implementation contracts and the initial support matrix are still being defined; described commands are planned behavior.
+> **Project status:** design agreed, implementation in progress. The pack evolves the `asdlc` skill in `.agents/skills/asdlc/`, which already runs the core loop in this repository. Support for a harness is announced only after the fixture exercises it; see [`PRD.md`](./PRD.md) §13.
 
 ---
 
-## Why Gantry?
+## The idea
 
-Agentic coding tools fail in predictable ways. Gantry is designed around the five critical bottlenecks of "vibe coding":
+Prose in `AGENTS.md` is probabilistic; a script is not. Gantry puts every decision that must not be improvised into a dependency-free Python script and leaves the cognition to agents:
 
-| Bottleneck | Gantry's answer |
+| Decision | Who makes it |
 |---|---|
-| **Context growth** | Default 40% handoff watermark, with monitoring and interruption limited to verified integration capabilities |
-| **Horizontal slicing** | Verifiable vertical slices with an estimated complete initial context budget of 15%; no mandatory file-count or test-duration cutoff |
-| **Architectural debt** | An entropy gate compares configured check evidence against the current target, blocking new or aggravated problems while preserving absolute rules |
-| **AppSec risks** | Explicit repository security and dependency checks with declared coverage and structured evidence |
-| **Provider lock-in** | Role routing through validated native harness, detached CLI, or approved gateway integrations |
+| Which issues are ready, in which order | `frontier.py` — the blocker graph, never the model |
+| What a delivery must prove | `acceptance.py` — the issue's criteria, read by the critic |
+| Whether the repository's gates pass, and whether a delivery added findings | `gates.py` — pass/fail or differential against the round's base |
+| When an issue becomes done | `roadmap.py done` — the only writer of `Status:` and checkboxes |
+| Whether the spec is fit to slice | `spec.py` against the repository's template, then a Requirement Critic |
+| Whether an agent's result is acceptable | `result.py` against the role's JSON Schema |
 
-The principle: **Agents + Code > Agents Alone.** Deterministic code owns the rails; agents own the cognition.
+Guard hooks, where the harness supports them, block shortcuts around those scripts and record events; they never grant completion ([ADR-0003](docs/adr/0003-scripts-decide-hooks-guard-and-record.md)). A read-only dashboard shows every run on the machine, issue by issue, phase by phase.
 
-## Design references
+## What a run looks like
 
-- [`PRD.md`](./PRD.md) — full product requirements and architecture
+```
+gantry <spec | spec#NN | wave:N | frontier | "goal">
+  preflight   dirty tree refused · dedicated worktree offered · models chosen per role
+  readiness   spec.py structural check → Requirement Critic (blockers stop; you fix the spec)
+  plan        research → issues in your template → context budget ≤ 15% → plan critic → STOP for approval
+  rounds      implement (TDD) → review (1 fix) → critic (≤ 2 corrections) → integrate serially, gates between merges → roadmap.py done
+  finish      Learner drafts recurring lessons → draft PR offered → report with evidence, support tier, cleanup plan
+```
+
+## The pack
+
+```
+.agents/skills/
+├── gantry/            the workflow: scripts, result schemas, templates, capability files, hook wiring
+├── gantry-setup/      conversational setup; the only writer of .gantry/config.json
+└── gantry-dashboard/  the read-only kanban
+```
+
+Install by copying or symlinking the three directories into `<repo>/.agents/skills/` or `~/.agents/skills/`; the repository copy wins. Requirements: `python3` ≥ 3.10 and `git`; `gh` for the draft pull request.
+
+## Harness support
+
+| Tier | Harness | Notes |
+|---|---|---|
+| Reference | Claude Code | parallel rounds via the Workflow tool, native structured output and worktree isolation, guard hooks |
+| Supported | OpenCode | native skills and per-role subagents, hooks through a plugin, results validated by script |
+| Compatible | Codex CLI | native skills, hooks when enabled, chain driven by hand |
+
+Every run report states the tier it ran at. Gantry is not a session security layer; for output redaction and shell floor rules use a harness policy layer such as the [harness-toolkit](https://github.com/tech-leads-club/harness-toolkit) — Gantry stays compatible with one.
+
+## Documents
+
+- [`PRD.md`](./PRD.md) — requirements, workflow, gates, hooks, dashboard, setup, lifecycle, harness tiers, acceptance criteria
+- [`CONTEXT.md`](./CONTEXT.md) — the glossary; use its terms (Issue, Spec, Run, Round, Guard Hook, Run Log…)
+- [`docs/adr/`](./docs/adr/) — decisions, including why Gantry is a skill pack and not an engine ([ADR-0004](docs/adr/0004-skill-pack-instead-of-an-engine.md))
+- [`AGENTS.md`](./AGENTS.md) — rules for agents working in this repository
 
 ## License
 
