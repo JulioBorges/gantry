@@ -150,7 +150,7 @@ Scenario: The run ends with an offered draft pull request
   Given a completed run on the fixture with gh available
   When the orchestrator reaches the end of the last round
   Then it asks the operator whether to open a draft pull request to the target branch
-  And, on yes, the pull request body lists each issue with its criteria and evidence
+  And on yes, the pull request body lists each issue with its criteria and evidence
   And the report states the support tier the run ran at
 ```
 
