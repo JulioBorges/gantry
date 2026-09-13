@@ -146,6 +146,13 @@ const runCommand = async (command, options = {{}}) => {{
 const agent = async (prompt, options) => {{
   calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd }});
   if (options.label.startsWith('research:')) return 'factual research';
+  if (options.label.startsWith('requirement-critic')) {{
+    if (args.requirementCriticRawResults && args.requirementCriticRawResults.length) {{
+      return args.requirementCriticRawResults.shift();
+    }}
+    if (args.requirementCriticResult) return args.requirementCriticResult;
+    return {{ blocking: [], findings: [] }};
+  }}
   if (options.label.startsWith('plan')) {{
     if (args.plannerRawResults && args.plannerRawResults.length) {{
       return args.plannerRawResults.shift();
@@ -606,6 +613,149 @@ Spec: `.scratch/planned/spec.md`
             for field in ("estimatedTokens", "budgetTokens", "contextShare", "contextWindow"):
                 self.assertIn(str(measurement[field]), critique["problems"][0]["problem"])
             self.assertTrue(any("/budget.py" in call["command"] for call in result["commandCalls"]))
+
+    def test_requirement_critic_blocks_planning_on_an_ambiguous_definition_of_done(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            self.write_roadmap(root)
+            spec = root / ".scratch" / "greeting" / "spec.md"
+            spec.parent.mkdir(parents=True)
+            spec.write_text(
+                """# Spec: Greeting
+
+## Blueprint
+
+### Context
+
+A fixture Spec.
+
+## Contract
+
+### Definition of Done
+
+- [ ] the greeting should be fast
+
+## Out of Scope
+
+- Nothing yet.
+
+## Changelog
+
+- 2026-09-13 — Initial draft.
+""",
+                encoding="utf-8",
+            )
+            ambiguous_item = "the greeting should be fast"
+            result = self.run_workflow(
+                "plan-workflow.md",
+                {
+                    "target": {"kind": "spec", "slug": "greeting", "specPath": str(spec)},
+                    "models": {"plan": "claude-opus-4-5", "critic": "critic"},
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}},
+                    "paths": {
+                        "issueDir": str(root / ".scratch" / "greeting" / "issues"),
+                        "specPath": str(spec),
+                        "exemplarIssue": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "decisions": str(root / "docs" / "adr"),
+                        "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "context": str(root / "CONTEXT.md"),
+                        "adrs": str(root / "docs" / "adr"),
+                    },
+                    "date": "2026-09-13",
+                    "commandMode": "real",
+                    "requirementCriticResult": {
+                        "blocking": [
+                            {
+                                "quote": ambiguous_item,
+                                "reason": "no verifiable threshold for \"fast\"",
+                            }
+                        ],
+                        "findings": [],
+                    },
+                },
+            )
+
+            self.assertEqual("requirement_review_failed", result["result"]["blocked"])
+            self.assertIn(ambiguous_item, result["result"]["report"])
+            self.assertIn("amend", result["result"]["report"].lower())
+            self.assertIsNone(result["result"]["plan"])
+            self.assertFalse(any(call["label"].startswith("research:") for call in result["calls"]))
+            self.assertFalse(any(call["label"].startswith("plan") for call in result["calls"]))
+            self.assertFalse(list((root / ".scratch" / "greeting" / "issues").glob("*")) if (root / ".scratch" / "greeting" / "issues").is_dir() else [])
+            self.assertFalse(any("roadmap.py" in call["command"] for call in result["commandCalls"]))
+
+    def test_requirement_critic_allows_planning_when_the_spec_is_unambiguous(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            self.write_roadmap(root)
+            spec = root / ".scratch" / "greeting" / "spec.md"
+            spec.parent.mkdir(parents=True)
+            spec.write_text(
+                """# Spec: Greeting
+
+## Blueprint
+
+### Context
+
+A fixture Spec.
+
+## Contract
+
+### Definition of Done
+
+- [ ] `greet()` returns "hello" for every call
+
+## Out of Scope
+
+- Nothing yet.
+
+## Changelog
+
+- 2026-09-13 — Initial draft.
+""",
+                encoding="utf-8",
+            )
+            result = self.run_workflow(
+                "plan-workflow.md",
+                {
+                    "target": {"kind": "spec", "slug": "greeting", "specPath": str(spec)},
+                    "models": {"plan": "claude-opus-4-5", "critic": "critic"},
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}},
+                    "paths": {
+                        "issueDir": str(root / ".scratch" / "greeting" / "issues"),
+                        "specPath": str(spec),
+                        "exemplarIssue": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "decisions": str(root / "docs" / "adr"),
+                        "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "context": str(root / "CONTEXT.md"),
+                        "adrs": str(root / "docs" / "adr"),
+                    },
+                    "date": "2026-09-13",
+                    "commandMode": "real",
+                    "requirementCriticResult": {"blocking": [], "findings": []},
+                },
+            )
+
+            self.assertNotIn("blocked", result["result"])
+            self.assertTrue(any(call["label"].startswith("research:") for call in result["calls"]))
+            self.assertTrue(any(call["label"] == "plan" for call in result["calls"]))
+            self.assertEqual(
+                1,
+                sum(1 for call in result["calls"] if call["label"].startswith("requirement-critic")),
+            )
+            requirement_critic_index = next(
+                index for index, call in enumerate(result["calls"]) if call["label"].startswith("requirement-critic")
+            )
+            research_index = next(
+                index for index, call in enumerate(result["calls"]) if call["label"].startswith("research:")
+            )
+            self.assertLess(requirement_critic_index, research_index)
 
     def test_round_never_raises_the_two_correction_ceiling(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

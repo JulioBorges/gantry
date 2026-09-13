@@ -9,13 +9,23 @@ or any other value leaves the plan awaiting approval.
 
 ## Roles and sequence
 
-1. Run research in parallel: repository conventions, the Spec and settled decisions, and an exemplar Issue.
-2. The Planner writes vertical-slice Issues in the effective issue template, each with `Status: draft`,
+1. `spec.py --check` validates the Spec structurally (required sections, order, placeholders,
+   scenarios). It is objective and pass/fail; it does not approve planning.
+2. The read-only Requirement Critic (Critic model) reads the Spec and assesses ambiguity, coherence,
+   verifiability and non-goal coverage. A blocking finding stops the run before any research or Issue
+   is written, quotes the finding, and tells the operator to amend the Spec; the Critic never edits it
+   and does not approve planning either.
+3. Run research in parallel: repository conventions, the Spec and settled decisions, and an exemplar Issue.
+4. The Planner writes vertical-slice Issues in the effective issue template, each with `Status: draft`,
    observable acceptance criteria and real non-cyclic blockers.
-3. The Plan Critic attempts to refute granularity, coverage, criterion observability, contract ownership,
+5. The Plan Critic attempts to refute granularity, coverage, criterion observability, contract ownership,
    format and `frontier.py --scope <slug> --include-parked`.
-4. Allow exactly one Planner revision when refuted, then present the result and **stop for explicit operator
+6. Allow exactly one Planner revision when refuted, then present the result and **stop for explicit operator
    approval**.
+
+Structural validation and Requirement Review are both read-only checks that a Spec must clear before
+research and slicing; neither one, alone or together, approves planning. Every Requirement Critic finding,
+like every other generated artifact and operator report, is in English.
 
 ## Planner contract
 
@@ -89,6 +99,20 @@ async function validateSpecBeforePlanning() {
     valid: false,
     report: `Spec structural validation failed: ${details.join('; ') || findings.error || check.stderr || 'unknown finding'}`,
   }
+}
+
+function requirementCriticPrompt(specPath) {
+  return `You are the read-only Requirement Critic reviewing the Spec at ${specPath} before ${targetText}
+is sliced into Issues. Read the whole Spec. Assess:
+- ambiguity: every Definition of Done item and acceptance criterion must state a verifiable threshold,
+  not a vague quality word ("fast", "robust", "user-friendly") with no measurable test;
+- coherence: no internal contradiction between the Blueprint, Contract and Out of Scope sections;
+- verifiability: a human or a script must be able to check each item as met or not met;
+- non-goal coverage: nothing the Out of Scope section excludes is silently required elsewhere.
+Default to a blocking finding when uncertain. Never edit the Spec.
+Return structured output: a \`blocking\` array of {quote, reason} for findings that must stop planning
+before slicing, and a \`findings\` array of {quote, reason} for non-blocking observations. An empty
+\`blocking\` array means the Spec may proceed to research and slicing.`
 }
 
 async function roleSchema(role) {
@@ -187,6 +211,27 @@ if (structuralValidation && !structuralValidation.valid) {
     awaitingOperatorApproval: true, approved: false,
     blocked: 'spec_structural_validation_failed',
     report: structuralValidation.report,
+  }
+}
+
+phase('Requirement Review')
+let requirementReview = null
+if (t.kind !== 'goal') {
+  requirementReview = await agent(requirementCriticPrompt(t.specPath || paths.specPath), {
+    label: 'requirement-critic', phase: 'Requirement Review', model: A.models.critic,
+  })
+  const blocking = Array.isArray(requirementReview && requirementReview.blocking) ? requirementReview.blocking : []
+  if (blocking.length) {
+    const quotes = blocking
+      .map((finding) => (finding && finding.quote) ? `"${finding.quote}" (${finding.reason || 'no reason given'})` : JSON.stringify(finding))
+      .join('; ')
+    return {
+      target: t, structuralValidation, requirementReview, plan: null, critique: null,
+      awaitingOperatorApproval: true, approved: false,
+      blocked: 'requirement_review_failed',
+      report: `Requirement Critic found a blocking finding: ${quotes}. Amend the Spec and rerun planning; `
+        + 'structural validation and Requirement Review do not approve planning — only the operator does.',
+    }
   }
 }
 
@@ -325,5 +370,5 @@ async function approvePlan() {
 }
 
 const approved = await approvePlan()
-return { target: t, structuralValidation, plan, critique, awaitingOperatorApproval: !approved, approved }
+return { target: t, structuralValidation, requirementReview, plan, critique, awaitingOperatorApproval: !approved, approved }
 ```
