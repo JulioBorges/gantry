@@ -1,7 +1,7 @@
 # Canonical Gantry workflow skill
 
 Type: issue
-Status: ready-for-agent
+Status: blocked
 Slice: `gantry-migration#02`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -30,3 +30,4 @@ Create the canonical `.agents/skills/gantry/` skill by moving the portable legac
 ## Comments
 - 2026-09-13 — Critic refutation after correction budget exhausted: the executable round workflow accepts a Critic result with criteria: [] when complete is true and gatesVerdict is pass, then invokes roadmap.py done. This violates fail-closed adversarial verification because there is no evidence entry for each Issue criterion. Required fix: validate exactly one passing, non-empty evidence entry for every authoritative criterion before integration or roadmap.py done. Worktree: /Users/julioborges/src/personal/gantry-asdlc-gantry-migration. Branch: asdlc/gantry-migration.
 - 2026-09-13 — Operator authorized one additional correction after the previous budget was exhausted. Scope is limited to requiring one passing, non-empty evidence entry for every authoritative acceptance criterion before the round workflow can integrate or invoke roadmap.py done.
+- 2026-09-13 — Critic refutation after the operator-authorized additional correction: all six acceptance criteria have executable evidence, but gates.py --run --diff-base b8d7146908a26e7f68fc4a8dda2e97e05e7f1492 returns verdict no_gates because this repository declares and detects no gate. The round workflow correctly requires gatesVerdict pass, so this Issue cannot be complete under the fail-closed rule. Required operator decision: declare a real repository gate that runs the canonical suite, then resume and re-verify. Worktree: /Users/julioborges/src/personal/gantry-asdlc-gantry-migration. Branch: asdlc/gantry-migration.
