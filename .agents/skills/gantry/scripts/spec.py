@@ -15,6 +15,7 @@ HEADING_RE = re.compile(r"^##(?!#)[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 SCENARIO_RE = re.compile(r"^[ \t]*Scenario:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
 STEP_RE = re.compile(r"^[ \t]*(Given|When|Then|And|But)[ \t]+(.+?)[ \t]*$")
 PLACEHOLDER_RE = re.compile(r"<[^>\n]+>|YYYY-MM-DD")
+FENCE_RE = re.compile(r"^\s*(?:`{3,}|~{3,})(.*)$")
 
 
 def headings(text: str) -> list[str]:
@@ -27,6 +28,27 @@ def headings(text: str) -> list[str]:
         elif not fenced:
             outside_fences.append(line)
     return [f"## {match.group(1)}" for match in HEADING_RE.finditer("".join(outside_fences))]
+
+
+def scenario_context(text: str) -> str:
+    """Keep unfenced and Gherkin-fenced text, preserving line numbers."""
+    relevant: list[str] = []
+    fenced = False
+    gherkin = False
+    for line in text.splitlines(keepends=True):
+        fence = FENCE_RE.match(line)
+        if fence:
+            if not fenced:
+                gherkin = fence.group(1).strip().casefold() == "gherkin"
+            else:
+                gherkin = False
+            fenced = not fenced
+            relevant.append("\n" if line.endswith("\n") else "")
+        elif not fenced or gherkin:
+            relevant.append(line)
+        else:
+            relevant.append("\n" if line.endswith("\n") else "")
+    return "".join(relevant)
 
 
 def canonical_heading(heading: str, heading_map: dict[str, str]) -> str:
@@ -42,6 +64,7 @@ def canonical_heading(heading: str, heading_map: dict[str, str]) -> str:
 
 def validate_scenarios(text: str, required: bool) -> list[dict[str, object]]:
     """Check that every Scenario has ordered Given, When and Then steps."""
+    text = scenario_context(text)
     matches = list(SCENARIO_RE.finditer(text))
     if required and not matches:
         return [{"line": None, "reason": "expected at least one Scenario with Given, When and Then steps"}]

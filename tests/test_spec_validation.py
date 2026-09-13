@@ -250,6 +250,41 @@ Scenario: incomplete scenario
             self.assertEqual(1, result.returncode, result.stderr)
             self.assertEqual(["## Changelog"], json.loads(result.stdout)["missing"])
 
+    def test_ignores_scenarios_in_normal_fences_but_validates_gherkin_fences(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+
+            example = root / "example.md"
+            example.write_text(
+                self.valid_spec().replace(
+                    "\n## Out of Scope\n",
+                    """\n```text
+Scenario: Incomplete illustrative example
+  Given an example block
+  When a reader copies it
+```
+
+## Out of Scope
+""",
+                ),
+                encoding="utf-8",
+            )
+            ignored = self.run_spec(root, example)
+
+            self.assertEqual(0, ignored.returncode, ignored.stderr)
+            self.assertEqual([], json.loads(ignored.stdout)["malformed_scenarios"])
+
+            malformed = root / "malformed-gherkin.md"
+            malformed.write_text(
+                self.valid_spec().replace("  Then the structural result passes\n", ""),
+                encoding="utf-8",
+            )
+            checked = self.run_spec(root, malformed)
+
+            self.assertEqual(1, checked.returncode, checked.stderr)
+            self.assertTrue(json.loads(checked.stdout)["malformed_scenarios"])
+
     def test_checking_a_directory_returns_json_error_without_traceback(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
