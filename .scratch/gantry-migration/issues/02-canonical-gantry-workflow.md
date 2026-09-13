@@ -1,7 +1,7 @@
 # Canonical Gantry workflow skill
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-migration#02`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -16,13 +16,13 @@ Create the canonical `.agents/skills/gantry/` skill by moving the portable legac
 
 ## Acceptance criteria
 
-- [ ] `.agents/skills/gantry/SKILL.md` has accepted skill frontmatter and documents a harness-neutral invocation that resolves `skillDir`, repository root, and effective policy without a repository policy file; its proof test runs the new `frontier.py`, `acceptance.py`, `gates.py`, and `roadmap.py` help or JSON paths.
-- [ ] The canonical plan and round templates preserve the legacy behavior: drafts stop for operator approval, implementation follows TDD, review has standards and Spec axes, the Critic is the only path to `roadmap.py done`, and parallel Issues use isolated worktrees with serial integration.
-- [ ] A planning-state test proves draft Issue creation does not modify `ROADMAP.md`; after explicit operator approval, the runner calls `roadmap.py status <ref> ready-for-agent`, then `roadmap.py waves`, and `roadmap.py check` exits 0 with the generated Issue projection.
-- [ ] Frontier regression tests prove the canonical script refuses cyclic and dangling blocker references with exit 1, lists draft, blocked, and needs-operator Issues as parked rather than scheduling them, and computes valid dependency rounds from authoritative Issue statuses.
-- [ ] The three default templates contain the required Spec, PRD, and current Issue structures, and tests show the copied scripts continue parsing legacy-format Issue files without changing their execution state.
-- [ ] The Spec Changelog receives an English entry in the same merge, and every Python module added under `.agents/skills/gantry/scripts/` passes the standard-library-only import test and its runnable test command.
-- [ ] The repository declares a real `make test` gate that runs `python3 -m unittest discover -v`; `gates.py --run --diff-base <base>` detects it and reports `verdict: pass`.
+- [x] `.agents/skills/gantry/SKILL.md` has accepted skill frontmatter and documents a harness-neutral invocation that resolves `skillDir`, repository root, and effective policy without a repository policy file; its proof test runs the new `frontier.py`, `acceptance.py`, `gates.py`, and `roadmap.py` help or JSON paths.
+- [x] The canonical plan and round templates preserve the legacy behavior: drafts stop for operator approval, implementation follows TDD, review has standards and Spec axes, the Critic is the only path to `roadmap.py done`, and parallel Issues use isolated worktrees with serial integration.
+- [x] A planning-state test proves draft Issue creation does not modify `ROADMAP.md`; after explicit operator approval, the runner calls `roadmap.py status <ref> ready-for-agent`, then `roadmap.py waves`, and `roadmap.py check` exits 0 with the generated Issue projection.
+- [x] Frontier regression tests prove the canonical script refuses cyclic and dangling blocker references with exit 1, lists draft, blocked, and needs-operator Issues as parked rather than scheduling them, and computes valid dependency rounds from authoritative Issue statuses.
+- [x] The three default templates contain the required Spec, PRD, and current Issue structures, and tests show the copied scripts continue parsing legacy-format Issue files without changing their execution state.
+- [x] The Spec Changelog receives an English entry in the same merge, and every Python module added under `.agents/skills/gantry/scripts/` passes the standard-library-only import test and its runnable test command.
+- [x] The repository declares a real `make test` gate that runs `python3 -m unittest discover -v`; `gates.py --run --diff-base <base>` detects it and reports `verdict: pass`.
 
 ## Blocked by
 
