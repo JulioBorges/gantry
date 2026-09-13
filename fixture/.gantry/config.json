@@ -1,0 +1,22 @@
+{
+  "checks": [
+    {
+      "name": "pytest",
+      "command": "pytest -q",
+      "mode": "absolute"
+    },
+    {
+      "name": "lint",
+      "command": "python3 tools/lint.py",
+      "mode": "differential",
+      "mapping": {
+        "findings": "/findings",
+        "rule": "/rule",
+        "file": "/file",
+        "line": "/line",
+        "message": "/message",
+        "severity": "/severity"
+      }
+    }
+  ]
+}
