@@ -176,16 +176,20 @@ Scenario: The run ends with an offered draft pull request
   interrupted Review/Critic phases, and stronger ordering assertions on the isolated multi-Issue serial
   integration test (exactly one `--no-ff` merge and one gate per Issue, in order, with nothing after the
   red post-merge gate).
-- 2026-09-13 — Recorded an operator decision: `gantry-migration#14`'s acceptance criterion naming
-  `greeting#02` in worktree `W` is proven, until `gantry-migration#16` lands the `fixture/` tree, by the
-  fixture-independent `test_preflight_derives_corrections_spent_from_inflight_refutations_and_resumes_at_the_ceiling`
-  and `test_round_workflow_resume_emits_run_resumed_and_preserves_worktree_and_corrections` tests, whose
-  `resumeq#01`/`resume#01` Issues stand in for `greeting#02`: same shape (Implement-phase interruption,
-  preserved worktree, offered continuation, `Status: ready-for-agent` retained until Critic acceptance).
-  Once `gantry-migration#16` merges, the fixture's real `greeting#02` scenario should replace this stand-in
-  rather than duplicate it.
-- 2026-09-13 — Documented the explicit derivation of a resumed Run's `correctionsSpent` (count of prior
-  `refutation` events for the matching Issue in its own Run log; `runlog.py inflight` never reports it) and
+- 2026-09-13 — Pending operator confirmation: `gantry-migration#14`'s acceptance criterion naming
+  `greeting#02` in worktree `W` is currently proven only by the fixture-independent
+  `test_preflight_derives_corrections_spent_from_inflight_refutations_and_resumes_at_the_ceiling` and
+  `test_round_workflow_resume_emits_run_resumed_and_preserves_worktree_and_corrections` tests, whose
+  `resumeq#01`/`resume#01` Issues stand in for `greeting#02` with the same shape (Implement-phase
+  interruption, preserved worktree, offered continuation, `Status: ready-for-agent` retained until Critic
+  acceptance). This is a stand-in, not an accepted substitution: once the `fixture/` tree from
+  `gantry-migration#16` is available on this branch, the fixture's real `greeting#02` scenario should
+  replace this stand-in rather than duplicate it. Surfaced to the operator as an open decision rather than
+  settled here.
+- 2026-09-13 — Documented the explicit derivation of a resumed Run's `correctionsSpent` (the prior Run's own
+  `run.resumed.data.correctionsSpent`, if any, plus every `refutation` event for the matching Issue that is
+  later followed by a `phase.started` `Implement` event — i.e. only refutations whose correction pass
+  actually started — read from the matched Run's own log; `runlog.py inflight` never reports it) and
   clarified that a resumed `branch` is optional because `round-workflow.md` derives and verifies it itself;
   documented that a ceiling-spent, refuted Issue keeps its authoritative `Status: ready-for-agent` and is
   only recorded as blocked in the Run log, so `frontier.py` still offers it; added lifecycle tests for the

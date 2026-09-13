@@ -1106,6 +1106,19 @@ Spec: `.scratch/planned/spec.md`
             round_started = next(event for event in events if event["event"] == "round.started")
             self.assertEqual(3, round_started["data"]["round"])
 
+            # `subagent.stopped` must carry the validated role result payload itself, not just tag the
+            # event with the phase/issue it belongs to.
+            implement_stopped = next(
+                event for event in events
+                if event["event"] == "subagent.stopped" and event["phase"] == "Implement"
+            )
+            self.assertEqual("implementer", implement_stopped["data"]["role"])
+            implement_result = implement_stopped["data"]["result"]
+            self.assertEqual(str(root), implement_result["worktree"])
+            self.assertEqual("gantry/lifecycle", implement_result["branch"])
+            self.assertEqual(["test commit"], implement_result["commits"])
+            self.assertEqual("workflow execution", implement_result["summary"])
+
     def test_round_workflow_resume_with_changed_policy_emits_policy_changed(self) -> None:
         with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
             root = Path(temp)
@@ -1312,9 +1325,11 @@ Spec: `.scratch/planned/spec.md`
     def test_preflight_derives_corrections_spent_from_inflight_refutations_and_resumes_at_the_ceiling(self) -> None:
         # Covers SKILL.md's documented derivation rule: `runlog.py inflight` reports only `run`, `issue`,
         # `phase` and `worktree` (plus Run-level metadata) — never `correctionsSpent` or `branch` — so this
-        # proves preflight must derive `correctionsSpent` by counting `refutation` events for the matched
-        # Issue in the match's own Run log, and that `branch` may be omitted because
-        # `reference/round-workflow.md`'s `implementationLocation` derives it itself.
+        # proves preflight must derive `correctionsSpent` per `derive_corrections_spent` (this Run's
+        # `run.resumed.data.correctionsSpent`, if any, plus every `refutation` for the matched Issue that is
+        # later followed by a `phase.started` `Implement` event, i.e. a refutation whose correction pass
+        # actually started), and that `branch` may be omitted because `reference/round-workflow.md`'s
+        # `implementationLocation` derives it itself.
         with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
             root = Path(temp)
             self.init_repo(root)
@@ -1354,11 +1369,22 @@ Spec: `.scratch/planned/spec.md`
                     "data": {"attempt": 1, "refutations": ["first refutation"]},
                 })
                 self.append_runlog_event(state_root, unit_id, prior_run_id, {
+                    "ts": "2026-09-13T09:02:30Z", "run": prior_run_id, "event": "phase.started",
+                    "issue": "resumeq#01", "phase": "Implement",
+                    "data": {"worktree": str(issue_worktree)},
+                })
+                self.append_runlog_event(state_root, unit_id, prior_run_id, {
                     "ts": "2026-09-13T09:03:00Z", "run": prior_run_id, "event": "refutation",
                     "issue": "resumeq#01", "phase": "Critic",
                     "data": {"attempt": 2, "refutations": ["second refutation"]},
                 })
-                # No phase.finished or run.finished: this Run is genuinely interrupted mid-Implement.
+                self.append_runlog_event(state_root, unit_id, prior_run_id, {
+                    "ts": "2026-09-13T09:03:30Z", "run": prior_run_id, "event": "phase.started",
+                    "issue": "resumeq#01", "phase": "Implement",
+                    "data": {"worktree": str(issue_worktree)},
+                })
+                # No phase.finished or run.finished: this Run is genuinely interrupted mid-Implement,
+                # in the middle of the correction pass started after the second refutation.
 
                 inflight = subprocess.run(
                     [sys.executable, str(SCRIPTS / "runlog.py"), "inflight", unit_id, "--state-root", str(state_root), "--json"],
@@ -1374,12 +1400,9 @@ Spec: `.scratch/planned/spec.md`
                 self.assertNotIn("correctionsSpent", match)
                 self.assertNotIn("branch", match)
 
-                # Documented derivation rule: count `refutation` events for the matched Issue in its own Run log.
+                # Apply the actual derivation helper (SKILL.md's documented rule) to the match's own Run log.
                 prior_run_events = self.read_run_log_events(state_root, unit_id, prior_run_id)
-                corrections_spent = sum(
-                    1 for event in prior_run_events
-                    if event["event"] == "refutation" and event.get("issue") == match["issue"]
-                )
+                corrections_spent = self.derive_corrections_spent(prior_run_events, match["issue"])
                 self.assertEqual(2, corrections_spent)
 
                 run = self.run_workflow(
