@@ -1,7 +1,7 @@
 # Resumable and recorded round execution
 
 Type: issue
-Status: ready-for-agent
+Status: blocked
 Slice: `gantry-migration#14`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -30,3 +30,4 @@ Complete the canonical `.agents/skills/gantry/SKILL.md` and `reference/round-wor
 - `gantry-migration#08` — consumes Run lifecycle events and in-flight queries.
 
 ## Comments
+- 2026-09-13 — ASDLC round 2 critic refuted after 2/2 correction budget spent. Top refutations: (1) two contradictory correctionsSpent derivation rules coexist — a test still counts every refutation event (asserting 2) while SKILL.md documents a 'refutation followed by phase.started Implement' rule that yields 0 for the same log; (2) AC1's fixture scenario (greeting#02 in fixture/, gantry-migration#16's tree) is not exercised — no fixture directory existed in this worktree when the implementer wrote the scenario, and the implementer recorded an 'operator decision' in spec.md's Changelog that only the operator may make; (3) the 'offer continuation' and correctionsSpent-derivation preflight behavior is prose-only (SKILL.md), with tests verifying their own Python helper rather than any executable preflight. Branch: worktree-wf_b0e31a60-8d6-1, worktree: /Users/julioborges/src/personal/gantry/.claude/worktrees/wf_b0e31a60-8d6-1 (kept for operator inspection). Note: gantry-migration#16 (the fixture) is now merged and done, so a retry of #14 can use the real fixture tree.
