@@ -21,8 +21,8 @@ This spec is the migration: `asdlc` becomes the three skills of the pack (`gantr
 - **Scripts** (`.agents/skills/gantry/scripts/`, Python 3.10+, standard library only): `common.py` (parsing plus policy resolution), `frontier.py`, `acceptance.py`, `gates.py` (adds the differential mode), `roadmap.py` (unchanged contract), `spec.py` (structural validation derived from the effective template), `budget.py` (initial-package estimate), `result.py` (result-contract validation), `runlog.py` (append and query run events), `guard.py` (hook handler), `cleanup.py` (plan and execute worktree/branch removal), `dashboard.py` (loopback HTTP server and static kanban).
 - **Result contracts:** `.agents/skills/gantry/schemas/{planner,plan-critic,implementer,reviewer,critic,learner}.json`, JSON Schema documents using the subset `result.py` implements: `type`, `properties`, `required`, `items`, `enum`, `additionalProperties`. The Claude Code templates load these files into `schema:`; every other harness validates with `result.py --role <role>`.
 - **Templates:** `.agents/skills/gantry/templates/spec.md` (this document's skeleton: Blueprint, Contract, Out of Scope, Changelog), `.agents/skills/gantry/templates/prd.md`, `.agents/skills/gantry/templates/issue.md` (the current issue format: `Type`, `Status`, `Slice`, `Spec`, `Created` header lines, `## Parent`, `## What to build`, `## Acceptance criteria`, `## Blocked by`, `## Comments`). `spec.py` derives its required sections from the effective spec template, so a repository that customises `.gantry/templates/spec.md` changes the check.
-- **Repository policy:** `.gantry/config.json`, tracked, sparse, written only by `gantry-setup`. Keys: `artifacts` (`specs`, `issues`, `adrs`, `decisions` path patterns), `templates` (`dir`, `headingMap` of equivalent headings), `checks` (list of `{name, command, mode: "absolute" | "differential", mapping: {rule, file, line, message}, secrets: boolean}`), `git` (`target`, `prefix`), `hooks` (`record`, `deny` lists), `budget` (`corrections`, `contextShare`). `common.py` resolves the effective policy as pack defaults overlaid by the file.
-- **Run log:** `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`, where `unit-id` is the first twelve hex characters of the SHA-256 of the real path of `git rev-parse --git-common-dir`, so every worktree of one clone shares it. One JSON object per line: `ts`, `run`, `event`, optional `issue`, `phase`, `data`. Events: `run.started`, `run.resumed`, `run.cancelled`, `run.finished`, `round.started`, `round.finished`, `phase.started`, `phase.finished`, `subagent.started`, `subagent.stopped`, `compaction`, `hook.denied`, `policy.changed`, `issue.done`, `issue.blocked`, `refutation`, `review.finding`. The log stores references and the role results' JSON, never diffs or command output.
+- **Repository policy:** `.gantry/config.json`, tracked, sparse, written only by `gantry-setup`. Keys: `artifacts` (`specs`, `issues`, `adrs`, `decisions` path patterns), `templates` (`dir`, `headingMap` of equivalent headings), `checks` (list of `{name, command, mode: "absolute" | "differential", mapping: {findings, rule, file, line, message, severity}, secrets: boolean}`), `git` (`target`, `prefix`), `hooks` (`record`, `deny` lists), `budget` (`corrections`, `contextShare`) and `dashboard` (`staleAfterSeconds`, a positive integer). A differential `mapping` uses RFC 6901 JSON Pointers: `findings` resolves from the command's JSON root to an array, and every other field resolves from each array item to one scalar. `file` must resolve to a normalized path relative to the repository root. Any duplicate `(rule, file, message)` identity after normalization, in either the base or delivery output, fails the check with `verdict: fail`, exit 1 and an `invalid` entry naming the source and identity. `staleAfterSeconds` defaults to `900` when absent; a policy value takes precedence over that default. `common.py` resolves the effective policy as pack defaults overlaid by the file.
+- **Run log:** `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`, where `unit-id` is the first twelve hex characters of the SHA-256 of the real path of `git rev-parse --git-common-dir`, so every worktree of one clone shares it. One JSON object per line: `ts`, `run`, `event`, optional `issue`, `phase`, `data`. A `run.started` event records the repository root, policy hash, tier and effective `staleAfterSeconds` in `data`; dashboard staleness uses that snapshot for the Run. A `policy.changed` event never changes an existing Run's snapshot, and the new policy takes effect when a later Run starts. Events: `run.started`, `run.resumed`, `run.cancelled`, `run.finished`, `round.started`, `round.finished`, `phase.started`, `phase.finished`, `subagent.started`, `subagent.stopped`, `compaction`, `hook.denied`, `policy.changed`, `issue.done`, `issue.blocked`, `refutation`, `review.finding`. The log stores references and the role results' JSON, never diffs or command output.
 - **Capabilities:** `.agents/skills/gantry/capabilities/{claude-code,opencode,codex}.json` with `tier`, `hooks`, `structured_output`, `worktree_isolation`, `per_role_model`, `parallel_round`, `skills_path`, `hook_events` and `payload_fields`. `guard.py` and the setup skill read them; the run report prints the tier.
 - **Hook wiring:** `.agents/skills/gantry/hooks/claude-code.settings.json` (a `hooks` fragment merged into `.claude/settings.json`), `.agents/skills/gantry/hooks/opencode.plugin.js` (a plugin forwarding `tool.execute.before` and `session.compacted` to `guard.py`), `.agents/skills/gantry/hooks/codex.hooks.json`. Every entry executes `python3 <skillDir>/scripts/guard.py <event>` with the payload on stdin.
 - **Fixture:** `fixture/`, a small Python project with `fixture/pyproject.toml`, `fixture/tests/`, a standard-library linter `fixture/tools/lint.py` emitting JSON findings, `fixture/.gantry/config.json` declaring one absolute check (`pytest`) and one differential check (the linter), `fixture/.scratch/greeting/spec.md` and three issues under `fixture/.scratch/greeting/issues/`. It is the repository every acceptance scenario below runs against, and the run that proves a support tier is recorded in `fixture/README.md`.
@@ -37,7 +37,7 @@ This spec is the migration: `asdlc` becomes the three skills of the pack (`gantr
 - `runlog.py append` writes one complete line per call with a single write system call for lines up to 64 KB, and two processes appending concurrently produce a file where every line parses as JSON.
 - `dashboard.py` binds `127.0.0.1` only, serves the kanban from files in the pack with zero external assets, and reflects a new run-log event within two seconds.
 - `budget.py` estimates tokens as UTF-8 bytes divided by four, reads the assumed window from the capabilities file for the chosen model, and applies the `contextShare` from the policy, 0.15 by default.
-- The differential mode of `gates.py` runs the same declared command on the round's base and on the delivery, in separate worktrees of the same clone, and matches findings by the tuple (rule, file, message).
+- The differential mode of `gates.py` runs the same declared command on the round's base and on the delivery, in separate worktrees of the same clone, and matches findings by the tuple (rule, file, message). Every differential mapping resolves its RFC 6901 pointers to one findings array and scalar fields for every finding; file paths are normalized repository-relative paths, and duplicate identities in either output result in `verdict: fail`, exit 1 and an `invalid` entry naming the source and identity. Every differential mapping resolves `severity` to exactly one of `info`, `warning` or `error`; their ordering is `info < warning < error`. A matching delivery finding with a higher severity is `aggravated`; a missing or invalid severity is a failed gate configuration. An identity present only on the base is reported as `resolved`.
 - A hook denial names its rule and the path it refused in one line, and the same denial is written to the run log as `hook.denied`.
 - Every artifact the pack writes — issues, comments, reports, lesson candidates, pull request bodies — is English.
 
@@ -51,11 +51,11 @@ This spec is the migration: `asdlc` becomes the three skills of the pack (`gantr
 - [ ] The plan workflow runs the Requirement Critic before slicing; on the fixture spec with an injected ambiguous Definition of Done item, the run stops before any issue file is written and the report quotes the blocking finding.
 - [ ] `budget.py <issue> --model <id>` prints the estimated tokens, the assumed window and the share; an issue listing files whose size exceeds the share is reported over budget and the plan critic's result quotes the number.
 - [ ] `result.py --role critic < result.json` exits 1 and prints `criteria` as the missing field when the result lacks it, and exits 0 on a valid result; the round workflow re-asks once on failure and then records `critic_failed`.
-- [ ] On the fixture, `gates.py --run --diff-base <base> --json` reports `verdict: fail` with the new finding when a delivery adds a linter finding, and `verdict: pass` with the finding listed under `preexisting` when the delivery only carries a finding already present on the base.
-- [ ] A run on the fixture leaves `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl` whose first event is `run.started` with the policy hash and tier, and whose last is `run.finished`; `runlog.py inflight <unit-id>` lists the issue, phase and worktree of an interrupted run.
+- [ ] On the fixture, `gates.py --run --diff-base <base> --json` resolves the configured RFC 6901 mappings and reports `verdict: fail` with the new finding when a delivery adds a linter finding, `verdict: fail` with the finding under `aggravated` when the matching finding changes from `warning` to `error`, `resolved` for a finding present only on the base, and `verdict: pass` with the finding listed under `preexisting` when the delivery only carries a finding already present on the base at the same or lower severity. A duplicate normalized identity in either command output yields `verdict: fail`, exit 1 and an `invalid` entry naming the base or delivery source.
+- [ ] A run on the fixture leaves `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl` whose first event is `run.started` with the repository root, policy hash, tier and effective `staleAfterSeconds`, and whose last is `run.finished`; `runlog.py inflight <unit-id>` lists the issue, phase and worktree of an interrupted run.
 - [ ] `guard.py PreToolUse` with a Claude Code payload editing `ROADMAP.md` or an issue's `Status:` line answers deny and logs `hook.denied`; the same payload for a `Read` answers allow; a `SubagentStop` payload appends `subagent.stopped`.
 - [ ] `gantry-setup` merges `hooks/claude-code.settings.json` into `.claude/settings.json` idempotently: running it twice produces the same file, and keys it did not write are preserved byte for byte.
-- [ ] `dashboard.py` shows two runs from two different `unit-id`s with their issues in the right phase columns, and marks a run stale when its last event is older than the configured threshold.
+- [ ] `dashboard.py` shows two runs from two different `unit-id`s with their issues in the right phase columns, and applies the `staleAfterSeconds` snapshot from each `run.started` event: a run is stale only when its last event is older than that value. The effective value is the positive integer in policy or the `900`-second default, and a later `policy.changed` does not affect an existing run.
 - [ ] The Learner reads a run log containing the same refutation on two issues and one refutation on a single issue, and produces exactly one lesson candidate, with its evidence and proposed target; nothing under `AGENTS.md` changes.
 - [ ] At the end of a run the orchestrator offers the draft run pull request; with a stub `gh` on `PATH` the body contains each issue's criteria and evidence, and with no `gh` the report names the branch instead.
 - [ ] `gantry-setup` shows the full proposed `.gantry/config.json` and writes it only after confirmation; on a repository that already has one it offers merge, overwrite or abort; the `AGENTS.md` section is added between `<!-- gantry:begin -->` and `<!-- gantry:end -->` with the rest of the file byte-identical.
@@ -99,6 +99,26 @@ Scenario: A differential check blocks a new finding and tolerates an old one
   And the new finding in cli.py is listed under new
   And the finding in greeting.py is listed under preexisting
 
+Scenario: A differential check blocks an aggravated finding
+  Given the fixture base carries a linter finding with identity (rule, file, message) and severity warning
+  And a delivery carries the same finding with severity error
+  When gates.py --run --diff-base <base> --json runs on the delivery
+  Then the verdict is fail
+  And the finding is listed under aggravated
+
+Scenario: A differential check reports a resolved finding
+  Given the fixture base carries a linter finding with identity (rule, file, message)
+  And the delivery carries no finding with that identity
+  When gates.py --run --diff-base <base> --json runs on the delivery
+  Then the verdict is pass
+  And the base finding is listed under resolved
+
+Scenario: A differential check rejects duplicate finding identities
+  Given either the fixture base or delivery output contains two findings with the same normalized (rule, file, message) identity
+  When gates.py --run --diff-base <base> --json runs on the delivery
+  Then the verdict is fail with exit 1
+  And invalid names the output source and duplicate identity
+
 Scenario: A guard hook refuses a roadmap edit and records it
   Given Claude Code with the pack's hooks fragment merged into .claude/settings.json
   When an implementer subagent issues an Edit on ROADMAP.md
@@ -106,11 +126,12 @@ Scenario: A guard hook refuses a roadmap edit and records it
   And the run log gains a hook.denied event for that issue and phase
 
 Scenario: The dashboard shows two runs and a stale one
-  Given a run log for repository A with an issue in the Critic phase
-  And a run log for repository B whose last event is older than the stale threshold
+  Given a run log for repository A with an issue in the Critic phase and a staleAfterSeconds snapshot of 60
+  And a run log for repository B with a staleAfterSeconds snapshot of 900
+  And both runs have last events 120 seconds old
   When the operator opens the dashboard
-  Then repository A's issue appears in the Critic column of its swimlane
-  And repository B's run is marked stale
+  Then repository A's issue appears in the Critic column of its stale swimlane
+  And repository B's run is not stale
 
 Scenario: A rerun offers to continue an interrupted issue
   Given a run on the fixture interrupted while greeting#02 was in the Implement phase in worktree W
@@ -145,4 +166,5 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Defined RFC 6901 differential mapping, duplicate-identity rejection and resolved findings; defined canonical differential severity (`info < warning < error`) and per-Run dashboard stale-threshold snapshots (`dashboard.staleAfterSeconds`, default 900 seconds) after Requirement Critic findings.
 - 2026-09-12 — Initial draft written from `PRD.md` §4–§14 after the pivot merge (823d27e); awaiting operator approval before slicing.
