@@ -166,6 +166,7 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Added the canonical harness-neutral Gantry workflow skill, default templates and portable legacy script contracts with regression coverage.
 - 2026-09-13 — Added portable legacy policy defaults, optional repository overlay resolution and policy-rendered workflow paths while preserving the Markdown issue parser.
 - 2026-09-13 — Defined RFC 6901 differential mapping, duplicate-identity rejection and resolved findings; defined canonical differential severity (`info < warning < error`) and per-Run dashboard stale-threshold snapshots (`dashboard.staleAfterSeconds`, default 900 seconds) after Requirement Critic findings.
 - 2026-09-12 — Initial draft written from `PRD.md` §4–§14 after the pivot merge (823d27e); awaiting operator approval before slicing.
