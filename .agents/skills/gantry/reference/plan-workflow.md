@@ -74,7 +74,20 @@ const PLAN_SCHEMA = {
   type: 'object',
   properties: {
     filesWritten: { type: 'array', items: { type: 'string' } },
-    issues: { type: 'array', items: { type: 'object' } },
+    issues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          ref: { type: 'string' },
+          path: { type: 'string' },
+          title: { type: 'string' },
+          criteriaCount: { type: 'integer' },
+          blockedBy: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['ref', 'path', 'title', 'criteriaCount', 'blockedBy'],
+      },
+    },
     roadmapAdditions: { type: 'array', items: { type: 'string' } },
     openDecisions: { type: 'array', items: { type: 'string' } },
   },
@@ -98,9 +111,14 @@ function shellQuote(value) {
 async function measureBudgets(plan) {
   if (!plan || !Array.isArray(plan.issues) || typeof runCommand !== 'function') return []
   const measurements = []
-  for (const issue of plan.issues) {
-    if (!issue || typeof issue.path !== 'string') continue
-    const command = `python3 ${shellQuote(`${scripts}/budget.py`)} ${shellQuote(issue.path)} --model ${shellQuote(A.models.plan)} --json`
+  for (const [index, issue] of plan.issues.entries()) {
+    const ref = issue && typeof issue.ref === 'string' && issue.ref.trim()
+      ? issue.ref.trim()
+      : `issues[${index}]`
+    if (!issue || typeof issue.path !== 'string' || !issue.path.trim()) {
+      throw new Error(`planned Issue ${ref} has no valid path`)
+    }
+    const command = `python3 ${shellQuote(`${scripts}/budget.py`)} ${shellQuote(issue.path.trim())} --model ${shellQuote(A.models.plan)} --json`
     const result = await runCommand(command, { cwd: A.repoRoot })
     if (!result || ![0, 1].includes(result.exitCode)) {
       throw new Error(`context budget command failed: ${command}`)

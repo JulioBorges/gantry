@@ -134,9 +134,10 @@ const runCommand = async (command, options = {{}}) => {{
   return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}' : '' }};
 }};
 const agent = async (prompt, options) => {{
-  calls.push({{ label: options.label, prompt }});
+  calls.push({{ label: options.label, prompt, schema: options.schema }});
   if (options.label.startsWith('research:')) return 'factual research';
   if (options.label === 'plan') {{
+    if (args.plannerResult) return args.plannerResult;
     if (args.testDraftPath) {{
       mkdirSync(dirname(args.testDraftPath), {{ recursive: true }});
       writeFileSync(args.testDraftPath, args.testDraftText);
@@ -310,6 +311,72 @@ Slice: `planned#01`
             self.assertIn('roadmap.py" waves', commands[2])
             self.assertIn('roadmap.py" check', commands[3])
             self.assertIn("planned#01", roadmap.read_text(encoding="utf-8"))
+
+    def test_planner_contract_requires_every_consumed_issue_field_and_rejects_a_pathless_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            plan_args = {
+                "target": {"kind": "spec", "slug": "planned", "specPath": str(root / ".scratch" / "planned" / "spec.md")},
+                "models": {"plan": "claude-opus-4-5", "critic": "critic"},
+                "skillDir": str(SKILL_DIR),
+                "repoRoot": str(root),
+                "policy": {"git": {"target": "main", "prefix": "gantry/"}},
+                "paths": {
+                    "issueDir": str(root / ".scratch" / "planned" / "issues"),
+                    "specPath": str(root / ".scratch" / "planned" / "spec.md"),
+                    "exemplarIssue": str(root / "docs" / "agents" / "issue-tracker.md"),
+                    "decisions": str(root / "docs" / "adr"),
+                    "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
+                    "context": str(root / "CONTEXT.md"),
+                    "adrs": str(root / "docs" / "adr"),
+                },
+                "plannerResult": {
+                    "filesWritten": [],
+                    "issues": [{
+                        "ref": "planned#01",
+                        "title": "Pathless planned Issue",
+                        "criteriaCount": 1,
+                        "blockedBy": [],
+                    }],
+                    "roadmapAdditions": [],
+                    "openDecisions": [],
+                },
+            }
+            with self.assertRaisesRegex(AssertionError, r"planned Issue .*valid path"):
+                self.run_workflow("plan-workflow.md", plan_args)
+
+            valid = self.run_workflow(
+                "plan-workflow.md",
+                {
+                    **plan_args,
+                    "plannerResult": {
+                        **plan_args["plannerResult"],
+                        "issues": [{
+                            **plan_args["plannerResult"]["issues"][0],
+                            "path": str(root / ".scratch" / "planned" / "issues" / "01-planned.md"),
+                        }],
+                    },
+                    "commandResults": [
+                        {
+                            "exitCode": 0,
+                            "stdout": json.dumps({
+                                "estimatedTokens": 1,
+                                "contextWindow": 1_000,
+                                "contextShare": 0.15,
+                                "budgetTokens": 150,
+                                "overBudget": False,
+                            }),
+                        },
+                    ],
+                },
+            )
+            contract = next(call["schema"] for call in valid["calls"] if call["label"] == "plan")
+            issue_contract = contract["properties"]["issues"]["items"]
+            self.assertEqual(
+                ["ref", "path", "title", "criteriaCount", "blockedBy"],
+                issue_contract["required"],
+            )
 
     def test_plan_critic_refutes_a_real_measured_over_budget_package(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
