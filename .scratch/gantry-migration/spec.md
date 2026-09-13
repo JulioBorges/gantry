@@ -166,6 +166,24 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Addressed adversarial-critic feedback on the recorded-Run wiring: `run.resumed` now carries
+  `issue` and `correctionsSpent` alongside the prior Run and worktree; Review and Critic `phase.started`
+  events now carry `worktree` so an interrupted Review or Critic phase surfaces in `runlog.py inflight`;
+  documented the derivation rule for a resumed `correctionsSpent` as `run.resumed.data.correctionsSpent`
+  (or `0`) plus refutations in that same Run's log that actually started a correction pass (a later
+  `phase.started` Implement for the same Issue), replacing the earlier `data.attempt - 1` sub-rule; and
+  added a chained-resume test proving the rule composes correctly across three Runs, an inflight test for
+  interrupted Review/Critic phases, and stronger ordering assertions on the isolated multi-Issue serial
+  integration test (exactly one `--no-ff` merge and one gate per Issue, in order, with nothing after the
+  red post-merge gate).
+- 2026-09-13 — Recorded an operator decision: `gantry-migration#14`'s acceptance criterion naming
+  `greeting#02` in worktree `W` is proven, until `gantry-migration#16` lands the `fixture/` tree, by the
+  fixture-independent `test_preflight_derives_corrections_spent_from_inflight_refutations_and_resumes_at_the_ceiling`
+  and `test_round_workflow_resume_emits_run_resumed_and_preserves_worktree_and_corrections` tests, whose
+  `resumeq#01`/`resume#01` Issues stand in for `greeting#02`: same shape (Implement-phase interruption,
+  preserved worktree, offered continuation, `Status: ready-for-agent` retained until Critic acceptance).
+  Once `gantry-migration#16` merges, the fixture's real `greeting#02` scenario should replace this stand-in
+  rather than duplicate it.
 - 2026-09-13 — Documented the explicit derivation of a resumed Run's `correctionsSpent` (count of prior
   `refutation` events for the matching Issue in its own Run log; `runlog.py inflight` never reports it) and
   clarified that a resumed `branch` is optional because `round-workflow.md` derives and verifies it itself;

@@ -153,6 +153,8 @@ if (runLogEnabled) {
     await appendRunEvent('run.resumed', undefined, undefined, {
       priorRun: A.priorRun.run,
       worktree: A.priorRun.worktree,
+      issue: A.priorRun.issue,
+      correctionsSpent: A.priorRun.correctionsSpent,
     })
   }
   if (A.priorRun && A.priorRun.policyHash && A.priorRun.policyHash !== runStartedData.policyHash) {
@@ -374,7 +376,7 @@ const results = await pipeline(
   issue => implement(issue, null, null),
   async (impl, issue) => {
     if (!impl) return null
-    await appendRunEvent('phase.started', issue.ref, 'Review', {})
+    await appendRunEvent('phase.started', issue.ref, 'Review', { worktree: location(impl) })
     await appendRunEvent('subagent.started', issue.ref, 'Review', { role: 'reviewer' })
     const review = await requestRole('reviewer', reviewPrompt(issue, impl), {
       label: `review:${issue.ref}`, phase: 'Review', model: A.models.review, cwd: location(impl),
@@ -414,7 +416,7 @@ const results = await pipeline(
     let corrections = prior && Number.isInteger(prior.correctionsSpent) ? prior.correctionsSpent : 0
     let accepted = false
     for (let attempt = 1; ; attempt += 1) {
-      await appendRunEvent('phase.started', issue.ref, 'Critic', { attempt })
+      await appendRunEvent('phase.started', issue.ref, 'Critic', { attempt, worktree: location(impl) })
       await appendRunEvent('subagent.started', issue.ref, 'Critic', { role: 'critic', attempt })
       verdict = await requestRole('critic', criticPrompt(issue, impl, state.review, attempt), {
         label: `critic:${issue.ref}#${attempt}`, phase: 'Critic', model: A.models.critic, cwd: location(impl),

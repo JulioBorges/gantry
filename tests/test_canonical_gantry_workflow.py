@@ -1266,6 +1266,49 @@ Spec: `.scratch/planned/spec.md`
         )
         self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_runlog_inflight_reports_interrupted_review_and_critic_phases_with_worktree(self) -> None:
+        # Covers feedback item 4: `reference/round-workflow.md` now records `worktree` in the Review and
+        # Critic `phase.started` data, so a Run interrupted mid-Review or mid-Critic (not just
+        # mid-Implement) still surfaces in `runlog.py inflight --json` with its worktree.
+        with tempfile.TemporaryDirectory() as state_dir:
+            state_root = Path(state_dir)
+            unit_id = "aaaaaaaaaaaa"
+
+            review_run_id = "run-inflight-review"
+            self.append_runlog_event(state_root, unit_id, review_run_id, {
+                "ts": "2026-09-13T10:00:00Z", "run": review_run_id, "event": "run.started",
+                "data": {"repositoryRoot": "/tmp/repo", "policyHash": "policyhash", "tier": "reference", "staleAfterSeconds": 900},
+            })
+            self.append_runlog_event(state_root, unit_id, review_run_id, {
+                "ts": "2026-09-13T10:01:00Z", "run": review_run_id, "event": "phase.started",
+                "issue": "inflight#01", "phase": "Review", "data": {"worktree": "/tmp/repo.gantry-inflight-01"},
+            })
+            # Interrupted mid-Review: no phase.finished, run.cancelled, or run.finished.
+
+            critic_run_id = "run-inflight-critic"
+            self.append_runlog_event(state_root, unit_id, critic_run_id, {
+                "ts": "2026-09-13T10:02:00Z", "run": critic_run_id, "event": "run.started",
+                "data": {"repositoryRoot": "/tmp/repo", "policyHash": "policyhash", "tier": "reference", "staleAfterSeconds": 900},
+            })
+            self.append_runlog_event(state_root, unit_id, critic_run_id, {
+                "ts": "2026-09-13T10:03:00Z", "run": critic_run_id, "event": "phase.started",
+                "issue": "inflight#02", "phase": "Critic", "data": {"attempt": 1, "worktree": "/tmp/repo.gantry-inflight-02"},
+            })
+            # Interrupted mid-Critic: no phase.finished, run.cancelled, or run.finished.
+
+            inflight = subprocess.run(
+                [sys.executable, str(SCRIPTS / "runlog.py"), "inflight", unit_id, "--state-root", str(state_root), "--json"],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(0, inflight.returncode, inflight.stderr)
+            payload = json.loads(inflight.stdout)
+            matches = {entry["issue"]: entry for entry in payload["inflight"]}
+            self.assertEqual({"inflight#01", "inflight#02"}, set(matches))
+            self.assertEqual("Review", matches["inflight#01"]["phase"])
+            self.assertEqual("/tmp/repo.gantry-inflight-01", matches["inflight#01"]["worktree"])
+            self.assertEqual("Critic", matches["inflight#02"]["phase"])
+            self.assertEqual("/tmp/repo.gantry-inflight-02", matches["inflight#02"]["worktree"])
+
     def test_preflight_derives_corrections_spent_from_inflight_refutations_and_resumes_at_the_ceiling(self) -> None:
         # Covers SKILL.md's documented derivation rule: `runlog.py inflight` reports only `run`, `issue`,
         # `phase` and `worktree` (plus Run-level metadata) — never `correctionsSpent` or `branch` — so this
@@ -1417,6 +1460,192 @@ Spec: `.scratch/planned/spec.md`
             finally:
                 subprocess.run(["git", "worktree", "remove", "--force", str(issue_worktree)], cwd=root, check=False)
 
+    def derive_corrections_spent(self, events: list[dict], issue_ref: str) -> int:
+        """Apply SKILL.md's documented derivation rule to one Run's own event log."""
+        resumed = next((event for event in events if event["event"] == "run.resumed"), None)
+        base = resumed["data"].get("correctionsSpent", 0) if resumed else 0
+        started_corrections = 0
+        for index, event in enumerate(events):
+            if event["event"] != "refutation" or event.get("issue") != issue_ref:
+                continue
+            later = events[index + 1:]
+            if any(
+                later_event["event"] == "phase.started"
+                and later_event.get("issue") == issue_ref
+                and later_event.get("phase") == "Implement"
+                for later_event in later
+            ):
+                started_corrections += 1
+        return base + started_corrections
+
+    def test_round_workflow_chained_resume_accumulates_corrections_spent_across_runs(self) -> None:
+        # Covers feedback item 3: a chain of three Runs, each resuming the last, where the documented
+        # derivation rule (`run.resumed.data.correctionsSpent` plus refutations that actually started a
+        # correction pass) must be applied fresh to each Run's own log and carried forward explicitly.
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "chained#01", "ready-for-agent")
+            self.write_roadmap(root)
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+
+            issue_branch = "gantry/chained-01"
+            issue_worktree = Path(f"{root}.gantry-chained-01")
+            subprocess.run(["git", "worktree", "add", "--quiet", "-b", issue_branch, str(issue_worktree), "HEAD"], cwd=root, check=True)
+
+            state_root = Path(state_dir)
+            unit_id = "fefefefefefe"
+
+            try:
+                # Run1: a genuinely interrupted Run with one refutation that already started a
+                # correction pass (a later `phase.started` Implement for the same Issue).
+                run1_id = "run-chained-1"
+                self.append_runlog_event(state_root, unit_id, run1_id, {
+                    "ts": "2026-09-13T09:00:00Z", "run": run1_id, "event": "run.started",
+                    "data": {"repositoryRoot": str(root), "policyHash": "policy1", "tier": "reference", "staleAfterSeconds": 900},
+                })
+                self.append_runlog_event(state_root, unit_id, run1_id, {
+                    "ts": "2026-09-13T09:01:00Z", "run": run1_id, "event": "phase.started",
+                    "issue": "chained#01", "phase": "Implement", "data": {"worktree": str(issue_worktree)},
+                })
+                self.append_runlog_event(state_root, unit_id, run1_id, {
+                    "ts": "2026-09-13T09:02:00Z", "run": run1_id, "event": "refutation",
+                    "issue": "chained#01", "phase": "Critic", "data": {"attempt": 1, "refutations": ["first refutation"]},
+                })
+                self.append_runlog_event(state_root, unit_id, run1_id, {
+                    "ts": "2026-09-13T09:03:00Z", "run": run1_id, "event": "phase.started",
+                    "issue": "chained#01", "phase": "Implement", "data": {"worktree": str(issue_worktree)},
+                })
+                # No phase.finished, run.cancelled, or run.finished: Run1 is interrupted mid-correction.
+
+                run1_events = self.read_run_log_events(state_root, unit_id, run1_id)
+                run1_corrections = self.derive_corrections_spent(run1_events, "chained#01")
+                self.assertEqual(1, run1_corrections)
+
+                # Run2 resumes Run1, carrying the derived correctionsSpent forward explicitly, and its
+                # Critic refutes twice before the correction ceiling (budget 2) is reached.
+                run2_id = "run-chained-2"
+                run2 = self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": 1,
+                        "issues": [{"ref": "chained#01", "path": str(issue.relative_to(root)), "title": "Chained", "specPath": ".scratch/chained/spec.md"}],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": "gantry/chained",
+                        "baseRef": "HEAD",
+                        "isolate": True,
+                        "correctionBudget": 2,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                        "paths": {},
+                        "date": "2026-09-13",
+                        "commandMode": "real",
+                        "runId": run2_id,
+                        "unitId": unit_id,
+                        "stateRoot": str(state_root),
+                        "tier": "reference",
+                        "issueBranch": issue_branch,
+                        "issueWorktree": str(issue_worktree),
+                        "priorRun": {
+                            "run": run1_id,
+                            "worktree": str(issue_worktree),
+                            "issue": "chained#01",
+                            "correctionsSpent": run1_corrections,
+                            "policyHash": "policy1",
+                        },
+                        "criticResults": [
+                            {
+                                "complete": False, "criteria": [], "gatesVerdict": "fail",
+                                "gateResult": {"verdict": "fail"}, "gateFailures": ["still not proven"],
+                                "refutations": ["second refutation"], "requiredFixes": ["add real evidence"],
+                                "decisionsForOperator": [],
+                            },
+                            {
+                                "complete": False, "criteria": [], "gatesVerdict": "fail",
+                                "gateResult": {"verdict": "fail"}, "gateFailures": ["still not proven"],
+                                "refutations": ["third refutation"], "requiredFixes": ["add more evidence"],
+                                "decisionsForOperator": [],
+                            },
+                        ],
+                    },
+                )
+
+                delivery2 = run2["result"]["results"][0]
+                self.assertEqual("refuted", delivery2["outcome"])
+                self.assertEqual(2, delivery2["corrections"])
+                critic_calls_run2 = [call for call in run2["calls"] if call["label"].startswith("critic:")]
+                self.assertEqual(2, len(critic_calls_run2))
+
+                run2_events = self.read_run_log_events(state_root, unit_id, run2_id)
+                resumed2 = next(event for event in run2_events if event["event"] == "run.resumed")
+                self.assertEqual(1, resumed2["data"]["correctionsSpent"])
+                self.assertEqual(run1_id, resumed2["data"]["priorRun"])
+                self.assertEqual("chained#01", resumed2["data"]["issue"])
+
+                run2_corrections = self.derive_corrections_spent(run2_events, "chained#01")
+                self.assertEqual(2, run2_corrections)
+                blocked2 = next(event for event in run2_events if event["event"] == "issue.blocked")
+                self.assertEqual(2, blocked2["data"]["corrections"])
+
+                # Run3 resumes Run2 with the derived ceiling already spent: zero correction passes,
+                # exactly one initial Implement call and one Critic call, then the Issue blocks again.
+                run3_id = "run-chained-3"
+                run3 = self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": 1,
+                        "issues": [{"ref": "chained#01", "path": str(issue.relative_to(root)), "title": "Chained", "specPath": ".scratch/chained/spec.md"}],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": "gantry/chained",
+                        "baseRef": "HEAD",
+                        "isolate": True,
+                        "correctionBudget": 2,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                        "paths": {},
+                        "date": "2026-09-13",
+                        "commandMode": "real",
+                        "runId": run3_id,
+                        "unitId": unit_id,
+                        "stateRoot": str(state_root),
+                        "tier": "reference",
+                        "issueBranch": issue_branch,
+                        "issueWorktree": str(issue_worktree),
+                        "priorRun": {
+                            "run": run2_id,
+                            "worktree": str(issue_worktree),
+                            "issue": "chained#01",
+                            "correctionsSpent": run2_corrections,
+                            "policyHash": "policy1",
+                        },
+                        "criticResult": {
+                            "complete": False, "criteria": [], "gatesVerdict": "fail",
+                            "gateResult": {"verdict": "fail"}, "gateFailures": ["still not proven"],
+                            "refutations": ["fourth refutation"], "requiredFixes": ["add even more evidence"],
+                            "decisionsForOperator": [],
+                        },
+                    },
+                )
+
+                delivery3 = run3["result"]["results"][0]
+                self.assertEqual("refuted", delivery3["outcome"])
+                self.assertEqual(2, delivery3["corrections"])
+                implement_calls_run3 = [call for call in run3["calls"] if call["label"].startswith("implement:")]
+                critic_calls_run3 = [call for call in run3["calls"] if call["label"].startswith("critic:")]
+                self.assertEqual(1, len(implement_calls_run3))
+                self.assertEqual(1, len(critic_calls_run3))
+
+                run3_events = self.read_run_log_events(state_root, unit_id, run3_id)
+                blocked3 = next(event for event in run3_events if event["event"] == "issue.blocked")
+                self.assertEqual(2, blocked3["data"]["corrections"])
+            finally:
+                subprocess.run(["git", "worktree", "remove", "--force", str(issue_worktree)], cwd=root, check=False)
+
     def test_round_workflow_isolated_multi_issue_round_stops_the_run_on_a_red_post_merge_gate(self) -> None:
         with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
             root = Path(temp)
@@ -1495,6 +1724,30 @@ Spec: `.scratch/planned/spec.md`
                 self.assertEqual("multi#02", cancelled["issue"])
                 self.assertEqual("integration_gate_failed", cancelled["data"]["reason"])
                 self.assertNotIn("run.finished", [event["event"] for event in events])
+
+                # Serial integration: exactly one `--no-ff` merge and one gate run per Issue, in Issue
+                # order, and merges/gates never run again after the red post-merge gate stops the Run.
+                merge_indexes = [
+                    index for index, call in enumerate(run["commandCalls"])
+                    if "git merge --no-ff" in call["command"]
+                ]
+                gate_indexes = [
+                    index for index, call in enumerate(run["commandCalls"])
+                    if 'gates.py" --run' in call["command"]
+                ]
+                self.assertEqual(2, len(merge_indexes))
+                self.assertEqual(2, len(gate_indexes))
+                self.assertIn('gantry/multi-01', run["commandCalls"][merge_indexes[0]]["command"])
+                self.assertIn('gantry/multi-02', run["commandCalls"][merge_indexes[1]]["command"])
+                merge_one, merge_two = merge_indexes
+                gate_one, gate_two = gate_indexes
+                self.assertLess(merge_one, gate_one)
+                self.assertLess(gate_one, merge_two)
+                self.assertLess(merge_two, gate_two)
+                # No further merge or gate command runs after the red post-merge gate stops the Run.
+                after_red_gate = run["commandCalls"][gate_two + 1:]
+                self.assertFalse(any("git merge --no-ff" in call["command"] for call in after_red_gate))
+                self.assertFalse(any('gates.py" --run' in call["command"] for call in after_red_gate))
             finally:
                 subprocess.run(["git", "worktree", "remove", "--force", str(worktree_one)], cwd=root, check=False)
                 subprocess.run(["git", "worktree", "remove", "--force", str(worktree_two)], cwd=root, check=False)
