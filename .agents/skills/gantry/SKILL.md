@@ -60,7 +60,9 @@ Every script provides `--help`, and data-producing paths support `--json`.
   and review-finding events already recorded in the Run log and drafts a lesson candidate for each
   problem that recurred across Issues or attempts. The final Run report lists every lesson candidate,
   with its evidence and proposed target, as an operator decision: the workflow never writes a candidate
-  into `AGENTS.md`, `CONTEXT.md`, a template or policy on its own.
+  into `AGENTS.md`, `CONTEXT.md`, a template or policy on its own. Pass `args.isLastRound = true` and
+  `args.learnerRunLogs` only for that final frontier round; `learnerRunLogs` is the current Run's own
+  Run-log path(s), normally `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`.
 
 ## Harness-neutral execution
 

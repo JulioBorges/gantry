@@ -171,6 +171,24 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             round_workflow.index("## Isolation and integration"),
         )
 
+    def test_round_workflow_documents_last_round_learner_args(self) -> None:
+        round_workflow = (SKILL_DIR / "reference" / "round-workflow.md").read_text(encoding="utf-8")
+        caller_args_section = round_workflow[: round_workflow.index("## Per-Issue roles")]
+        self.assertIn("`args.isLastRound`", caller_args_section)
+        self.assertIn("`args.learnerRunLogs`", caller_args_section)
+        self.assertIn("`args.models.learn`", caller_args_section)
+        self.assertIn("falls back to `args.models.critic`", caller_args_section)
+
+    def test_round_workflow_declares_the_learn_phase_in_meta(self) -> None:
+        round_workflow = (SKILL_DIR / "reference" / "round-workflow.md").read_text(encoding="utf-8")
+        self.assertIn("{ title: 'Learn', detail: 'optional recurring lesson candidates for the operator' }", round_workflow)
+
+    def test_skill_instructs_orchestrator_to_pass_learner_args(self) -> None:
+        skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("args.isLastRound = true", skill)
+        self.assertIn("args.learnerRunLogs", skill)
+        self.assertIn("~/.gantry/state/<unit-id>/runs/<run-id>.jsonl", skill)
+
 
 if __name__ == "__main__":
     unittest.main()

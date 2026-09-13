@@ -3,7 +3,10 @@
 One round contains only Issues selected by `frontier.py` whose dependency readiness is satisfied. The
 caller supplies `args.round`, `args.issues`, `args.models`, `args.branch`, `args.baseRef`,
 `args.isolate`, `args.correctionBudget`, `args.skillDir`, `args.repoRoot`, effective `args.policy` and
-rendered `args.paths`.
+rendered `args.paths`. For the last round of a Run, the caller also supplies `args.isLastRound` (boolean,
+true only for that final frontier round) and `args.learnerRunLogs` (an array of Run-log JSONL paths,
+normally just the current Run's `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`), so the optional Learner
+phase below can run; `args.models.learn` is optional and falls back to `args.models.critic` when absent.
 The host supplies its command runner as `runCommand(command, { cwd })`; integration cannot proceed
 without it.
 
@@ -71,6 +74,7 @@ export const meta = {
     { title: 'Implement', detail: 'one TDD Implementer per Issue' },
     { title: 'Review', detail: 'standards and Spec, with one fix pass' },
     { title: 'Critic', detail: 'adversarial verification and bounded corrections' },
+    { title: 'Learn', detail: 'optional recurring lesson candidates for the operator' },
   ],
 }
 
