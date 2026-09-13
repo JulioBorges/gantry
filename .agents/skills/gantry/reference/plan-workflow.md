@@ -66,24 +66,39 @@ const targetText = t.kind === 'goal' ? `the goal "${t.goal}" (new slug: ${t.slug
   : t.kind === 'issue' ? `the Issue at ${t.issuePath} (Spec ${t.specPath})`
   : `the Spec at ${t.specPath} (slug ${t.slug})`
 
-const PLAN_SCHEMA = {
-  type: 'object',
-  properties: {
-    filesWritten: { type: 'array', items: { type: 'string' } },
-    issues: { type: 'array', items: { type: 'object' } },
-    roadmapAdditions: { type: 'array', items: { type: 'string' } },
-    openDecisions: { type: 'array', items: { type: 'string' } },
-  },
-  required: ['filesWritten', 'issues', 'roadmapAdditions'],
+async function roleSchema(role) {
+  const result = await runCommand(
+    `python3 "${scripts}/result.py" --role "${role}" --schema`,
+    { cwd: A.repoRoot },
+  )
+  if (!result || result.exitCode !== 0) throw new Error(`could not load ${role} result schema`)
+  return JSON.parse(result.stdout)
 }
-const CRITIQUE_SCHEMA = {
-  type: 'object',
-  properties: {
-    acceptable: { type: 'boolean' },
-    problems: { type: 'array', items: { type: 'object' } },
-    frontierErrors: { type: 'array', items: { type: 'string' } },
-  },
-  required: ['acceptable', 'problems', 'frontierErrors'],
+
+async function validRoleResult(role, result) {
+  if (!result) return false
+  if (A.structuredOutput === true) return true
+  if (typeof runCommand !== 'function') return true
+  const validation = await runCommand(
+    `python3 "${scripts}/result.py" --role "${role}" --json`,
+    { cwd: A.repoRoot, input: JSON.stringify(result) },
+  )
+  return Boolean(validation && validation.exitCode === 0)
+}
+
+async function requestRole(role, prompt, options) {
+  const native = A.structuredOutput === true
+  const result = await agent(prompt, {
+    ...options,
+    ...(native ? { schema: await roleSchema(role) } : {}),
+  })
+  if (await validRoleResult(role, result)) return result
+  const retry = await agent(`${prompt}\nYour prior result was invalid. Return the complete ${role} result contract.`, {
+    ...options,
+    label: `${options.label}:retry`,
+    ...(native ? { schema: await roleSchema(role) } : {}),
+  })
+  return (await validRoleResult(role, retry)) ? retry : null
 }
 
 function planPrompt(feedback) {
@@ -127,21 +142,51 @@ Return owned and consumed contracts, settled decisions, and the testing seam.`, 
 ])
 
 phase('Plan')
-let plan = await agent(planPrompt(null), {
-  label: 'plan', phase: 'Plan', schema: PLAN_SCHEMA, model: A.models.plan,
+let plan = await requestRole('planner', planPrompt(null), {
+  label: 'plan', phase: 'Plan', model: A.models.plan,
 })
+if (!plan) {
+  return {
+    target: t, plan: null, critique: null,
+    protocolFailure: { phase: 'Plan', role: 'planner' },
+    awaitingOperatorApproval: false, approved: false,
+  }
+}
 phase('Critique')
-let critique = plan && await agent(critiquePrompt(plan), {
-  label: 'critique', phase: 'Critique', schema: CRITIQUE_SCHEMA, model: A.models.critic,
+let critique = await requestRole('plan-critic', critiquePrompt(plan), {
+  label: 'critique', phase: 'Critique', model: A.models.critic,
 })
-if (plan && critique && !critique.acceptable) {
+if (!critique) {
+  return {
+    target: t, plan, critique: null,
+    protocolFailure: { phase: 'Critique', role: 'plan-critic' },
+    awaitingOperatorApproval: false, approved: false,
+  }
+}
+if (!critique.acceptable) {
   log(`plan refuted: ${critique.problems.length} problem(s) — one revision pass`)
-  plan = await agent(planPrompt(critique.problems), {
-    label: 'plan:revise', phase: 'Plan', schema: PLAN_SCHEMA, model: A.models.plan,
-  }) || plan
-  critique = await agent(critiquePrompt(plan), {
-    label: 'critique:2', phase: 'Critique', schema: CRITIQUE_SCHEMA, model: A.models.critic,
-  }) || critique
+  const revisedPlan = await requestRole('planner', planPrompt(critique.problems), {
+    label: 'plan:revise', phase: 'Plan', model: A.models.plan,
+  })
+  if (!revisedPlan) {
+    return {
+      target: t, plan, critique,
+      protocolFailure: { phase: 'Plan', role: 'planner' },
+      awaitingOperatorApproval: false, approved: false,
+    }
+  }
+  plan = revisedPlan
+  const revisedCritique = await requestRole('plan-critic', critiquePrompt(plan), {
+    label: 'critique:2', phase: 'Critique', model: A.models.critic,
+  })
+  if (!revisedCritique) {
+    return {
+      target: t, plan, critique: null,
+      protocolFailure: { phase: 'Critique', role: 'plan-critic' },
+      awaitingOperatorApproval: false, approved: false,
+    }
+  }
+  critique = revisedCritique
 }
 
 async function runApprovalCommand(command) {
