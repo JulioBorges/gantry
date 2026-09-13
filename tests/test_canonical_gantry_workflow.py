@@ -131,7 +131,8 @@ const runCommand = async (command, options = {{}}) => {{
     }};
   }}
   if (args.commandResults && args.commandResults.length) return args.commandResults.shift();
-  return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}' : '' }};
+  return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}'
+    : command.includes('/spec.py') ? '{{"valid":true}}' : '' }};
 }};
 const agent = async (prompt, options) => {{
   calls.push({{ label: options.label, prompt }});
@@ -209,7 +210,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             issue = self.write_issue(root, "sample#01", "ready-for-agent")
             self.write_roadmap(root)
 
-            for script in ("common.py", "frontier.py", "acceptance.py", "gates.py", "roadmap.py"):
+            for script in ("common.py", "frontier.py", "acceptance.py", "gates.py", "roadmap.py", "spec.py"):
                 result = self.run_script(root, script, "--help")
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertIn("usage:", result.stdout.lower())
@@ -247,6 +248,34 @@ Slice: `planned#01`
 
 - None
 """
+            spec = root / ".scratch" / "planned" / "spec.md"
+            spec.parent.mkdir(parents=True, exist_ok=True)
+            spec.write_text(
+                """# Spec: planned
+
+## Blueprint
+
+Planning is ready for structural validation.
+
+## Contract
+
+```gherkin
+Scenario: Plan an Issue
+  Given a valid Spec
+  When planning starts
+  Then the planner may write a draft
+```
+
+## Out of Scope
+
+- No implementation.
+
+## Changelog
+
+- 2026-09-13 — Added planning validation coverage.
+""",
+                encoding="utf-8",
+            )
             plan = self.run_workflow(
                 "plan-workflow.md",
                 {
@@ -300,10 +329,11 @@ Slice: `planned#01`
             self.assertFalse(approved["result"]["awaitingOperatorApproval"])
             self.assertEqual("ready-for-agent", parse_issue(draft).status)
             commands = [call["command"] for call in approved["commandCalls"]]
-            self.assertEqual(3, len(commands))
-            self.assertIn('roadmap.py" status planned#01 ready-for-agent', commands[0])
-            self.assertIn('roadmap.py" waves', commands[1])
-            self.assertIn('roadmap.py" check', commands[2])
+            self.assertEqual(4, len(commands))
+            self.assertIn('spec.py" --check', commands[0])
+            self.assertIn('roadmap.py" status planned#01 ready-for-agent', commands[1])
+            self.assertIn('roadmap.py" waves', commands[2])
+            self.assertIn('roadmap.py" check', commands[3])
             self.assertIn("planned#01", roadmap.read_text(encoding="utf-8"))
 
     def test_round_rejects_critic_completion_without_a_passing_gate(self) -> None:
@@ -779,7 +809,7 @@ Slice: `legacy#07`
             "sys",
         }
         self.assertEqual(
-            {"acceptance.py", "common.py", "frontier.py", "gates.py", "roadmap.py"},
+            {"acceptance.py", "common.py", "frontier.py", "gates.py", "roadmap.py", "spec.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         for script in sorted(SCRIPTS.glob("*.py")):

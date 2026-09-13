@@ -9,12 +9,14 @@ or any other value leaves the plan awaiting approval.
 
 ## Roles and sequence
 
-1. Run research in parallel: repository conventions, the Spec and settled decisions, and an exemplar Issue.
-2. The Planner writes vertical-slice Issues in the effective issue template, each with `Status: draft`,
+1. Validate the existing Spec with `spec.py --check` against its effective template. A failed structural
+   check stops planning before research or any planner write and reports every script finding to the operator.
+2. Run research in parallel: repository conventions, the Spec and settled decisions, and an exemplar Issue.
+3. The Planner writes vertical-slice Issues in the effective issue template, each with `Status: draft`,
    observable acceptance criteria and real non-cyclic blockers.
-3. The Plan Critic attempts to refute granularity, coverage, criterion observability, contract ownership,
+4. The Plan Critic attempts to refute granularity, coverage, criterion observability, contract ownership,
    format and `frontier.py --scope <slug> --include-parked`.
-4. Allow exactly one Planner revision when refuted, then present the result and **stop for explicit operator
+5. Allow exactly one Planner revision when refuted, then present the result and **stop for explicit operator
    approval**.
 
 ## Planner contract
@@ -66,6 +68,27 @@ const targetText = t.kind === 'goal' ? `the goal "${t.goal}" (new slug: ${t.slug
   : t.kind === 'issue' ? `the Issue at ${t.issuePath} (Spec ${t.specPath})`
   : `the Spec at ${t.specPath} (slug ${t.slug})`
 
+async function validateSpecBeforePlanning() {
+  if (t.kind === 'goal') return null
+  const specPath = t.specPath || paths.specPath
+  const check = await runCommand(`python3 "${scripts}/spec.py" --check "${specPath}" --json`, { cwd: A.repoRoot })
+  let findings = {}
+  try {
+    findings = JSON.parse(check.stdout || '{}')
+  } catch {
+    findings = { error: 'spec.py did not return JSON findings' }
+  }
+  if (check && check.exitCode === 0 && findings.valid === true) return findings
+  const details = ['missing', 'out_of_order', 'placeholders', 'malformed_scenarios']
+    .flatMap((key) => findings[key] || [])
+    .map((item) => typeof item === 'string' ? item : JSON.stringify(item))
+  return {
+    ...findings,
+    valid: false,
+    report: `Spec structural validation failed: ${details.join('; ') || findings.error || check.stderr || 'unknown finding'}`,
+  }
+}
+
 const PLAN_SCHEMA = {
   type: 'object',
   properties: {
@@ -113,6 +136,16 @@ dependencies, and incomplete Spec coverage. Run:
 and report every graph error. Confirm every new Issue remains \`Status: draft\`; neither ROADMAP.md nor
 ready-for-agent state may be written before explicit operator approval. Do not edit files.
 Return acceptable, problems (with actionable fixes), and frontierErrors as structured output.`
+}
+
+phase('Validation')
+const structuralValidation = await validateSpecBeforePlanning()
+if (structuralValidation && !structuralValidation.valid) {
+  return {
+    target: t, structuralValidation, plan: null, critique: null,
+    awaitingOperatorApproval: true, blocked: 'spec_structural_validation_failed',
+    report: structuralValidation.report,
+  }
 }
 
 phase('Research')
@@ -163,5 +196,5 @@ async function approvePlan() {
 }
 
 const approved = await approvePlan()
-return { target: t, plan, critique, awaitingOperatorApproval: !approved, approved }
+return { target: t, structuralValidation, plan, critique, awaitingOperatorApproval: !approved, approved }
 ```
