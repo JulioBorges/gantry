@@ -153,6 +153,24 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             self.assertEqual([], result["result"]["candidates"])
             self.assertFalse(any(call["label"] == "learn" for call in result["calls"]))
 
+    def test_skill_reports_lesson_candidates_as_operator_decisions(self) -> None:
+        skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("optional Learner", skill)
+        self.assertIn("operator decision", skill)
+        self.assertIn(
+            "the workflow never writes a candidate\n  into `AGENTS.md`, `CONTEXT.md`, a template or policy on its own.",
+            skill,
+        )
+
+    def test_round_workflow_documents_the_learner_phase_read_scope(self) -> None:
+        round_workflow = (SKILL_DIR / "reference" / "round-workflow.md").read_text(encoding="utf-8")
+        self.assertIn("## Learner phase (optional)", round_workflow)
+        self.assertIn("never source files, `AGENTS.md`, `CONTEXT.md`, a template or", round_workflow)
+        self.assertLess(
+            round_workflow.index("## Learner phase (optional)"),
+            round_workflow.index("## Isolation and integration"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -56,6 +56,11 @@ Every script provides `--help`, and data-producing paths support `--json`.
   Only after explicit Cleanup Authorization may the workflow pass that unchanged JSON to
   `cleanup.py --yes --plan-file <authorized-plan.json>`; it revalidates the plan against the repository
   state and refuses any divergence. The workflow never executes `cleanup.py --yes` automatically.
+- After the last round, the optional Learner (`reference/round-workflow.md`) reads only the refutation
+  and review-finding events already recorded in the Run log and drafts a lesson candidate for each
+  problem that recurred across Issues or attempts. The final Run report lists every lesson candidate,
+  with its evidence and proposed target, as an operator decision: the workflow never writes a candidate
+  into `AGENTS.md`, `CONTEXT.md`, a template or policy on its own.
 
 ## Harness-neutral execution
 
