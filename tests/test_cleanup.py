@@ -56,8 +56,10 @@ Slice: `sample#{number:02d}`
             encoding="utf-8",
         )
 
-    def add_issue_worktree(self, root: Path, number: int) -> tuple[str, Path]:
-        branch = f"gantry/sample-{number:02d}"
+    def add_issue_worktree(
+        self, root: Path, number: int, branch_template: str = "gantry/{spec}-{number:02d}"
+    ) -> tuple[str, Path]:
+        branch = branch_template.format(spec="sample", number=number)
         path = root.parent / f"sample-{number:02d}"
         self.git(root, "worktree", "add", "--quiet", "-b", branch, str(path), "gantry/sample-run")
         (path / f"{number:02d}.txt").write_text(f"{number}\n", encoding="utf-8")
@@ -65,7 +67,9 @@ Slice: `sample#{number:02d}`
         self.git(path, "commit", "--quiet", "-m", f"issue {number:02d}")
         return branch, path
 
-    def setUp_fixture(self, root: Path) -> dict[str, object]:
+    def setUp_fixture(
+        self, root: Path, branch_template: str = "gantry/{spec}-{number:02d}"
+    ) -> dict[str, object]:
         self.git(root, "init", "--quiet")
         self.git(root, "config", "user.email", "gantry@example.test")
         self.git(root, "config", "user.name", "Gantry Test")
@@ -85,7 +89,7 @@ Slice: `sample#{number:02d}`
 
         worktrees = {}
         for number in range(1, 6):
-            branch, path = self.add_issue_worktree(root, number)
+            branch, path = self.add_issue_worktree(root, number, branch_template)
             worktrees[number] = (branch, path)
 
         done_branch, _ = worktrees[1]
@@ -119,6 +123,28 @@ Slice: `sample#{number:02d}`
             self.assertEqual(before_worktrees, self.git(root, "worktree", "list", "--porcelain"))
             self.assertTrue((fixture["unrelated"]).exists())
 
+    def test_plan_uses_the_configured_issue_branch_template(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "repo"
+            root.mkdir()
+            config = root / ".gantry" / "config.json"
+            config.parent.mkdir()
+            config.write_text(
+                '{"git":{"issueBranch":"issues/{spec}/{number:02d}"}}',
+                encoding="utf-8",
+            )
+            fixture = self.setUp_fixture(root, "issues/{spec}/{number:02d}")
+            expected_branch, expected_path = fixture["worktrees"][1]
+
+            result = self.run_cleanup(root, "--plan", "--json")
+
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            plan = json.loads(result.stdout)
+            self.assertEqual(
+                [{"issue": "sample#01", "path": str(expected_path.resolve()), "branch": expected_branch}],
+                plan["worktrees"],
+            )
+
     def test_yes_removes_exactly_the_planned_clean_worktree_and_branch(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "repo"
@@ -128,8 +154,10 @@ Slice: `sample#{number:02d}`
             plan_result = self.run_cleanup(root, "--plan", "--json")
             self.assertEqual(0, plan_result.returncode, plan_result.stderr)
             plan = json.loads(plan_result.stdout)
+            plan_path = root / "authorized-cleanup-plan.json"
+            plan_path.write_text(plan_result.stdout, encoding="utf-8")
 
-            result = self.run_cleanup(root, "--yes", "--json")
+            result = self.run_cleanup(root, "--yes", "--plan-file", str(plan_path), "--json")
 
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             executed = json.loads(result.stdout)
@@ -152,6 +180,43 @@ Slice: `sample#{number:02d}`
                 self.git(root, "rev-parse", "--verify", protected_branch)
             self.assertTrue(fixture["unrelated"].exists())
             self.git(root, "rev-parse", "--verify", "topic/unrelated")
+
+    def test_yes_refuses_a_plan_when_eligible_objects_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "repo"
+            root.mkdir()
+            fixture = self.setUp_fixture(root)
+            branch, path = fixture["worktrees"][1]
+            plan_result = self.run_cleanup(root, "--plan", "--json")
+            self.assertEqual(0, plan_result.returncode, plan_result.stderr)
+            plan_path = root / "authorized-cleanup-plan.json"
+            plan_path.write_text(plan_result.stdout, encoding="utf-8")
+
+            new_branch, new_path = fixture["worktrees"][4]
+            self.git(root, "merge", "--no-ff", "--quiet", new_branch, "-m", "merge new done issue")
+
+            result = self.run_cleanup(root, "--yes", "--plan-file", str(plan_path), "--json")
+
+            self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+            self.assertIn("no longer matches", json.loads(result.stderr)["error"])
+            self.assertTrue(path.exists())
+            self.assertTrue(new_path.exists())
+            self.git(root, "rev-parse", "--verify", branch)
+            self.git(root, "rev-parse", "--verify", new_branch)
+
+    def test_yes_requires_an_authorized_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "repo"
+            root.mkdir()
+            fixture = self.setUp_fixture(root)
+            branch, path = fixture["worktrees"][1]
+
+            result = self.run_cleanup(root, "--yes", "--json")
+
+            self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+            self.assertIn("requires --plan-file", json.loads(result.stderr)["error"])
+            self.assertTrue(path.exists())
+            self.git(root, "rev-parse", "--verify", branch)
 
     def test_help_and_implementation_use_standard_library_only(self) -> None:
         result = self.run_cleanup(REPO_ROOT, "--help")

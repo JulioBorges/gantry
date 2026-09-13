@@ -20,7 +20,11 @@ DEFAULT_POLICY = {
     },
     "templates": {"dir": ".gantry/templates", "headingMap": {}},
     "checks": [],
-    "git": {"target": "main", "prefix": "gantry/"},
+    "git": {
+        "target": "main",
+        "prefix": "gantry/",
+        "issueBranch": "{prefix}{spec}-{number:02d}",
+    },
     "hooks": {"record": [], "deny": []},
     "budget": {"corrections": 2, "contextShare": 0.15},
     "dashboard": {"staleAfterSeconds": 900},
@@ -210,6 +214,22 @@ def parse_issue(path: Path) -> Issue:
     status = STATUS_RE.search(text)
     return Issue(ref, ref_spec, int(raw_number), path, title.group(1) if title else path.stem,
                  status.group(1) if status else "unknown", parse_blocked_by(text, ref_spec), parse_criteria(text))
+
+
+def issue_branch(policy: dict, issue: Issue) -> str:
+    """Render the policy's branch name for an Issue."""
+    template = policy["git"]["issueBranch"]
+    try:
+        branch = template.format(
+            prefix=policy["git"]["prefix"],
+            spec=issue.spec,
+            number=issue.number,
+        )
+    except (AttributeError, KeyError, ValueError) as exc:
+        raise ValueError("git.issueBranch must use only {prefix}, {spec}, and {number}") from exc
+    if not branch:
+        raise ValueError("git.issueBranch must render a non-empty branch name")
+    return branch
 
 
 def load_issues(scratch: Path) -> dict[str, Issue]:
