@@ -57,15 +57,23 @@ Spec: `.scratch/sample/spec.md`
             check=False,
         )
 
-    def test_estimate_includes_only_issue_spec_and_explicitly_named_files(self) -> None:
+    def test_estimate_includes_only_issue_spec_and_explicitly_listed_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / ".git").mkdir()
             named = root / "src" / "named.txt"
             named.parent.mkdir()
             named.write_bytes(b"n" * 20)
-            (root / "src" / "unlisted.txt").write_bytes(b"x" * 100_000)
-            issue = self.write_issue(root, "Read `src/named.txt` before implementing.")
+            incidental = root / "src" / "incidental.txt"
+            incidental.write_bytes(b"x" * 100_000)
+            issue = self.write_issue(
+                root,
+                """### Files to read
+
+- `src/named.txt`
+
+Do not read `src/incidental.txt`; it is only an example.""",
+            )
 
             result = self.run_budget(root, issue)
 
@@ -83,7 +91,7 @@ Spec: `.scratch/sample/spec.md`
             expected_bytes = sum((root / path).stat().st_size for path in paths)
             self.assertEqual(expected_bytes, payload["bytes"])
             self.assertEqual(expected_bytes / 4, payload["estimatedTokens"])
-            self.assertNotIn("src/unlisted.txt", paths)
+            self.assertNotIn("src/incidental.txt", paths)
 
     def test_policy_context_share_overrides_default(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -119,6 +127,10 @@ Spec: `.scratch/sample/spec.md`
                 payload = json.loads(capability.read_text(encoding="utf-8"))
                 self.assertTrue(required.issubset(payload))
                 self.assertTrue(payload["models"])
+                self.assertFalse(
+                    payload["parallel_round"] and not payload["worktree_isolation"],
+                    "parallel rounds require isolated worktrees",
+                )
                 for model, values in payload["models"].items():
                     self.assertIsInstance(model, str)
                     self.assertEqual({"contextWindow"}, set(values))
@@ -151,7 +163,12 @@ Spec: `.scratch/sample/spec.md`
             named = root / "src" / "large.txt"
             named.parent.mkdir()
             named.write_bytes(b"x" * 200_000)
-            issue = self.write_issue(root, "Read `src/large.txt` before implementing.")
+            issue = self.write_issue(
+                root,
+                """### Files to read
+
+- `src/large.txt`""",
+            )
 
             started = time.monotonic()
             result = self.run_budget(root, issue)

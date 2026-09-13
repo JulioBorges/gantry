@@ -4,7 +4,7 @@
   "structured_output": false,
   "worktree_isolation": false,
   "per_role_model": true,
-  "parallel_round": true,
+  "parallel_round": false,
   "skills_path": ".agents/skills",
   "hook_events": ["tool.execute.before", "session.compacted"],
   "payload_fields": ["tool", "args", "sessionID"],

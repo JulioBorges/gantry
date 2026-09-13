@@ -8,9 +8,10 @@ import re
 import sys
 from pathlib import Path
 
-from common import artifact_path, parse_issue, repo_root, resolve_policy
+from common import artifact_path, parse_issue, repo_root, resolve_policy, section
 
-CODE_SPAN_RE = re.compile(r"`([^`\r\n]+)`")
+FILES_TO_READ_HEADING_RE = re.compile(r"^###\s+Files to read\s*$", re.IGNORECASE | re.MULTILINE)
+LISTED_FILE_RE = re.compile(r"^\s*-\s+`([^`\r\n]+)`\s*$")
 
 
 class ConfigurationError(ValueError):
@@ -30,12 +31,21 @@ def relative_file(root: Path, value: str) -> Path | None:
     return path if path.is_file() else None
 
 
-def named_files(issue_path: Path, root: Path) -> list[Path]:
-    """Find repository files named in Markdown code spans, excluding duplicates."""
+def explicitly_listed_files(issue_path: Path, root: Path) -> list[Path]:
+    """Return files listed exactly under ``### Files to read`` in What to build."""
     text = issue_path.read_text(encoding="utf-8")
+    what_to_build = section(text, "What to build")
+    heading = FILES_TO_READ_HEADING_RE.search(what_to_build)
+    if heading is None:
+        return []
+    listing = what_to_build[heading.end():]
+    next_heading = re.search(r"^#{1,3}\s+", listing, re.MULTILINE)
+    if next_heading:
+        listing = listing[:next_heading.start()]
     paths: dict[Path, None] = {}
-    for value in CODE_SPAN_RE.findall(text):
-        path = relative_file(root, value)
+    for line in listing.splitlines():
+        match = LISTED_FILE_RE.fullmatch(line)
+        path = relative_file(root, match.group(1)) if match else None
         if path is not None:
             paths[path] = None
     return sorted(paths, key=lambda path: path.relative_to(root).as_posix())
@@ -81,7 +91,7 @@ def estimate(issue_path: Path, model: str, root: Path, capabilities_dir: Path) -
         raise ConfigurationError("budget.contextShare must be a number greater than 0 and at most 1")
 
     paths: dict[Path, None] = {issue_path.resolve(): None, spec_path: None}
-    for path in named_files(issue_path, root):
+    for path in explicitly_listed_files(issue_path, root):
         paths[path] = None
     ordered = [issue_path.resolve(), spec_path]
     ordered.extend(sorted((path for path in paths if path not in {issue_path.resolve(), spec_path}),
