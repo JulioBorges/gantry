@@ -1315,6 +1315,7 @@ Slice: `legacy#07`
             "os",
             "pathlib",
             "re",
+            "runlog",
             "shutil",
             "subprocess",
             "sys",
@@ -1322,7 +1323,7 @@ Slice: `legacy#07`
             "typing",
         }
         self.assertEqual(
-            {"acceptance.py", "budget.py", "cleanup.py", "common.py", "frontier.py", "gates.py", "result.py", "roadmap.py", "runlog.py", "spec.py"},
+            {"acceptance.py", "budget.py", "cleanup.py", "common.py", "frontier.py", "gates.py", "learner.py", "result.py", "roadmap.py", "runlog.py", "spec.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         for script in sorted(SCRIPTS.glob("*.py")):
