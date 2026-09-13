@@ -1,7 +1,7 @@
 # Differential quality gates with RFC 6901 mappings
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-migration#07`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -16,10 +16,10 @@ Extend `.agents/skills/gantry/scripts/gates.py` and policy resolution for declar
 
 ## Acceptance criteria
 
-- [ ] A self-contained gate test repository runs `gates.py --run --diff-base <base> --json` and reports a new delivery finding under `new` with `verdict: fail`, a same-identity severity increase from `warning` to `error` under `aggravated` with `verdict: fail`, base-only findings under `resolved`, and same-or-lower delivery findings under `preexisting` with `verdict: pass`.
-- [ ] Tests prove RFC 6901 escape handling, invalid or missing pointers and severities fail gate configuration, file paths normalize to repository-relative form, and a duplicate `(rule, file, message)` in base or delivery returns exit 1 with `verdict: fail` and an `invalid` entry naming both source and identity.
-- [ ] Absolute checks remain exit-code pass/fail, `no_gates` still blocks completion unless the Issue creates and proves its gates, and the Critic template consumes JSON gate results rather than paraphrasing them.
-- [ ] The Spec Changelog receives an English entry in the same merge, and the self-contained linter seam plus `gates.py` tests run without third-party imports in Gantry scripts.
+- [x] A self-contained gate test repository runs `gates.py --run --diff-base <base> --json` and reports a new delivery finding under `new` with `verdict: fail`, a same-identity severity increase from `warning` to `error` under `aggravated` with `verdict: fail`, base-only findings under `resolved`, and same-or-lower delivery findings under `preexisting` with `verdict: pass`.
+- [x] Tests prove RFC 6901 escape handling, invalid or missing pointers and severities fail gate configuration, file paths normalize to repository-relative form, and a duplicate `(rule, file, message)` in base or delivery returns exit 1 with `verdict: fail` and an `invalid` entry naming both source and identity.
+- [x] Absolute checks remain exit-code pass/fail, `no_gates` still blocks completion unless the Issue creates and proves its gates, and the Critic template consumes JSON gate results rather than paraphrasing them.
+- [x] The Spec Changelog receives an English entry in the same merge, and the self-contained linter seam plus `gates.py` tests run without third-party imports in Gantry scripts.
 
 ## Blocked by
 

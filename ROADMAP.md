@@ -36,7 +36,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **2 / 18** |
+| Issues completed | **3 / 18** |
 | Specs completed | **0 / 1** |
 | Execution waves | **7** |
 
@@ -114,7 +114,7 @@ longer exist.
 
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
-| 01 | `gantry-migration` | 2/18 | 0–6 |
+| 01 | `gantry-migration` | 3/18 | 0–6 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -134,7 +134,7 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-migration#02`** — Canonical Gantry workflow skill
   <br>↳ blocked by: gantry-migration#01
 
-### Wave 2 — 0/6 done
+### Wave 2 — 1/6 done
 
 - [ ] **`gantry-migration#03`** — Effective-template Spec validation
   <br>↳ blocked by: gantry-migration#02
@@ -142,7 +142,7 @@ of the others, and an issue never waits on anything in its own wave or a later o
   <br>↳ blocked by: gantry-migration#02
 - [ ] **`gantry-migration#06`** — Result contracts and protocol failures
   <br>↳ blocked by: gantry-migration#02
-- [ ] **`gantry-migration#07`** — Differential quality gates with RFC 6901 mappings
+- [x] **`gantry-migration#07`** — Differential quality gates with RFC 6901 mappings
   <br>↳ blocked by: gantry-migration#02
 - [ ] **`gantry-migration#08`** — Append-only Run log and snapshots
   <br>↳ blocked by: gantry-migration#02
