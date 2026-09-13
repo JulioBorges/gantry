@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -295,7 +296,43 @@ class GuardHookTests(unittest.TestCase):
             )
             self.assertEqual(0, no_run_context.returncode)
 
-    def test_completely_invalid_stdin_records_nothing_for_subagent_and_compaction_events(self) -> None:
+    def test_undecodable_stdin_with_a_resolvable_run_id_records_one_degraded_event(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            def events(unit: str) -> list[dict]:
+                path = state / unit / "runs" / f"{run}.jsonl"
+                return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+            unit = self.unit_id(root)
+
+            for stdin_text, harness_event in (
+                ("[1, 2, 3]", "SubagentStop"),
+                ("not json at all", "SubagentStart"),
+                ("", "PreCompact"),
+                ('"just a string"', "SubagentStop"),
+            ):
+                before = len(events(unit))
+                result = subprocess.run(
+                    [sys.executable, str(GUARD), harness_event, "--state-root", str(state), "--run-id", run],
+                    cwd=root,
+                    input=stdin_text,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                after = events(unit)
+                self.assertEqual(before + 1, len(after))
+                self.assertEqual("hook.degraded", after[-1]["event"])
+                self.assertEqual(harness_event, after[-1]["data"]["source"])
+                self.assertEqual(["payload"], after[-1]["data"]["missing"])
+                self.assertIs(True, after[-1]["data"]["degraded"])
+
+    def test_undecodable_stdin_without_a_run_id_or_env_records_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self.init_repository(root)
@@ -309,6 +346,7 @@ class GuardHookTests(unittest.TestCase):
             unit = self.unit_id(root)
             before = event_count(unit)
 
+            env = {key: value for key, value in os.environ.items() if key != "GANTRY_RUN_ID"}
             for stdin_text, harness_event in (
                 ("[1, 2, 3]", "SubagentStop"),
                 ("not json at all", "SubagentStart"),
@@ -316,12 +354,13 @@ class GuardHookTests(unittest.TestCase):
                 ('"just a string"', "SubagentStop"),
             ):
                 result = subprocess.run(
-                    [sys.executable, str(GUARD), harness_event, "--state-root", str(state), "--run-id", run],
+                    [sys.executable, str(GUARD), harness_event, "--state-root", str(state)],
                     cwd=root,
                     input=stdin_text,
                     text=True,
                     capture_output=True,
                     check=False,
+                    env=env,
                 )
                 self.assertEqual(0, result.returncode, result.stderr)
 

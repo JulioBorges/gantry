@@ -9,7 +9,10 @@ an Issue's Status/checkbox fields outside `roadmap.py`, force-pushing, committin
 test-skip pattern) and records hook and subagent events into the Run log. Any payload
 shape it does not recognise degrades to "record what is safely recordable, grant no
 authority" -- it never denies without both a rule and a refused path, and it never
-manufactures a false completion.
+manufactures a false completion. Empty, undecodable or non-object stdin is recorded as
+a `hook.degraded` event with `data.missing == ["payload"]` whenever a Run ID is
+resolvable from `--run-id` or `$GANTRY_RUN_ID` (never from the payload, since there is
+none to read); with no Run ID at all, nothing is recorded.
 """
 from __future__ import annotations
 
@@ -443,6 +446,7 @@ def main() -> int:
     args = parser.parse_args()
 
     payload = read_payload()
+    cwd = Path(args.cwd).resolve()
 
     def allow() -> int:
         if args.json:
@@ -452,10 +456,15 @@ def main() -> int:
         return 0
 
     if payload is None:
-        # Empty, undecodable, or non-object stdin: never recorded, degraded or otherwise.
+        # Empty, undecodable, or non-object stdin. A Run ID resolvable from --run-id or
+        # $GANTRY_RUN_ID (never from the payload, since there is none) still gets a
+        # hook.degraded event naming the missing payload; with no Run ID at all, nothing
+        # is recorded.
+        run_id = args.run_id or os.environ.get("GANTRY_RUN_ID")
+        if run_id:
+            record_degradation(cwd, args, {}, args.event, ["payload"])
         return allow()
 
-    cwd = Path(args.cwd).resolve()
     missing = degradation_fields(args.event, payload)
     if missing:
         record_degradation(cwd, args, payload, args.event, missing)
