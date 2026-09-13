@@ -14,7 +14,9 @@ or any other value leaves the plan awaiting approval.
 2. The read-only Requirement Critic (Critic model) reads the Spec and assesses ambiguity, coherence,
    verifiability and non-goal coverage. A blocking finding stops the run before any research or Issue
    is written, quotes the finding, and tells the operator to amend the Spec; the Critic never edits it
-   and does not approve planning either.
+   and does not approve planning either. Like every other role, its result is validated against its
+   Result Contract through `requestRole`; a missing or invalid result is a Protocol Failure that stops
+   the run instead of silently proceeding with zero blocking findings.
 3. Run research in parallel: repository conventions, the Spec and settled decisions, and an exemplar Issue.
 4. The Planner writes vertical-slice Issues in the effective issue template, each with `Status: draft`,
    observable acceptance criteria and real non-cyclic blockers.
@@ -217,9 +219,16 @@ if (structuralValidation && !structuralValidation.valid) {
 phase('Requirement Review')
 let requirementReview = null
 if (t.kind !== 'goal') {
-  requirementReview = await agent(requirementCriticPrompt(t.specPath || paths.specPath), {
+  requirementReview = await requestRole('requirement-critic', requirementCriticPrompt(t.specPath || paths.specPath), {
     label: 'requirement-critic', phase: 'Requirement Review', model: A.models.critic,
   })
+  if (!requirementReview) {
+    return {
+      target: t, structuralValidation, requirementReview: null, plan: null, critique: null,
+      protocolFailure: { phase: 'Requirement Review', role: 'requirement-critic' },
+      awaitingOperatorApproval: false, approved: false,
+    }
+  }
   const blocking = Array.isArray(requirementReview && requirementReview.blocking) ? requirementReview.blocking : []
   if (blocking.length) {
     const quotes = blocking

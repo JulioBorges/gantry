@@ -295,9 +295,10 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
         self.assertIn("usage:", help_result.stdout.lower())
 
     def test_result_schemas_use_the_supported_subset_for_every_role(self) -> None:
-        roles = ("planner", "plan-critic", "implementer", "reviewer", "critic", "learner")
+        roles = ("requirement-critic", "planner", "plan-critic", "implementer", "reviewer", "critic", "learner")
         supported = {"type", "properties", "required", "items", "enum", "additionalProperties"}
         required_fields = {
+            "requirement-critic": {"blocking", "findings"},
             "planner": {"filesWritten", "issues", "roadmapAdditions", "openDecisions"},
             "plan-critic": {"acceptable", "problems", "frontierErrors"},
             "implementer": {"worktree", "branch", "commits", "summary", "testsAdded", "gatesResult", "decisions", "blockers"},
@@ -685,6 +686,70 @@ A fixture Spec.
             self.assertFalse(any(call["label"].startswith("research:") for call in result["calls"]))
             self.assertFalse(any(call["label"].startswith("plan") for call in result["calls"]))
             self.assertFalse(list((root / ".scratch" / "greeting" / "issues").glob("*")) if (root / ".scratch" / "greeting" / "issues").is_dir() else [])
+            self.assertFalse(any("roadmap.py" in call["command"] for call in result["commandCalls"]))
+
+    def test_requirement_critic_protocol_failure_stops_planning_on_invalid_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            self.write_roadmap(root)
+            spec = root / ".scratch" / "greeting" / "spec.md"
+            spec.parent.mkdir(parents=True)
+            spec.write_text(
+                """# Spec: Greeting
+
+## Blueprint
+
+### Context
+
+A fixture Spec.
+
+## Contract
+
+### Definition of Done
+
+- [ ] `greet()` returns "hello" for every call
+
+## Out of Scope
+
+- Nothing yet.
+
+## Changelog
+
+- 2026-09-13 — Initial draft.
+""",
+                encoding="utf-8",
+            )
+            result = self.run_workflow(
+                "plan-workflow.md",
+                {
+                    "target": {"kind": "spec", "slug": "greeting", "specPath": str(spec)},
+                    "models": {"plan": "claude-opus-4-5", "critic": "critic"},
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}},
+                    "paths": {
+                        "issueDir": str(root / ".scratch" / "greeting" / "issues"),
+                        "specPath": str(spec),
+                        "exemplarIssue": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "decisions": str(root / "docs" / "adr"),
+                        "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "context": str(root / "CONTEXT.md"),
+                        "adrs": str(root / "docs" / "adr"),
+                    },
+                    "date": "2026-09-13",
+                    "commandMode": "real",
+                    "structuredOutput": False,
+                    "requirementCriticRawResults": [{}, {}],
+                },
+            )
+
+            self.assertFalse(result["result"]["awaitingOperatorApproval"])
+            self.assertFalse(result["result"]["approved"])
+            self.assertEqual("requirement-critic", result["result"]["protocolFailure"]["role"])
+            self.assertIsNone(result["result"]["plan"])
+            self.assertFalse(any(call["label"].startswith("research:") for call in result["calls"]))
+            self.assertFalse(any(call["label"].startswith("plan") for call in result["calls"]))
             self.assertFalse(any("roadmap.py" in call["command"] for call in result["commandCalls"]))
 
     def test_requirement_critic_allows_planning_when_the_spec_is_unambiguous(self) -> None:

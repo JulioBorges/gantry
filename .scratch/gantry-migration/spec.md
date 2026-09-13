@@ -166,6 +166,9 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Routed the Requirement Critic result through the same `requestRole` validation as every
+  other role, added its Result Contract schema and registered role, and stopped the run with a Protocol
+  Failure instead of silently proceeding when the result is missing or invalid.
 - 2026-09-13 — Added a read-only Requirement Critic phase after Spec structural validation and before
   research or Issue slicing; a blocking finding quotes the Spec and stops the run for the operator to
   amend the Spec, and structural validation and Requirement Review are documented as not approving
