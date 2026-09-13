@@ -1,7 +1,7 @@
 # Effective-template Spec validation
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-migration#03`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -16,10 +16,10 @@ Add `.agents/skills/gantry/scripts/spec.py` and extend the canonical policy reso
 
 ## Acceptance criteria
 
-- [ ] `python3 .agents/skills/gantry/scripts/spec.py --check <spec> --json` exits 1 and names each missing, out-of-order, placeholder, or malformed-scenario requirement, exits 0 for a structurally valid 200 KB Spec in under one second, and prints usage with `--help`.
-- [ ] A test repository whose `.gantry/config.json` maps `## Delivery contract` to `## Contract` passes that equivalent heading while a Spec omitting `## Changelog` fails and explicitly reports `## Changelog` missing.
-- [ ] A plan-workflow test proves structural validation runs before any planner write; when it fails, no Issue file is created and the operator-facing report carries the script finding.
-- [ ] The Spec Changelog receives an English entry in the same merge, and `spec.py` passes the standard-library-only import test and its runnable test command.
+- [x] `python3 .agents/skills/gantry/scripts/spec.py --check <spec> --json` exits 1 and names each missing, out-of-order, placeholder, or malformed-scenario requirement, exits 0 for a structurally valid 200 KB Spec in under one second, and prints usage with `--help`.
+- [x] A test repository whose `.gantry/config.json` maps `## Delivery contract` to `## Contract` passes that equivalent heading while a Spec omitting `## Changelog` fails and explicitly reports `## Changelog` missing.
+- [x] A plan-workflow test proves structural validation runs before any planner write; when it fails, no Issue file is created and the operator-facing report carries the script finding.
+- [x] The Spec Changelog receives an English entry in the same merge, and `spec.py` passes the standard-library-only import test and its runnable test command.
 
 ## Blocked by
 
