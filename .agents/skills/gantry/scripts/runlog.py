@@ -40,7 +40,7 @@ FINISHED_EVENTS = {"run.cancelled", "run.finished"}
 UNIT_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 ISSUE_RE = re.compile(r"^[a-z0-9][a-z0-9-]*#\d{2,}$")
-PROHIBITED_KEY_PARTS = ("command", "cmd", "diff", "output", "patch", "stderr", "stdout")
+PROHIBITED_KEY_TOKENS = {"command", "commands", "cmd", "diff", "diffs", "output", "outputs", "patch", "patches", "stderr", "stdout"}
 
 
 class EventError(ValueError):
@@ -94,8 +94,9 @@ def validate_sensitive_data(value: object, path: str = "data") -> None:
         for key, nested in value.items():
             if not isinstance(key, str):
                 raise EventError(f"{path} keys must be strings")
-            normalized = re.sub(r"[^a-z]", "", key.lower())
-            if any(part in normalized for part in PROHIBITED_KEY_PARTS):
+            words = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", key)
+            tokens = re.findall(r"[a-z]+", words.lower())
+            if any(token in PROHIBITED_KEY_TOKENS for token in tokens):
                 raise EventError(f"{path}.{key} must not be stored in the Run log")
             validate_sensitive_data(nested, f"{path}.{key}")
     elif isinstance(value, list):
@@ -106,7 +107,7 @@ def validate_sensitive_data(value: object, path: str = "data") -> None:
 def validate_secret_checks(value: object, path: str = "data") -> None:
     if isinstance(value, dict):
         if value.get("secrets") is True:
-            permitted = {"name", "secrets", "exitCode", "counts"}
+            permitted = {"secrets", "exitCode", "counts"}
             unexpected = sorted(set(value) - permitted)
             if unexpected:
                 raise EventError(f"{path} for a secrets check may record only exitCode and counts")

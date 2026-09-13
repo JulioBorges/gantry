@@ -239,6 +239,31 @@ class RunLogTests(unittest.TestCase):
             self.assertEqual(1, prohibited.returncode)
             self.assertEqual(1, secret_output.returncode)
 
+    def test_secrets_check_persists_only_exit_code_and_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            unit = json.loads(self.run_script(root, "unit-id", "--cwd", str(root), "--json").stdout)["unitId"]
+            rejected = self.run_script(
+                root,
+                "append",
+                unit,
+                "--state-root",
+                str(state),
+                event={
+                    **self.started("secret-name"),
+                    "data": {
+                        **self.started("secret-name")["data"],
+                        "check": {"secrets": True, "name": "secret-scan", "exitCode": 0, "counts": {"passed": 1}},
+                    },
+                },
+            )
+
+            self.assertEqual(1, rejected.returncode)
+            self.assertIn("only exitCode and counts", rejected.stderr)
+            self.assertFalse((state / unit / "runs" / "secret-name.jsonl").exists())
+
     def test_rejects_sensitive_key_variants_without_rejecting_permitted_fields(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -255,6 +280,7 @@ class RunLogTests(unittest.TestCase):
                     **self.started("permitted"),
                     "data": {
                         **self.started("permitted")["data"],
+                        "dispatch": "lifecycle event",
                         "check": {"name": "test", "exitCode": 0, "counts": {"passed": 1}},
                     },
                 },
