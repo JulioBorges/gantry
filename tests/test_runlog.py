@@ -239,6 +239,51 @@ class RunLogTests(unittest.TestCase):
             self.assertEqual(1, prohibited.returncode)
             self.assertEqual(1, secret_output.returncode)
 
+    def test_rejects_sensitive_key_variants_without_rejecting_permitted_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            unit = json.loads(self.run_script(root, "unit-id", "--cwd", str(root), "--json").stdout)["unitId"]
+            permitted = self.run_script(
+                root,
+                "append",
+                unit,
+                "--state-root",
+                str(state),
+                event={
+                    **self.started("permitted"),
+                    "data": {
+                        **self.started("permitted")["data"],
+                        "check": {"name": "test", "exitCode": 0, "counts": {"passed": 1}},
+                    },
+                },
+            )
+            self.assertEqual(0, permitted.returncode, permitted.stderr)
+
+            for index, key in enumerate(
+                ("unifiedDiff", "checkOutput", "commandLine", "commands", "patchText", "stderrOutput"),
+                start=1,
+            ):
+                with self.subTest(key=key):
+                    rejected = self.run_script(
+                        root,
+                        "append",
+                        unit,
+                        "--state-root",
+                        str(state),
+                        event={
+                            **self.started(f"sensitive-{index}"),
+                            "data": {
+                                **self.started(f"sensitive-{index}")["data"],
+                                "nested": {key: "must not persist"},
+                            },
+                        },
+                    )
+                    self.assertEqual(1, rejected.returncode)
+                    self.assertIn(key, rejected.stderr)
+                    self.assertFalse((state / unit / "runs" / f"sensitive-{index}.jsonl").exists())
+
     def test_sub_64_kb_append_uses_exactly_one_write_system_call(self) -> None:
         specification = importlib.util.spec_from_file_location("gantry_runlog", RUNLOG)
         self.assertIsNotNone(specification)

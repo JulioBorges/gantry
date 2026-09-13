@@ -40,7 +40,7 @@ FINISHED_EVENTS = {"run.cancelled", "run.finished"}
 UNIT_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 ISSUE_RE = re.compile(r"^[a-z0-9][a-z0-9-]*#\d{2,}$")
-PROHIBITED_KEYS = {"command", "commandoutput", "diff", "output", "outputtail", "patch", "stderr", "stdout"}
+PROHIBITED_KEY_PARTS = ("command", "cmd", "diff", "output", "patch", "stderr", "stdout")
 
 
 class EventError(ValueError):
@@ -89,13 +89,13 @@ def validate_timestamp(value: object) -> None:
 
 
 def validate_sensitive_data(value: object, path: str = "data") -> None:
-    """Reject diffs and command output, including within nested role results."""
+    """Reject command, output, diff, and patch fields at every nesting level."""
     if isinstance(value, dict):
         for key, nested in value.items():
             if not isinstance(key, str):
                 raise EventError(f"{path} keys must be strings")
             normalized = re.sub(r"[^a-z]", "", key.lower())
-            if normalized in PROHIBITED_KEYS:
+            if any(part in normalized for part in PROHIBITED_KEY_PARTS):
                 raise EventError(f"{path}.{key} must not be stored in the Run log")
             validate_sensitive_data(nested, f"{path}.{key}")
     elif isinstance(value, list):
