@@ -1,7 +1,7 @@
 # Guard hooks and Claude Code wiring
 
 Type: issue
-Status: ready-for-agent
+Status: blocked
 Slice: `gantry-migration#09`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -29,3 +29,4 @@ Add `.agents/skills/gantry/scripts/guard.py`, `.agents/skills/gantry/hooks/claud
 - `gantry-migration#05` — consumes harness capability fields and support tiers.
 
 ## Comments
+- 2026-09-13 — ASDLC round 1 critic refuted after 2/2 correction budget spent. Top refutations: (1) Spec/code drift — guard.py:348 emits hook.degraded but spec.md:25 Blueprint event list omits it (only mentioned in Changelog); (2) undecodable/non-object stdin with a resolvable Run ID (--run-id or GANTRY_RUN_ID) records nothing, contradicting the criterion that malformed payloads produce a recorded degradation. Branch: worktree-wf_8d1cbc1a-f67-2, worktree: /Users/julioborges/src/personal/gantry/.claude/worktrees/wf_8d1cbc1a-f67-2 (kept for operator inspection).
