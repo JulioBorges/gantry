@@ -90,7 +90,7 @@ Slice: `sample#01`
         )
 
         self.assertEqual("gantry-migration#01", issue.ref)
-        self.assertEqual("ready-for-agent", issue.status)
+        self.assertEqual("done", issue.status)
         self.assertEqual(5, len(issue.criteria))
         self.assertEqual([], issue.blocked_by)
 
