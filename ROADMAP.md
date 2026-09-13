@@ -36,7 +36,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **4 / 18** |
+| Issues completed | **5 / 18** |
 | Specs completed | **0 / 1** |
 | Execution waves | **7** |
 
@@ -114,7 +114,7 @@ longer exist.
 
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
-| 01 | `gantry-migration` | 4/18 | 0–6 |
+| 01 | `gantry-migration` | 5/18 | 0–6 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -134,11 +134,11 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-migration#02`** — Canonical Gantry workflow skill
   <br>↳ blocked by: gantry-migration#01
 
-### Wave 2 — 2/6 done
+### Wave 2 — 3/6 done
 
 - [ ] **`gantry-migration#03`** — Effective-template Spec validation
   <br>↳ blocked by: gantry-migration#02
-- [ ] **`gantry-migration#05`** — Initial context budget and capabilities
+- [x] **`gantry-migration#05`** — Initial context budget and capabilities
   <br>↳ blocked by: gantry-migration#02
 - [x] **`gantry-migration#06`** — Result contracts and protocol failures
   <br>↳ blocked by: gantry-migration#02

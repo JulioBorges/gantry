@@ -1,7 +1,7 @@
 # Effective-template Spec validation
 
 Type: issue
-Status: ready-for-agent
+Status: blocked
 Slice: `gantry-migration#03`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -26,3 +26,4 @@ Add `.agents/skills/gantry/scripts/spec.py` and extend the canonical policy reso
 - `gantry-migration#02` — consumes the canonical template and policy-resolution locations.
 
 ## Comments
+- 2026-09-13 — Critic refuted completion: the approved Spec fails structural validation because line 153 contains invalid Gherkin ('And, on yes, ...'). Operator must amend and approve the Spec before this Issue can continue. Issue worktree: /Users/julioborges/src/personal/gantry-issue-03 (branch gantry/gantry-migration-03).
