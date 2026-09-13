@@ -31,6 +31,40 @@ SUBAGENT_START_EVENTS = {"SubagentStart"}
 SUBAGENT_STOP_EVENTS = {"SubagentStop"}
 COMPACTION_EVENTS = {"PreCompact", "session.compacted"}
 
+CAPABILITIES_DIR = Path(__file__).parent.parent / "capabilities"
+HARNESS_BY_EVENT = {
+    "PreToolUse": "claude-code",
+    "PostToolUse": "claude-code",
+    "SubagentStart": "claude-code",
+    "SubagentStop": "claude-code",
+    "PreCompact": "claude-code",
+    "tool.execute.before": "opencode",
+    "session.compacted": "opencode",
+}
+# The concepts (not literal keys -- a harness may spell them differently) a given
+# event needs to be handled without guessing. Anything a concept resolves to a
+# harness's declared `payload_fields` name, and is then absent from the payload
+# itself, is recorded as a degradation, never a denial.
+EVENT_REQUIRED_CONCEPTS = {
+    "PreToolUse": ("tool_name", "tool_input"),
+    "PostToolUse": ("tool_name", "tool_input"),
+    "SubagentStart": ("session_id",),
+    "SubagentStop": ("session_id",),
+    "PreCompact": (),
+    "tool.execute.before": ("tool_name", "tool_input"),
+    "session.compacted": ("session_id",),
+}
+# Which literal `payload_fields` name each harness uses for a concept.
+CONCEPT_FIELD_BY_HARNESS = {
+    "claude-code": {"tool_name": "tool_name", "tool_input": "tool_input", "session_id": "session_id"},
+    "opencode": {"tool_name": "tool", "tool_input": "args", "session_id": "sessionID"},
+}
+CONCEPT_ALIASES = {
+    "tool_name": ("tool_name", "tool", "toolName"),
+    "tool_input": ("tool_input", "args", "toolInput", "input"),
+    "session_id": ("session_id", "sessionID", "sessionId"),
+}
+
 MODIFYING_TOOLS = {"edit", "write", "multiedit", "notebookedit", "applypatch", "patch"}
 BASH_TOOLS = {"bash", "shell", "exec"}
 
@@ -230,6 +264,65 @@ def record(cwd: Path, state_root: str | None, run_id: str, event: dict) -> None:
         return
 
 
+_CAPABILITY_CACHE: dict[str, dict] = {}
+
+
+def load_capability(harness: str) -> dict:
+    """Read `capabilities/<harness>.json`; a missing or unreadable file means no declared fields."""
+    if harness in _CAPABILITY_CACHE:
+        return _CAPABILITY_CACHE[harness]
+    capability: dict = {}
+    try:
+        parsed = json.loads((CAPABILITIES_DIR / f"{harness}.json").read_text(encoding="utf-8"))
+        if isinstance(parsed, dict):
+            capability = parsed
+    except (OSError, json.JSONDecodeError):
+        capability = {}
+    _CAPABILITY_CACHE[harness] = capability
+    return capability
+
+
+def degradation_fields(event: str, payload: dict) -> list[str]:
+    """Declared field names (per the harness's capability file) this event needs that the payload lacks.
+
+    A concept (e.g. "tool_input") is present as soon as any of the harness's accepted
+    spellings for it carries a value, so a payload shaped like another harness's (as the
+    OpenCode-forwarded Claude Code shape is in `PreToolUse`-equivalent tests) is not
+    penalised for using a different, still-recognised, key.
+    """
+    harness = HARNESS_BY_EVENT.get(event)
+    concepts = EVENT_REQUIRED_CONCEPTS.get(event, ())
+    if not harness or not concepts:
+        return []
+    declared = set(load_capability(harness).get("payload_fields", []))
+    concept_field = CONCEPT_FIELD_BY_HARNESS.get(harness, {})
+    missing = []
+    for concept in concepts:
+        field_name = concept_field.get(concept, concept)
+        if field_name not in declared:
+            continue
+        if _first(payload, CONCEPT_ALIASES[concept]) is None:
+            missing.append(field_name)
+    return missing
+
+
+def record_degradation(cwd: Path, args: argparse.Namespace, payload: dict, event: str, missing: list[str]) -> None:
+    run_id = resolve_run_id(payload, args.run_id)
+    if not run_id:
+        return
+    record(
+        cwd,
+        args.state_root,
+        run_id,
+        {
+            "ts": now_iso(),
+            "run": run_id,
+            "event": "hook.degraded",
+            "data": {"source": event, "missing": missing, "degraded": True},
+        },
+    )
+
+
 def handle_decision_event(payload: dict, args: argparse.Namespace) -> Decision:
     cwd = Path(args.cwd).resolve()
     decision = decide(payload, cwd)
@@ -292,15 +385,20 @@ def handle_compaction_event(payload: dict, args: argparse.Namespace) -> None:
     )
 
 
-def read_payload() -> dict:
+def read_payload() -> dict | None:
+    """Parse standard input; `None` means empty, undecodable, or not a JSON object.
+
+    A `None` payload is never recordable -- no event, degraded or otherwise, is ever
+    written for it, and the hook still exits 0 (allow).
+    """
     raw = sys.stdin.read()
     if not raw.strip():
-        return {}
+        return None
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def main() -> int:
@@ -314,14 +412,27 @@ def main() -> int:
 
     payload = read_payload()
 
+    def allow() -> int:
+        if args.json:
+            print(json.dumps({"decision": "allow"}, separators=(",", ":")))
+        else:
+            print("allow")
+        return 0
+
+    if payload is None:
+        # Empty, undecodable, or non-object stdin: never recorded, degraded or otherwise.
+        return allow()
+
+    cwd = Path(args.cwd).resolve()
+    missing = degradation_fields(args.event, payload)
+    if missing:
+        record_degradation(cwd, args, payload, args.event, missing)
+        return allow()
+
     if args.event in DECISION_EVENTS:
         decision = handle_decision_event(payload, args)
         if decision.allow:
-            if args.json:
-                print(json.dumps({"decision": "allow"}, separators=(",", ":")))
-            else:
-                print("allow")
-            return 0
+            return allow()
         message = f"deny: {decision.rule} {decision.path}"
         if args.json:
             print(json.dumps({"decision": "deny", "rule": decision.rule, "path": decision.path}, separators=(",", ":")))
@@ -332,22 +443,18 @@ def main() -> int:
 
     if args.event in SUBAGENT_START_EVENTS:
         handle_subagent_event(payload, args, "subagent.started")
-        print("allow")
-        return 0
+        return allow()
 
     if args.event in SUBAGENT_STOP_EVENTS:
         handle_subagent_event(payload, args, "subagent.stopped")
-        print("allow")
-        return 0
+        return allow()
 
     if args.event in COMPACTION_EVENTS:
         handle_compaction_event(payload, args)
-        print("allow")
-        return 0
+        return allow()
 
     # Unknown payload shapes degrade to recording nothing and granting no authority.
-    print("allow")
-    return 0
+    return allow()
 
 
 if __name__ == "__main__":

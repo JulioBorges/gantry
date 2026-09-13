@@ -206,15 +206,20 @@ class GuardHookTests(unittest.TestCase):
             )
             self.assertEqual(0, good.returncode)
 
-            malformed = self.run_guard(root, "SubagentStop", "--state-root", str(state), "--run-id", run, payload={"unexpected": True})
-            self.assertEqual(0, malformed.returncode)
+            capability_incomplete = self.run_guard(root, "SubagentStop", "--state-root", str(state), "--run-id", run, payload={"unexpected": True})
+            self.assertEqual(0, capability_incomplete.returncode)
 
             unit = self.unit_id(root)
             events = [json.loads(line) for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()]
             stopped = [event for event in events if event["event"] == "subagent.stopped"]
-            self.assertEqual(2, len(stopped))
+            # Capability-incomplete payload never fabricates a plain subagent.stopped completion.
+            self.assertEqual(1, len(stopped))
             self.assertEqual("implementer", stopped[0]["data"]["role"])
-            self.assertEqual("unknown", stopped[1]["data"]["role"])
+            degraded = [event for event in events if event["event"] == "hook.degraded"]
+            self.assertEqual(1, len(degraded))
+            self.assertEqual("SubagentStop", degraded[0]["data"]["source"])
+            self.assertIn("session_id", degraded[0]["data"]["missing"])
+            self.assertIs(True, degraded[0]["data"]["degraded"])
 
             # No run context available at all: never crashes, never fabricates completion.
             no_run_context = subprocess.run(
@@ -226,6 +231,56 @@ class GuardHookTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(0, no_run_context.returncode)
+
+    def test_completely_invalid_stdin_records_nothing_for_subagent_and_compaction_events(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            def event_count(unit: str) -> int:
+                path = state / unit / "runs" / f"{run}.jsonl"
+                return len(path.read_text(encoding="utf-8").splitlines())
+
+            unit = self.unit_id(root)
+            before = event_count(unit)
+
+            for stdin_text, harness_event in (
+                ("[1, 2, 3]", "SubagentStop"),
+                ("not json at all", "SubagentStart"),
+                ("", "PreCompact"),
+                ('"just a string"', "SubagentStop"),
+            ):
+                result = subprocess.run(
+                    [sys.executable, str(GUARD), harness_event, "--state-root", str(state), "--run-id", run],
+                    cwd=root,
+                    input=stdin_text,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+
+            self.assertEqual(before, event_count(unit))
+
+    def test_pretooluse_missing_required_fields_is_recorded_as_degraded_and_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            payload = {"tool_name": "Edit"}
+            result = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(0, result.returncode)
+
+            unit = self.unit_id(root)
+            events = [json.loads(line) for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()]
+            degraded = [event for event in events if event["event"] == "hook.degraded"]
+            self.assertEqual(1, len(degraded))
+            self.assertEqual("PreToolUse", degraded[0]["data"]["source"])
+            self.assertIn("tool_input", degraded[0]["data"]["missing"])
 
     # -- force push and test-skip commit -----------------------------------------------------
 
