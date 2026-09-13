@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schemas"
-ROLES = ("planner", "plan-critic", "implementer", "reviewer", "critic", "learner")
+ROLES = ("requirement-critic", "planner", "plan-critic", "implementer", "reviewer", "critic", "learner")
 TYPE_NAMES = {
     "object": dict,
     "array": list,
