@@ -172,6 +172,41 @@ Scenario: incomplete scenario
             self.assertEqual(0, passed.returncode, passed.stderr)
             self.assertLess(elapsed, 1)
 
+    def test_rejects_template_style_placeholders_without_flagging_legitimate_markup_or_gherkin_arguments(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+
+            unfilled = root / "unfilled.md"
+            unfilled.write_text(
+                self.valid_spec().replace("The current state is observable.", "<unfilled body>"),
+                encoding="utf-8",
+            )
+            rejected = self.run_spec(root, unfilled)
+
+            self.assertEqual(1, rejected.returncode, rejected.stderr)
+            self.assertEqual(
+                [{"line": 5, "text": "<unfilled body>"}],
+                json.loads(rejected.stdout)["placeholders"],
+            )
+
+            documented_argument = root / "documented-argument.md"
+            documented_argument.write_text(
+                self.valid_spec()
+                .replace(
+                    "The current state is observable.",
+                    "The current state is observable.\n\n<!-- gantry:begin -->",
+                )
+                .replace(
+                    "When the workflow script checks it",
+                    "When the workflow script checks it with --diff-base <base>",
+                ),
+                encoding="utf-8",
+            )
+            accepted = self.run_spec(root, documented_argument)
+
+            self.assertEqual(0, accepted.returncode, accepted.stderr)
+
     def test_rejects_gherkin_steps_that_regress_or_precede_their_phase(self) -> None:
         cases = {
             "given after when": (
@@ -231,6 +266,31 @@ Scenario: incomplete scenario
             result = self.run_spec(root, spec)
 
             self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_rejects_non_step_content_inside_a_gherkin_scenario(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            spec = root / "invalid-line.md"
+            spec.write_text(
+                self.valid_spec().replace(
+                    "  Then the structural result passes",
+                    "  Then the structural result passes\n  Whenn invalid step",
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_spec(root, spec)
+
+            self.assertEqual(1, result.returncode, result.stderr)
+            self.assertEqual(
+                {
+                    "line": 16,
+                    "scenario": "Validate the effective template",
+                    "reason": "Scenario contains invalid Gherkin line",
+                },
+                json.loads(result.stdout)["malformed_scenarios"][0],
+            )
 
     def test_ignores_headings_inside_fenced_code_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

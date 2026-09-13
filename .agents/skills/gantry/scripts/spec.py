@@ -15,6 +15,7 @@ HEADING_RE = re.compile(r"^##(?!#)[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 SCENARIO_RE = re.compile(r"^[ \t]*Scenario:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
 STEP_RE = re.compile(r"^[ \t]*(Given|When|Then|And|But)[ \t]+(.+?)[ \t]*$")
 PLACEHOLDER_RE = re.compile(r"<[^>\n]+>|YYYY-MM-DD")
+DESCRIPTIVE_PLACEHOLDER_RE = re.compile(r"<[A-Za-z0-9](?:[^>\n]*[ \t][^>\n]*)\S>")
 FENCE_RE = re.compile(r"^\s*(?:`{3,}|~{3,})(.*)$")
 
 
@@ -30,60 +31,59 @@ def headings(text: str) -> list[str]:
     return [f"## {match.group(1)}" for match in HEADING_RE.finditer("".join(outside_fences))]
 
 
-def scenario_context(text: str) -> str:
-    """Keep unfenced and Gherkin-fenced text, preserving line numbers."""
-    relevant: list[str] = []
+def scenario_blocks(text: str) -> tuple[list[tuple[int, str]], list[list[tuple[int, str]]]]:
+    """Return unfenced and Gherkin-fenced lines with original line numbers."""
+    unfenced: list[tuple[int, str]] = []
+    gherkin_blocks: list[list[tuple[int, str]]] = []
+    current_block: list[tuple[int, str]] = []
     fenced = False
     gherkin = False
-    for line in text.splitlines(keepends=True):
+    for line_number, line in enumerate(text.splitlines(), 1):
         fence = FENCE_RE.match(line)
         if fence:
             if not fenced:
                 gherkin = fence.group(1).strip().casefold() == "gherkin"
             else:
+                if gherkin:
+                    gherkin_blocks.append(current_block)
+                current_block = []
                 gherkin = False
             fenced = not fenced
-            relevant.append("\n" if line.endswith("\n") else "")
-        elif not fenced or gherkin:
-            relevant.append(line)
-        else:
-            relevant.append("\n" if line.endswith("\n") else "")
-    return "".join(relevant)
+        elif gherkin:
+            current_block.append((line_number, line))
+        elif not fenced:
+            unfenced.append((line_number, line))
+    if gherkin:
+        gherkin_blocks.append(current_block)
+    return unfenced, gherkin_blocks
 
 
-def canonical_heading(heading: str, heading_map: dict[str, str]) -> str:
-    """Translate one declared equivalent heading to its template heading."""
-    if heading in heading_map:
-        return heading_map[heading]
-    lowered = heading.casefold()
-    for alias, canonical in heading_map.items():
-        if alias.casefold() == lowered:
-            return canonical
-    return heading
+def scenario_matches(lines: list[tuple[int, str]]) -> list[tuple[int, re.Match[str]]]:
+    """Locate Scenario headers in one validation context."""
+    return [(index, match) for index, (_, line) in enumerate(lines) if (match := SCENARIO_RE.match(line))]
 
 
-def validate_scenarios(text: str, required: bool) -> list[dict[str, object]]:
-    """Check that every Scenario has ordered Given, When and Then steps."""
-    text = scenario_context(text)
-    matches = list(SCENARIO_RE.finditer(text))
-    if required and not matches:
-        return [{"line": None, "reason": "expected at least one Scenario with Given, When and Then steps"}]
-
+def validate_scenario_block(
+    lines: list[tuple[int, str]], strict: bool
+) -> list[dict[str, object]]:
+    """Check the scenarios in one unfenced or Gherkin-fenced block."""
     malformed: list[dict[str, object]] = []
-    for index, match in enumerate(matches):
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        steps = [
-            (line_number, step.group(1))
-            for line_number, line in enumerate(
-                text[match.end():end].splitlines(),
-                text[:match.end()].count("\n") + 1,
-            )
-            if (step := STEP_RE.match(line))
-        ]
-
+    matches = scenario_matches(lines)
+    for index, (start, match) in enumerate(matches):
+        end = matches[index + 1][0] if index + 1 < len(matches) else len(lines)
         phase: str | None = None
         errors: list[tuple[int, str]] = []
-        for line_number, kind in steps:
+        for line_number, line in lines[start + 1:end]:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            step = STEP_RE.match(line)
+            if step is None:
+                if strict:
+                    errors.append((line_number, "Scenario contains invalid Gherkin line"))
+                continue
+
+            kind = step.group(1)
             if kind == "Given":
                 if phase in {None, "given"}:
                     phase = "given"
@@ -103,7 +103,7 @@ def validate_scenarios(text: str, required: bool) -> list[dict[str, object]]:
                 errors.append((line_number, "And or But must follow Given, When or Then"))
 
         if phase != "then":
-            errors.append((text[:match.start()].count("\n") + 1, "Scenario must end with Then steps"))
+            errors.append((lines[start][0], "Scenario must end with Then steps"))
         for line_number, reason in errors:
             malformed.append(
                 {
@@ -113,6 +113,31 @@ def validate_scenarios(text: str, required: bool) -> list[dict[str, object]]:
                 }
             )
     return malformed
+
+
+def canonical_heading(heading: str, heading_map: dict[str, str]) -> str:
+    """Translate one declared equivalent heading to its template heading."""
+    if heading in heading_map:
+        return heading_map[heading]
+    lowered = heading.casefold()
+    for alias, canonical in heading_map.items():
+        if alias.casefold() == lowered:
+            return canonical
+    return heading
+
+
+def validate_scenarios(text: str, required: bool) -> list[dict[str, object]]:
+    """Check that every Scenario has ordered Given, When and Then steps."""
+    unfenced, gherkin_blocks = scenario_blocks(text)
+    blocks = [(unfenced, False), *((block, True) for block in gherkin_blocks)]
+    if required and not any(scenario_matches(lines) for lines, _ in blocks):
+        return [{"line": None, "reason": "expected at least one Scenario with Given, When and Then steps"}]
+
+    return [
+        finding
+        for lines, strict in blocks
+        for finding in validate_scenario_block(lines, strict)
+    ]
 
 
 def validate(spec: Path, root: Path) -> dict[str, object]:
@@ -155,10 +180,18 @@ def validate(spec: Path, root: Path) -> dict[str, object]:
             )
 
     template_placeholders = set(PLACEHOLDER_RE.findall(template_text))
+    detects_descriptive_placeholders = any(
+        DESCRIPTIVE_PLACEHOLDER_RE.fullmatch(placeholder)
+        for placeholder in template_placeholders
+    )
     placeholders = [
         {"line": text[:match.start()].count("\n") + 1, "text": match.group(0)}
         for match in PLACEHOLDER_RE.finditer(text)
         if match.group(0) in template_placeholders
+        or (
+            detects_descriptive_placeholders
+            and DESCRIPTIVE_PLACEHOLDER_RE.fullmatch(match.group(0))
+        )
     ]
     malformed_scenarios = validate_scenarios(text, "Scenario:" in template_text)
     valid = not any((missing, out_of_order, placeholders, malformed_scenarios))
