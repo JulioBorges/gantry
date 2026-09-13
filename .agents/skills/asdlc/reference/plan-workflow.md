@@ -19,7 +19,9 @@ needs the operator's approval, so the orchestrator presents the drafts and waits
     "specPath": "<rendered-spec-path>",
     "exemplarIssue": "<existing-issue-path>",
     "decisions": "<repository-decisions-path>",
-    "issueTracker": "<repository-issue-tracker-path>"
+    "issueTracker": "<repository-issue-tracker-path>",
+    "context": "<repository-context-path>",
+    "adrs": "<repository-ADRs-path>"
   },
   "date": "2026-09-12"
 }
@@ -79,7 +81,7 @@ const CRITIQUE_SCHEMA = {
 
 phase('Research')
 const research = await parallel([
-  () => agent(`Survey the repository at ${A.repoRoot} for ${targetText}: what exists today (package manifest, src/, tests/, CI), conventions in AGENTS.md, CONTEXT.md vocabulary, docs/adr/ decisions that constrain this work. Return a dense factual brief for a planner — paths, facts, constraints, no advice.`,
+  () => agent(`Survey the repository at ${A.repoRoot} for ${targetText}: what exists today (package manifest, src/, tests/, CI), conventions in AGENTS.md, vocabulary at ${paths.context}, decisions at ${paths.adrs} that constrain this work. Return a dense factual brief for a planner — paths, facts, constraints, no advice.`,
     { label: 'research:codebase', phase: 'Research', model: A.models.plan, effort: 'medium' }),
   () => agent(`Read ${t.specPath || 'the PRD sections relevant to ' + t.goal}, ${paths.decisions} and the relevant repository documents. Return: the contracts this scope owns, the contracts it consumes and who owns them (exact \`slug#NN\` refs), the settled decisions it must not reopen, and the testing seam it must bind to. Facts and refs only.`,
     { label: 'research:spec', phase: 'Research', model: A.models.plan, effort: 'medium' }),
@@ -129,7 +131,7 @@ Check, reading every file:
 3. Run \`python3 ${scripts}/frontier.py --scope ${t.slug} --include-parked\`: zero errors, no cycles, no dangling refs.
 4. Every consumed contract is owned by the ref cited, per ${paths.decisions}; nothing re-owns an
    existing contract; no settled decision reopened.
-5. Format matches the exemplar and docs/agents/issue-tracker.md; Status is draft; Created is ${A.date}.
+5. Format matches ${paths.exemplarIssue} and ${paths.issueTracker}; Status is draft; Created is ${A.date}.
 6. Coverage: every requirement and user story of the spec maps to at least one criterion; nothing invented.
 Do not edit files. Return structured output only; \`fix\` must be actionable.`
 }

@@ -71,7 +71,8 @@ Resolve it once in preflight and pass it in `args.skillDir`.
    If the current checkout already uses the configured branch prefix (resumed run), skip the question and continue
    there.
 5. Render its artifact patterns for the current
-   scope into `paths`: `specPath`, `issueDir`, `exemplarIssue`, `decisions` and `issueTracker`. `policy`
+   scope into `paths`: `specPath`, `issueDir`, `exemplarIssue`, `decisions`, `issueTracker`, `context` and `adrs`.
+   `common.resolve_workflow_paths(repoRoot, scopeSlug)` renders the default policy and optional overlay. `policy`
    keeps the effective values; `paths` contains only the corresponding repository paths. Pass both to every
    workflow invocation — no workflow assumes an artifact location.
 5. `python3 --version` (3.10+) and `python3 <skillDir>/scripts/roadmap.py check` inside `repoRoot`. Drift
@@ -168,7 +169,7 @@ The prompts, schemas, scripts and rules are the same everywhere.
 | Ask the four models | `AskUserQuestion` | one message with the four questions; wait for the answer |
 | Run a workflow template | `Workflow` tool with the JavaScript from `reference/*.md` passed inline and the `args` object | execute the same chain by hand: for each issue in the round spawn the harness's subagent for implementer → reviewer → critic using the prompt functions in the template as the prompt text, with `model` set per role. Run issues of one round concurrently if the harness supports it, otherwise sequentially; the order inside one issue never changes |
 | Structured output | `schema` on `agent()` | ask the subagent to answer with a single JSON object matching the schema; re-ask once on invalid JSON |
-| Worktree per implementer | `isolation: 'worktree'` | `git worktree add ../<repo>-<slug>-NN -b asdlc/<slug>-NN <baseRef>` before spawning; pass the path in the prompt |
+| Worktree per implementer | `isolation: 'worktree'` | `git worktree add ../<repo>-<slug>-NN -b <policy.git.prefix><slug>-NN <baseRef>` before spawning; pass the path in the prompt |
 | Invoke `tdd` / `code-review` | Skill tool | if the harness has the skill installed, invoke it; otherwise the prompts already carry the fallback ("run the same two-axis review yourself and say so"; red → green → refactor per behaviour) |
 
 Everything deterministic — frontier, acceptance, gates, roadmap — is a Python script and needs nothing

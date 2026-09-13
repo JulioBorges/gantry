@@ -15,14 +15,48 @@ SKILL_DIR = REPO_ROOT / ".agents" / "skills" / "asdlc"
 SCRIPTS = SKILL_DIR / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from common import parse_issue, resolve_policy  # noqa: E402
+from common import parse_issue, resolve_policy, resolve_workflow_paths  # noqa: E402
 
 
 class LegacyWorkflowSmokeTests(unittest.TestCase):
     def test_no_policy_repository_stops_at_planning_approval_and_no_ready_work(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            (root / ".git").mkdir()
+            root = Path(temp).resolve()
+            subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+            spec_path = root / ".scratch" / "portable" / "spec.md"
+            spec_path.parent.mkdir(parents=True)
+            spec_path.write_text("# Portable spec\n", encoding="utf-8")
+
+            policy = resolve_policy(root)
+            paths = resolve_workflow_paths(root, "portable")
+            self.assertEqual(root / ".scratch" / "portable" / "issues", paths["issueDir"])
+            self.assertEqual(root / "CONTEXT.md", paths["context"])
+            self.assertEqual(root / "docs" / "adr", paths["adrs"])
+            self.assertEqual(root / "docs" / "agents" / "issue-tracker.md", paths["issueTracker"])
+            self.assertFalse((root / ".gantry" / "config.json").exists())
+
+            plan_args = {
+                "target": {"kind": "spec", "slug": "portable", "specPath": str(paths["specPath"])},
+                "models": {"plan": "test-plan", "critic": "test-critic"},
+                "skillDir": str(SKILL_DIR),
+                "repoRoot": str(root),
+                "policy": policy,
+                "paths": {name: str(path) for name, path in paths.items()},
+                "date": "2026-09-13",
+            }
+            plan_result = self.run_workflow(
+                "plan-workflow.md",
+                plan_args,
+                research_format=self.frontier_json(root, "portable"),
+            )
+            self.assertTrue(plan_result["result"]["critique"]["acceptable"])
+            self.assertEqual([], plan_result["result"]["plan"]["issues"])
+            plan_prompt = self.prompt_for(plan_result["calls"], "plan")
+            self.assertIn(str(paths["issueDir"]), plan_prompt)
+            self.assertIn(str(paths["issueTracker"]), plan_prompt)
+            self.assertIn('"selected":[]', plan_prompt)
+            self.assertFalse(paths["issueDir"].exists(), "the planning workflow must stop for approval")
+
             issue_path = root / ".scratch" / "portable" / "issues" / "01-portable-loop.md"
             issue_path.parent.mkdir(parents=True)
             issue_path.write_text(
@@ -42,9 +76,6 @@ Slice: `portable#01`
 """,
                 encoding="utf-8",
             )
-            policy = resolve_policy(root)
-            self.assertEqual(".scratch/{slug}/issues", policy["artifacts"]["issues"])
-            self.assertFalse((root / ".gantry" / "config.json").exists())
 
             issue = parse_issue(issue_path)
             self.assertEqual("portable#01", issue.ref)
@@ -52,29 +83,176 @@ Slice: `portable#01`
             self.assertEqual(["preserve the existing parser"], [item.text for item in issue.criteria])
             self.assertEqual([], issue.blocked_by)
 
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPTS / "frontier.py"),
-                    "--scope",
-                    "portable",
-                    "--json",
-                ],
-                cwd=root,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-            self.assertEqual(2, result.returncode, result.stderr)
-            self.assertEqual([], json.loads(result.stdout)["selected"])
+            frontier = self.frontier_json(root, "portable")
+            self.assertEqual(["portable#01"], frontier["selected"])
+            self.assertEqual("draft", frontier["issues"]["portable#01"]["status"])
+            self.assertEqual(1, frontier["issues"]["portable#01"]["criteria_total"])
+            self.assertEqual([], frontier["issues"]["portable#01"]["blocked_by"])
 
-        plan = (SKILL_DIR / "reference" / "plan-workflow.md").read_text(encoding="utf-8")
-        round_workflow = (SKILL_DIR / "reference" / "round-workflow.md").read_text(encoding="utf-8")
-        self.assertIn("planning approval", plan.lower())
-        self.assertIn("A.policy", plan)
-        self.assertIn("A.paths.issueDir", plan)
-        self.assertIn("A.policy", round_workflow)
-        self.assertIn("paths.decisions", round_workflow)
+            round_args = {
+                "round": 1,
+                "issues": [],
+                "models": {"implement": "test-implement", "review": "test-review", "critic": "test-critic"},
+                "branch": "gantry/portable",
+                "baseRef": "HEAD",
+                "isolate": False,
+                "correctionBudget": 2,
+                "skillDir": str(SKILL_DIR),
+                "repoRoot": str(root),
+                "policy": policy,
+                "paths": {name: str(path) for name, path in paths.items()},
+                "date": "2026-09-13",
+            }
+            round_result = self.run_workflow("round-workflow.md", round_args)
+            self.assertEqual([], round_result["result"]["results"])
+            self.assertEqual([], round_result["calls"])
+
+            # A parser-derived issue passed through round args renders the
+            # implementer prompt with policy-configured repository paths.
+            round_args["issues"] = [{
+                "ref": issue.ref,
+                "path": str(issue_path.relative_to(root)),
+                "title": issue.title,
+                "specPath": str(spec_path.relative_to(root)),
+            }]
+            rendered_round = self.run_workflow("round-workflow.md", round_args)
+            implement_prompt = self.prompt_for(rendered_round["calls"], "implement:portable#01")
+            self.assertIn(str(paths["context"]), implement_prompt)
+            self.assertIn(str(paths["adrs"]), implement_prompt)
+            self.assertIn(issue.ref, implement_prompt)
+
+    def test_workflows_render_configured_paths_from_args(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+            config_path = root / ".gantry" / "config.json"
+            config_path.parent.mkdir()
+            config_path.write_text(
+                json.dumps({
+                    "artifacts": {
+                        "specs": "product/{slug}.md",
+                        "issues": "work/{slug}",
+                        "decisions": "decisions",
+                        "adrs": "architecture",
+                        "context": "domain.md",
+                        "issueTracker": "guides/issues.md",
+                    },
+                    "git": {"prefix": "runs/"},
+                }),
+                encoding="utf-8",
+            )
+            paths = resolve_workflow_paths(root, "portable")
+            policy = resolve_policy(root)
+            plan_args = {
+                "target": {"kind": "spec", "slug": "portable", "specPath": str(paths["specPath"])},
+                "models": {"plan": "test-plan", "critic": "test-critic"},
+                "skillDir": str(SKILL_DIR),
+                "repoRoot": str(root),
+                "policy": policy,
+                "paths": {name: str(path) for name, path in paths.items()},
+                "date": "2026-09-13",
+            }
+            plan_result = self.run_workflow("plan-workflow.md", plan_args, research_format={"selected": []})
+            codebase_prompt = self.prompt_for(plan_result["calls"], "research:codebase")
+            plan_prompt = self.prompt_for(plan_result["calls"], "plan")
+            self.assertIn(str(paths["context"]), codebase_prompt)
+            self.assertIn(str(paths["adrs"]), codebase_prompt)
+            self.assertIn(str(paths["issueTracker"]), plan_prompt)
+            self.assertIn("runs/", plan_prompt)
+
+            round_args = {
+                "round": 1,
+                "issues": [{
+                    "ref": "portable#01",
+                    "path": "work/portable/01-portable.md",
+                    "title": "Portable loop",
+                    "specPath": "product/portable.md",
+                }],
+                "models": {"implement": "test-implement", "review": "test-review", "critic": "test-critic"},
+                "branch": "runs/portable",
+                "baseRef": "HEAD",
+                "isolate": False,
+                "correctionBudget": 2,
+                "skillDir": str(SKILL_DIR),
+                "repoRoot": str(root),
+                "policy": policy,
+                "paths": {name: str(path) for name, path in paths.items()},
+                "date": "2026-09-13",
+            }
+            round_result = self.run_workflow("round-workflow.md", round_args)
+            implement_prompt = self.prompt_for(round_result["calls"], "implement:portable#01")
+            self.assertIn(str(paths["context"]), implement_prompt)
+            self.assertIn(str(paths["adrs"]), implement_prompt)
+            self.assertIn("runs/", implement_prompt)
+
+    def frontier_json(self, root: Path, scope: str) -> dict:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS / "frontier.py"),
+                "--scope",
+                scope,
+                "--include-parked",
+                "--json",
+            ],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 2:
+            return {"selected": [], "reason": "no issues ready"}
+        self.assertEqual(0, result.returncode, result.stderr)
+        return json.loads(result.stdout)
+
+    def run_workflow(self, filename: str, args: dict, research_format: dict | None = None) -> dict:
+        source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
+        source = source.replace("export const meta", "const meta", 1)
+        driver = f"""
+const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
+const source = {json.dumps(source)};
+const args = {json.dumps(args)};
+const researchFormat = {json.dumps(research_format)};
+const calls = [];
+const agent = async (prompt, options) => {{
+  calls.push({{ prompt, label: options.label }});
+  if (options.label === 'plan') return {{ filesWritten: [], issues: [], roadmapAdditions: [], openDecisions: [] }};
+  if (options.label.startsWith('critique')) return {{ acceptable: true, problems: [], frontierErrors: [] }};
+  if (options.label === 'research:format') return JSON.stringify(researchFormat);
+  if (options.label.startsWith('research:')) return 'research brief';
+  return null;
+}};
+const parallel = async (tasks) => Promise.all(tasks.map((task) => task()));
+const pipeline = async (items, ...steps) => {{
+  const results = [];
+  for (const item of items) {{
+    let value = await steps[0](item);
+    for (const step of steps.slice(1)) value = await step(value, item);
+    results.push(value);
+  }}
+  return results;
+}};
+const phase = () => {{}};
+const log = () => {{}};
+const result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', source)(
+  args, agent, parallel, pipeline, phase, log,
+);
+process.stdout.write(JSON.stringify({{ result, calls }}));
+"""
+        result = subprocess.run(
+            ["node", "--input-type=module", "--eval", driver],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        return json.loads(result.stdout)
+
+    def prompt_for(self, calls: list[dict], label: str) -> str:
+        for call in calls:
+            if call["label"] == label:
+                return call["prompt"]
+        self.fail(f"workflow did not invoke {label}")
 
     def test_workflow_templates_receive_paths_in_args_without_repository_literals(self) -> None:
         prohibited = ("gantry-v4", "slice-index", "the Gantry repository")

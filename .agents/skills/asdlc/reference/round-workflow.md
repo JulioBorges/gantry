@@ -31,7 +31,9 @@ JavaScript except where marked; everything variable comes in through `args`.
   "policy": { "artifacts": {}, "templates": {}, "git": {}, "budget": {}, "dashboard": {} },
   "paths": {
     "decisions": "<repository-decisions-path>",
-    "issueTracker": "<repository-issue-tracker-path>"
+    "issueTracker": "<repository-issue-tracker-path>",
+    "context": "<repository-context-path>",
+    "adrs": "<repository-ADRs-path>"
   },
   "date": "2026-09-12"
 }
@@ -136,7 +138,7 @@ ${loc}
 1. ${issue.path} — the whole file. The \`## Acceptance criteria\` list is the contract; \`## What to build\` is the design.
 2. ${issue.specPath} — the parent spec.
 3. ${paths.decisions} — settled operator decisions and contract ownership. Never re-litigate them.
-4. CONTEXT.md and docs/adr/ — vocabulary and standing architectural decisions.
+4. ${paths.context} and ${paths.adrs} — vocabulary and standing architectural decisions.
 
 ## Scope
 Deliver this slice completely: every acceptance criterion, demonstrable on its own. Nothing beyond it — other
@@ -176,7 +178,7 @@ Working copy: ${where(impl)} (run \`cd ${where(impl)}\` first). Fixed point: ${A
 
 Invoke the \`code-review\` skill (Skill tool, skill name "code-review") with fixed point \`${A.baseRef}\` and the
 spec at ${issue.path}. If the skill cannot be invoked, run the same two-axis review yourself and say so:
-- Standards: documented repo standards (AGENTS.md, CONTEXT.md, docs/adr/, any CONTRIBUTING/CODING_STANDARDS) plus
+- Standards: documented repo standards (AGENTS.md, ${paths.context}, ${paths.adrs}, any CONTRIBUTING/CODING_STANDARDS) plus
   the Fowler smell baseline as judgement calls. Skip anything tooling enforces.
 - Spec: for every acceptance criterion and every paragraph of \`## What to build\`, report what is missing or
   partial, what was built that was not asked for, and what looks implemented but wrong. Quote the issue line.

@@ -21,6 +21,8 @@ DEFAULT_POLICY = {
         "issues": ".scratch/{slug}/issues",
         "adrs": "docs/adr",
         "decisions": "docs/adr",
+        "context": "CONTEXT.md",
+        "issueTracker": "docs/agents/issue-tracker.md",
     },
     "templates": {"dir": ".gantry/templates", "headingMap": {}},
     "checks": [],
@@ -74,6 +76,27 @@ def resolve_policy(root: Path | None = None) -> dict:
     if not isinstance(overlay, dict):
         raise ValueError(f"{config_path} must contain a JSON object")
     return _merge_policy(DEFAULT_POLICY, overlay)
+
+
+def resolve_workflow_paths(root: Path, slug: str) -> dict[str, Path]:
+    """Render every repository path needed by the legacy workflow templates."""
+    root = repo_root(root)
+    artifacts = resolve_policy(root)["artifacts"]
+
+    def render(name: str) -> Path:
+        return root / artifacts[name].format(slug=slug)
+
+    issue_dir = render("issues")
+    existing_issues = sorted(issue_dir.glob("*.md"))
+    return {
+        "specPath": render("specs"),
+        "issueDir": issue_dir,
+        "exemplarIssue": existing_issues[0] if existing_issues else render("issueTracker"),
+        "decisions": render("decisions"),
+        "issueTracker": render("issueTracker"),
+        "context": render("context"),
+        "adrs": render("adrs"),
+    }
 
 
 def section(text: str, heading: str) -> str:

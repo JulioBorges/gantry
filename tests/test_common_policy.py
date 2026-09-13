@@ -24,6 +24,8 @@ class PolicyResolutionTests(unittest.TestCase):
             self.assertEqual(".scratch/{slug}/issues", defaults["artifacts"]["issues"])
             self.assertEqual("docs/adr", defaults["artifacts"]["adrs"])
             self.assertEqual("docs/adr", defaults["artifacts"]["decisions"])
+            self.assertEqual("CONTEXT.md", defaults["artifacts"]["context"])
+            self.assertEqual("docs/agents/issue-tracker.md", defaults["artifacts"]["issueTracker"])
             self.assertEqual(".gantry/templates", defaults["templates"]["dir"])
             self.assertEqual({}, defaults["templates"]["headingMap"])
             self.assertEqual("main", defaults["git"]["target"])
