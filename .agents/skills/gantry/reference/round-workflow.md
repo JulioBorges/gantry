@@ -92,12 +92,13 @@ const CRITIC_SCHEMA = {
   properties: {
     complete: { type: 'boolean' }, criteria: { type: 'array', items: { type: 'object' } },
     gatesVerdict: { type: 'string', enum: ['pass', 'fail', 'no_gates', 'not_run'] },
+    gateResult: { type: 'object' },
     gateFailures: { type: 'array', items: { type: 'string' } },
     refutations: { type: 'array', items: { type: 'string' } },
     requiredFixes: { type: 'array', items: { type: 'string' } },
     decisionsForOperator: { type: 'array', items: { type: 'string' } },
   },
-  required: ['complete', 'criteria', 'gatesVerdict', 'gateFailures', 'refutations', 'requiredFixes'],
+  required: ['complete', 'criteria', 'gatesVerdict', 'gateResult', 'gateFailures', 'refutations', 'requiredFixes'],
 }
 
 function location(impl) {
@@ -126,7 +127,8 @@ async function authoritativeCriterionIndexes(issue) {
 }
 
 async function criticAccepted(verdict, issue) {
-  if (!verdict || verdict.complete !== true || verdict.gatesVerdict !== 'pass') return false
+  if (!verdict || verdict.complete !== true || verdict.gatesVerdict !== 'pass' ||
+      !verdict.gateResult || verdict.gateResult.verdict !== verdict.gatesVerdict) return false
   const expectedIndexes = await authoritativeCriterionIndexes(issue)
   if (!expectedIndexes || !Array.isArray(verdict.criteria) || verdict.criteria.length !== expectedIndexes.length) return false
   const observedIndexes = new Set()
@@ -197,12 +199,14 @@ function criticPrompt(issue, impl, review, attempt) {
 against ${A.baseRef}. Default to complete=false when uncertain; never trust the Implementer.
 Run \`python3 ${scripts}/acceptance.py ${A.repoRoot}/${issue.path} --json\` and prove every criterion with
 code plus a real test or required command output. Run
-\`python3 ${scripts}/gates.py --run --diff-base ${A.baseRef} --cwd "$(pwd)" --json\`; inspect its verdict
-and requirements. Require a clean tree and commits after ${A.baseRef}. Inspect the diff for skipped,
+\`python3 ${scripts}/gates.py --run --diff-base ${A.baseRef} --cwd "$(pwd)" --json\`; parse its JSON verdict
+and requirements. Return that parsed result unchanged in \`gateResult\`; derive \`gatesVerdict\` and
+\`gateFailures\` from it, never a prose paraphrase. \`no_gates\` and \`not_run\` are not passing results.
+Require a clean tree and commits after ${A.baseRef}. Inspect the diff for skipped,
 disabled or mock-replaced tests, TODO/FIXME/not implemented text, Status/checkbox/ROADMAP edits, and scope
 creep. Verify the Review findings were actually fixed. Do not edit.
 Return complete only for gate-green, clean, fully evidenced work; otherwise ordered requiredFixes,
-refutations, gateFailures and decisionsForOperator as structured output.`
+refutations, gateResult, gateFailures and decisionsForOperator as structured output.`
 }
 
 async function implement(issue, feedback, previous) {
