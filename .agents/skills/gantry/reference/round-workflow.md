@@ -67,37 +67,38 @@ const scripts = `${A.skillDir}/scripts`
 const paths = A.paths
 const policy = A.policy
 const budget = A.correctionBudget ?? policy.budget.corrections
-const IMPL_SCHEMA = {
-  type: 'object',
-  properties: {
-    worktree: { type: 'string' }, branch: { type: 'string' },
-    commits: { type: 'array', items: { type: 'string' } },
-    summary: { type: 'string' }, testsAdded: { type: 'array', items: { type: 'string' } },
-    gatesResult: { type: 'string' }, decisions: { type: 'array', items: { type: 'string' } },
-    blockers: { type: 'array', items: { type: 'string' } },
-  },
-  required: ['worktree', 'branch', 'commits', 'summary', 'gatesResult'],
+
+async function roleSchema(role) {
+  const result = await runWorkflowCommand(
+    `python3 "${scripts}/result.py" --role "${role}" --schema`,
+  )
+  return JSON.parse(result.stdout)
 }
-const REVIEW_SCHEMA = {
-  type: 'object',
-  properties: {
-    blocking: { type: 'array', items: { type: 'object' } },
-    nonBlocking: { type: 'array', items: { type: 'object' } },
-    summary: { type: 'string' },
-  },
-  required: ['blocking', 'nonBlocking', 'summary'],
+
+async function validRoleResult(role, result) {
+  if (!result) return false
+  if (A.structuredOutput === true) return true
+  const validation = await runCommand(
+    `python3 "${scripts}/result.py" --role "${role}" --json`,
+    { cwd: A.repoRoot, input: JSON.stringify(result) },
+  )
+  return Boolean(validation && validation.exitCode === 0)
 }
-const CRITIC_SCHEMA = {
-  type: 'object',
-  properties: {
-    complete: { type: 'boolean' }, criteria: { type: 'array', items: { type: 'object' } },
-    gatesVerdict: { type: 'string', enum: ['pass', 'fail', 'no_gates', 'not_run'] },
-    gateFailures: { type: 'array', items: { type: 'string' } },
-    refutations: { type: 'array', items: { type: 'string' } },
-    requiredFixes: { type: 'array', items: { type: 'string' } },
-    decisionsForOperator: { type: 'array', items: { type: 'string' } },
-  },
-  required: ['complete', 'criteria', 'gatesVerdict', 'gateFailures', 'refutations', 'requiredFixes'],
+
+async function requestRole(role, prompt, options) {
+  const native = A.structuredOutput === true
+  const schema = native ? await roleSchema(role) : null
+  const result = await agent(prompt, {
+    ...options,
+    ...(schema ? { schema } : {}),
+  })
+  if (await validRoleResult(role, result)) return result
+  const retry = await agent(`${prompt}\nYour prior result was invalid. Return the complete ${role} result contract.`, {
+    ...options,
+    label: `${options.label}:retry`,
+    ...(schema ? { schema } : {}),
+  })
+  return (await validRoleResult(role, retry)) ? retry : null
 }
 
 function location(impl) {
@@ -207,10 +208,10 @@ refutations, gateFailures and decisionsForOperator as structured output.`
 
 async function implement(issue, feedback, previous) {
   const options = {
-    label: `implement:${issue.ref}`, phase: 'Implement', schema: IMPL_SCHEMA, model: A.models.implement,
+    label: `implement:${issue.ref}`, phase: 'Implement', model: A.models.implement,
   }
   if (A.isolate && !previous) options.isolation = 'worktree'
-  const result = await agent(implementPrompt(issue, feedback, previous), options)
+  const result = await requestRole('implementer', implementPrompt(issue, feedback, previous), options)
   if (!result) return previous || null
   if (previous && !result.worktree) result.worktree = previous.worktree
   if (previous && !result.branch) result.branch = previous.branch
@@ -222,9 +223,10 @@ const results = await pipeline(
   issue => implement(issue, null, null),
   async (impl, issue) => {
     if (!impl) return null
-    const review = await agent(reviewPrompt(issue, impl), {
-      label: `review:${issue.ref}`, phase: 'Review', schema: REVIEW_SCHEMA, model: A.models.review,
+    const review = await requestRole('reviewer', reviewPrompt(issue, impl), {
+      label: `review:${issue.ref}`, phase: 'Review', model: A.models.review,
     })
+    if (!review) return { impl, reviewerFailed: true }
     const reviewed = review && review.blocking.length
       ? await implement(issue, { kind: 'review', items: review.blocking }, impl)
       : impl
@@ -232,16 +234,25 @@ const results = await pipeline(
   },
   async (state, issue) => {
     if (!state || !state.impl) return { ref: issue.ref, outcome: 'implementer_failed' }
+    if (state.reviewerFailed) return { ref: issue.ref, outcome: 'reviewer_failed', worktree: state.impl.worktree, branch: state.impl.branch }
     let impl = state.impl
     let verdict = null
     let corrections = 0
     let accepted = false
     for (let attempt = 1; ; attempt += 1) {
-      verdict = await agent(criticPrompt(issue, impl, state.review, attempt), {
-        label: `critic:${issue.ref}#${attempt}`, phase: 'Critic', schema: CRITIC_SCHEMA, model: A.models.critic,
+      verdict = await requestRole('critic', criticPrompt(issue, impl, state.review, attempt), {
+        label: `critic:${issue.ref}#${attempt}`, phase: 'Critic', model: A.models.critic,
       })
+      if (!verdict) {
+        return {
+          ref: issue.ref, issuePath: issue.path, outcome: 'critic_failed',
+          worktree: impl.worktree, branch: impl.branch, commits: impl.commits,
+          corrections, reviewFix: state.reviewFix, review: state.review, verdict: null,
+          decisions: (impl.decisions) || [], blockers: impl.blockers || [],
+        }
+      }
       accepted = await criticAccepted(verdict, issue)
-      if (!verdict || accepted || corrections >= budget) break
+      if (accepted || corrections >= budget) break
       corrections += 1
       impl = await implement(issue, { kind: 'critic', items: verdict.requiredFixes }, impl)
       if (!impl) break
@@ -249,7 +260,7 @@ const results = await pipeline(
     return {
       ref: issue.ref,
       issuePath: issue.path,
-      outcome: accepted ? 'accepted' : (verdict ? 'refuted' : 'critic_failed'),
+      outcome: accepted ? 'accepted' : 'refuted',
       worktree: impl && impl.worktree, branch: impl && impl.branch, commits: impl && impl.commits,
       corrections, reviewFix: state.reviewFix, review: state.review, verdict,
       decisions: [...((impl && impl.decisions) || []), ...((verdict && verdict.decisionsForOperator) || [])],

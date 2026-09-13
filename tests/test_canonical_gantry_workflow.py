@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -123,7 +124,7 @@ const runCommand = async (command, options = {{}}) => {{
   commandCalls.push({{ command, cwd: options.cwd || args.repoRoot }});
   if (args.commandMode === 'real') {{
     const completed = spawnSync(command, {{
-      cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8',
+      cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8', input: options.input,
     }});
     return {{
       exitCode: completed.status ?? 1, stdout: completed.stdout || '',
@@ -159,6 +160,9 @@ const agent = async (prompt, options) => {{
   if (options.label.startsWith('review:')) return {{
     blocking: [], nonBlocking: [], summary: 'no findings',
   }};
+  if (options.label.startsWith('critic:') && args.criticRawResults && args.criticRawResults.length) {{
+    return args.criticRawResults.shift();
+  }}
   if (options.label.startsWith('critic:')) return {{
     complete: true, criteria: [], gatesVerdict: 'pass', gateFailures: [],
     refutations: [], requiredFixes: [], decisionsForOperator: [],
@@ -195,6 +199,91 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
     def init_repo(self, root: Path) -> None:
         subprocess.run(["git", "init", "--quiet", str(root)], check=True)
 
+    def test_result_contract_cli_rejects_missing_critic_criteria_and_accepts_large_result(self) -> None:
+        missing = subprocess.run(
+            [sys.executable, str(SCRIPTS / "result.py"), "--role", "critic", "--json"],
+            input='{"complete": false}',
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(1, missing.returncode)
+        self.assertIn("criteria", missing.stdout)
+
+        valid_payload = {
+            "complete": False,
+            "criteria": [{"index": 1, "met": False, "evidence": "x" * 200_000}],
+            "gatesVerdict": "fail",
+            "gateFailures": ["a declared gate failed"],
+            "refutations": ["criterion one remains unproven"],
+            "requiredFixes": ["add a real proof"],
+            "decisionsForOperator": [],
+        }
+        started = time.monotonic()
+        valid = subprocess.run(
+            [sys.executable, str(SCRIPTS / "result.py"), "--role", "critic", "--json"],
+            input=json.dumps(valid_payload),
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        elapsed = time.monotonic() - started
+        self.assertEqual(0, valid.returncode, valid.stdout + valid.stderr)
+        self.assertLess(elapsed, 1)
+
+        invalid_verdict = subprocess.run(
+            [sys.executable, str(SCRIPTS / "result.py"), "--role", "critic", "--json"],
+            input=json.dumps({**valid_payload, "gatesVerdict": "green"}),
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(1, invalid_verdict.returncode)
+        self.assertIn("gatesVerdict", invalid_verdict.stdout)
+
+        help_result = self.run_script(REPO_ROOT, "result.py", "--help")
+        self.assertEqual(0, help_result.returncode, help_result.stderr)
+        self.assertIn("usage:", help_result.stdout.lower())
+
+    def test_result_schemas_use_the_supported_subset_for_every_role(self) -> None:
+        roles = ("planner", "plan-critic", "implementer", "reviewer", "critic", "learner")
+        supported = {"type", "properties", "required", "items", "enum", "additionalProperties"}
+        required_fields = {
+            "planner": {"filesWritten", "issues", "roadmapAdditions", "openDecisions"},
+            "plan-critic": {"acceptable", "problems", "frontierErrors"},
+            "implementer": {"worktree", "branch", "commits", "summary", "testsAdded", "gatesResult", "decisions", "blockers"},
+            "reviewer": {"blocking", "nonBlocking", "summary"},
+            "critic": {"complete", "criteria", "gatesVerdict", "gateFailures", "refutations", "requiredFixes", "decisionsForOperator"},
+            "learner": {"candidates"},
+        }
+
+        def validate_schema(schema: object) -> None:
+            self.assertIsInstance(schema, dict)
+            for key, value in schema.items():
+                self.assertIn(key, supported)
+                if key == "properties":
+                    self.assertIsInstance(value, dict)
+                    for nested in value.values():
+                        validate_schema(nested)
+                elif key == "items":
+                    validate_schema(value)
+
+        for role in roles:
+            with self.subTest(role=role):
+                path = SKILL_DIR / "schemas" / f"{role}.json"
+                self.assertTrue(path.is_file())
+                schema = json.loads(path.read_text(encoding="utf-8"))
+                validate_schema(schema)
+                self.assertEqual(required_fields[role], set(schema["required"]))
+        critic = json.loads((SKILL_DIR / "schemas" / "critic.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            ["pass", "fail", "no_gates", "not_run"],
+            critic["properties"]["gatesVerdict"]["enum"],
+        )
+
     def test_skill_frontmatter_and_canonical_script_cli_contracts(self) -> None:
         skill = SKILL_DIR / "SKILL.md"
         text = skill.read_text(encoding="utf-8")
@@ -209,7 +298,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             issue = self.write_issue(root, "sample#01", "ready-for-agent")
             self.write_roadmap(root)
 
-            for script in ("common.py", "frontier.py", "acceptance.py", "gates.py", "roadmap.py"):
+            for script in ("common.py", "frontier.py", "acceptance.py", "gates.py", "roadmap.py", "result.py"):
                 result = self.run_script(root, script, "--help")
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertIn("usage:", result.stdout.lower())
@@ -300,10 +389,11 @@ Slice: `planned#01`
             self.assertFalse(approved["result"]["awaitingOperatorApproval"])
             self.assertEqual("ready-for-agent", parse_issue(draft).status)
             commands = [call["command"] for call in approved["commandCalls"]]
-            self.assertEqual(3, len(commands))
-            self.assertIn('roadmap.py" status planned#01 ready-for-agent', commands[0])
-            self.assertIn('roadmap.py" waves', commands[1])
-            self.assertIn('roadmap.py" check', commands[2])
+            approval_commands = [command for command in commands if 'roadmap.py"' in command]
+            self.assertEqual(3, len(approval_commands))
+            self.assertIn('roadmap.py" status planned#01 ready-for-agent', approval_commands[0])
+            self.assertIn('roadmap.py" waves', approval_commands[1])
+            self.assertIn('roadmap.py" check', approval_commands[2])
             self.assertIn("planned#01", roadmap.read_text(encoding="utf-8"))
 
     def test_round_rejects_critic_completion_without_a_passing_gate(self) -> None:
@@ -402,6 +492,49 @@ Slice: `planned#01`
                 self.assertFalse(any('gates.py" --run' in command for command in commands))
                 self.assertFalse(any('roadmap.py" done' in command for command in commands))
 
+    def test_round_reasks_invalid_critic_result_once_without_consuming_budget_or_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            issue = self.write_issue(root, "protocol#01", "ready-for-agent")
+            roadmap = self.write_roadmap(root)
+            before_issue = issue.read_bytes()
+            before_roadmap = roadmap.read_bytes()
+
+            run = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{"ref": "protocol#01", "path": str(issue.relative_to(root)), "title": "Protocol failure", "specPath": ".scratch/protocol/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/protocol",
+                    "baseRef": "HEAD",
+                    "isolate": False,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "structuredOutput": False,
+                    "commandMode": "real",
+                    "criticRawResults": [
+                        {"complete": False},
+                        {"complete": False},
+                    ],
+                },
+            )
+
+            delivery = run["result"]["results"][0]
+            self.assertEqual("critic_failed", delivery["outcome"])
+            self.assertEqual(0, delivery["corrections"])
+            self.assertEqual(before_issue, issue.read_bytes())
+            self.assertEqual(before_roadmap, roadmap.read_bytes())
+            critic_calls = [call for call in run["calls"] if call["label"].startswith("critic:")]
+            self.assertEqual(["critic:protocol#01#1", "critic:protocol#01#1:retry"], [call["label"] for call in critic_calls])
+            self.assertFalse(any(call["label"].startswith("implement:protocol#01") for call in run["calls"][1:]))
+            self.assertFalse(any('roadmap.py" done' in call["command"] for call in run["commandCalls"]))
+
     def test_round_stops_without_state_change_when_integration_gate_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -434,9 +567,12 @@ Slice: `planned#01`
 
             self.assertEqual("integration_failed", run["result"]["results"][0]["outcome"])
             self.assertEqual("ready-for-agent", parse_issue(issue).status)
-            self.assertEqual(2, len(run["commandCalls"]))
-            self.assertIn('acceptance.py"', run["commandCalls"][0]["command"])
-            self.assertIn('gates.py" --run', run["commandCalls"][1]["command"])
+            self.assertEqual(5, len(run["commandCalls"]))
+            self.assertIn('result.py" --role "implementer" --json', run["commandCalls"][0]["command"])
+            self.assertIn('result.py" --role "reviewer" --json', run["commandCalls"][1]["command"])
+            self.assertIn('result.py" --role "critic" --json', run["commandCalls"][2]["command"])
+            self.assertIn('acceptance.py"', run["commandCalls"][3]["command"])
+            self.assertIn('gates.py" --run', run["commandCalls"][4]["command"])
 
     def test_round_serially_integrates_then_gates_then_marks_done(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -484,13 +620,16 @@ Slice: `planned#01`
             self.assertEqual("done", run["result"]["results"][0]["outcome"])
             self.assertEqual("done", parse_issue(issue).status)
             commands = [call["command"] for call in run["commandCalls"]]
-            self.assertEqual(6, len(commands))
-            self.assertIn('acceptance.py"', commands[0])
-            self.assertIn('git merge --no-ff "gantry/serial-issue"', commands[1])
-            self.assertIn('gates.py" --run', commands[2])
-            self.assertIn('roadmap.py" done serial#01', commands[3])
-            self.assertIn('git add -- ROADMAP.md', commands[4])
-            self.assertIn('git commit -m "gantry: complete serial#01"', commands[5])
+            self.assertEqual(9, len(commands))
+            self.assertIn('result.py" --role "implementer" --json', commands[0])
+            self.assertIn('result.py" --role "reviewer" --json', commands[1])
+            self.assertIn('result.py" --role "critic" --json', commands[2])
+            self.assertIn('acceptance.py"', commands[3])
+            self.assertIn('git merge --no-ff "gantry/serial-issue"', commands[4])
+            self.assertIn('gates.py" --run', commands[5])
+            self.assertIn('roadmap.py" done serial#01', commands[6])
+            self.assertIn('git add -- ROADMAP.md', commands[7])
+            self.assertIn('git commit -m "gantry: complete serial#01"', commands[8])
             self.assertFalse(any('roadmap.py" status' in command for command in commands))
 
     def test_frontier_rejects_invalid_graphs_and_uses_authoritative_statuses(self) -> None:
@@ -745,8 +884,17 @@ Slice: `legacy#07`
             "fresh adversarial Critic",
             "own worktree and branch",
             "one at a time with `git merge --no-ff`",
+            "result.py",
+            "--schema",
         ):
             self.assertIn(phrase, round_workflow)
+        self.assertNotIn("const IMPL_SCHEMA", round_workflow)
+        self.assertNotIn("const REVIEW_SCHEMA", round_workflow)
+        self.assertNotIn("const CRITIC_SCHEMA", round_workflow)
+        self.assertIn("result.py", plan)
+        self.assertIn("--schema", plan)
+        self.assertNotIn("const PLAN_SCHEMA", plan)
+        self.assertNotIn("const CRITIQUE_SCHEMA", plan)
         self.assertEqual(1, round_workflow.count("roadmap.py done <ref>"))
         self.assertLess(round_workflow.index("**Implementer:**"), round_workflow.index("**Reviewer:**"))
         self.assertLess(round_workflow.index("**Reviewer:**"), round_workflow.index("**Critic:**"))
@@ -777,9 +925,10 @@ Slice: `legacy#07`
             "shutil",
             "subprocess",
             "sys",
+            "typing",
         }
         self.assertEqual(
-            {"acceptance.py", "common.py", "frontier.py", "gates.py", "roadmap.py"},
+            {"acceptance.py", "common.py", "frontier.py", "gates.py", "result.py", "roadmap.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         for script in sorted(SCRIPTS.glob("*.py")):
