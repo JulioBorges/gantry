@@ -36,7 +36,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **0 / 18** |
+| Issues completed | **1 / 18** |
 | Specs completed | **0 / 1** |
 | Execution waves | **7** |
 
@@ -114,7 +114,7 @@ longer exist.
 
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
-| 01 | `gantry-migration` | 0/18 | 0–6 |
+| 01 | `gantry-migration` | 1/18 | 0–6 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -125,9 +125,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 
 <!-- BEGIN GENERATED: issue checklist -->
 
-### Wave 0 — 0/1 done
+### Wave 0 — 1/1 done
 
-- [ ] **`gantry-migration#01`** — Portable policy defaults for the legacy loop _(no blockers)_
+- [x] **`gantry-migration#01`** — Portable policy defaults for the legacy loop _(no blockers)_
 
 ### Wave 1 — 0/1 done
 
