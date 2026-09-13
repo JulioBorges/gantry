@@ -400,6 +400,25 @@ class RunLogTests(unittest.TestCase):
             rejected_flag = self.run_script(root, "append", unit, "--state-root", str(state), event=not_degraded)
             self.assertEqual(1, rejected_flag.returncode)
 
+    def test_every_runlog_event_is_named_in_the_spec_blueprint_run_log_bullet(self) -> None:
+        specification = importlib.util.spec_from_file_location("gantry_runlog", RUNLOG)
+        self.assertIsNotNone(specification)
+        module = importlib.util.module_from_spec(specification)
+        self.assertIsNotNone(specification.loader)
+        specification.loader.exec_module(module)
+
+        spec_path = REPO_ROOT / ".scratch" / "gantry-migration" / "spec.md"
+        spec_text = spec_path.read_text(encoding="utf-8")
+        run_log_bullet = next(
+            line for line in spec_text.splitlines() if line.startswith("- **Run log:**")
+        )
+        for event in module.EVENTS:
+            self.assertIn(
+                f"`{event}`",
+                run_log_bullet,
+                f"runlog.EVENTS names {event!r} but the spec's Run log bullet does not list it",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
