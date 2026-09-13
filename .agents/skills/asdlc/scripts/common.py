@@ -9,9 +9,26 @@ Conventions come from docs/agents/issue-tracker.md and AGENTS.md:
 """
 from __future__ import annotations
 
+import copy
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+DEFAULT_POLICY = {
+    "artifacts": {
+        "specs": ".scratch/{slug}/spec.md",
+        "issues": ".scratch/{slug}/issues",
+        "adrs": "docs/adr",
+        "decisions": "docs/adr",
+    },
+    "templates": {"dir": ".gantry/templates", "headingMap": {}},
+    "checks": [],
+    "git": {"target": "main", "prefix": "gantry/"},
+    "hooks": {"record": [], "deny": []},
+    "budget": {"corrections": 2, "contextShare": 0.15},
+    "dashboard": {"staleAfterSeconds": 900},
+}
 
 REF_RE = re.compile(r"`?([a-z0-9][a-z0-9-]*)#(\d{2,})`?")
 STATUS_RE = re.compile(r"^Status:\s*(.+?)\s*$", re.MULTILINE)
@@ -31,6 +48,32 @@ def repo_root(start: Path | None = None) -> Path:
         if (candidate / ".git").exists():
             return candidate
     return p
+
+
+def _merge_policy(base: dict, overlay: dict) -> dict:
+    """Return a recursive overlay without mutating either input."""
+    result = copy.deepcopy(base)
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _merge_policy(result[key], value)
+        else:
+            result[key] = copy.deepcopy(value)
+    return result
+
+
+def resolve_policy(root: Path | None = None) -> dict:
+    """Resolve pack defaults with an optional repository `.gantry/config.json` overlay."""
+    root = repo_root(root)
+    config_path = root / ".gantry" / "config.json"
+    if not config_path.exists():
+        return copy.deepcopy(DEFAULT_POLICY)
+    try:
+        overlay = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{config_path} is not valid JSON: {exc}") from exc
+    if not isinstance(overlay, dict):
+        raise ValueError(f"{config_path} must contain a JSON object")
+    return _merge_policy(DEFAULT_POLICY, overlay)
 
 
 def section(text: str, heading: str) -> str:
