@@ -226,7 +226,8 @@ Read ${issue.path}, ${issue.specPath}, ${paths.decisions}, ${paths.context}, and
 Implement only this Issue. Invoke the \`tdd\` skill and work behavior by behavior: failing test → minimal
 code → refactor. Keep tests real where the criterion requires a real process, file, repository or command.
 Run \`python3 ${scripts}/gates.py --run --diff-base ${A.baseRef} --cwd "$(pwd)"\` before returning.
-Never edit ROADMAP.md, Status, or criteria checkboxes. Commit small changes and leave a clean tree.
+Never edit ROADMAP.md, Status, or criteria checkboxes. Never force-push, and never skip, disable
+or weaken a test. Commit small changes and leave a clean tree.
 Effective Git policy: target ${policy.git.target}, prefix ${policy.git.prefix}.
 ${feedback ? `Fix every item first:\n${feedback.items.map((item, index) => `${index + 1}. ${typeof item === 'string' ? item : `${item.finding} → ${item.fix}`}`).join('\n')}` : ''}
 Return worktree, branch, commits, summary, testsAdded, gatesResult, decisions and blockers as structured output.`
@@ -251,7 +252,8 @@ and requirements. Return that parsed result unchanged in \`gateResult\`; derive 
 \`gateFailures\` from it, never a prose paraphrase. \`no_gates\` and \`not_run\` are not passing results.
 Require a clean tree and commits after ${A.baseRef}. Inspect the diff for skipped,
 disabled or mock-replaced tests, TODO/FIXME/not implemented text, Status/checkbox/ROADMAP edits, and scope
-creep. Verify the Review findings were actually fixed. Do not edit.
+creep. Check \`git reflog\` and the branch history for a forced rewrite; a force-push is a refutation on
+its own. Verify the Review findings were actually fixed. Do not edit.
 Return complete only for gate-green, clean, fully evidenced work; otherwise ordered requiredFixes,
 refutations, gateResult, gateFailures and decisionsForOperator as structured output.`
 }
