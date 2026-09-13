@@ -40,9 +40,11 @@ in the round may run concurrently. The host harness waits for accepted deliverie
 one at a time with `git merge --no-ff`. Run the declared gates after every merge. A failing merge gate stops
 the Run rather than fixing forward.
 
-Only a Critic-complete, gate-green and clean delivery may be integrated. Then, and only then, the
-orchestrator calls `roadmap.py done <ref>` and commits the resulting authoritative projection. Refuted,
-failed, parked and externally blocked Issues remain unticked.
+Only a Critic-complete, gate-green and clean delivery may be integrated. Completion requires exactly one
+passing, non-empty evidence entry for every criterion returned by `acceptance.py`; the workflow does not
+trust Issue fields carried in its input. Then, and only then, the orchestrator calls `roadmap.py done <ref>`
+and commits the resulting authoritative projection. Refuted, failed, parked and externally blocked Issues
+remain unticked.
 
 ## Executable Claude Code Workflow
 
@@ -102,8 +104,41 @@ function location(impl) {
   return impl && impl.worktree ? impl.worktree : A.repoRoot
 }
 
-function criticAccepted(verdict) {
-  return Boolean(verdict && verdict.complete === true && verdict.gatesVerdict === 'pass')
+async function authoritativeCriterionIndexes(issue) {
+  let result
+  try {
+    result = await runWorkflowCommand(
+      `python3 "${scripts}/acceptance.py" "${A.repoRoot}/${issue.path}" --json`,
+    )
+  } catch {
+    return null
+  }
+  try {
+    const acceptance = JSON.parse(result.stdout)
+    if (!Array.isArray(acceptance.criteria) || acceptance.criteria.length === 0) return null
+    const indexes = acceptance.criteria.map(item => item && item.index)
+    if (!indexes.every(index => Number.isInteger(index) && index > 0)) return null
+    if (new Set(indexes).size !== indexes.length) return null
+    return indexes
+  } catch {
+    return null
+  }
+}
+
+async function criticAccepted(verdict, issue) {
+  if (!verdict || verdict.complete !== true || verdict.gatesVerdict !== 'pass') return false
+  const expectedIndexes = await authoritativeCriterionIndexes(issue)
+  if (!expectedIndexes || !Array.isArray(verdict.criteria) || verdict.criteria.length !== expectedIndexes.length) return false
+  const observedIndexes = new Set()
+  for (const criterion of verdict.criteria) {
+    if (!criterion || typeof criterion !== 'object' || !Number.isInteger(criterion.index) ||
+        !expectedIndexes.includes(criterion.index) || observedIndexes.has(criterion.index) ||
+        criterion.met !== true || typeof criterion.evidence !== 'string' || !criterion.evidence.trim()) {
+      return false
+    }
+    observedIndexes.add(criterion.index)
+  }
+  return observedIndexes.size === expectedIndexes.length
 }
 
 async function runWorkflowCommand(command) {
@@ -200,11 +235,13 @@ const results = await pipeline(
     let impl = state.impl
     let verdict = null
     let corrections = 0
+    let accepted = false
     for (let attempt = 1; ; attempt += 1) {
       verdict = await agent(criticPrompt(issue, impl, state.review, attempt), {
         label: `critic:${issue.ref}#${attempt}`, phase: 'Critic', schema: CRITIC_SCHEMA, model: A.models.critic,
       })
-      if (!verdict || criticAccepted(verdict) || corrections >= budget) break
+      accepted = await criticAccepted(verdict, issue)
+      if (!verdict || accepted || corrections >= budget) break
       corrections += 1
       impl = await implement(issue, { kind: 'critic', items: verdict.requiredFixes }, impl)
       if (!impl) break
@@ -212,7 +249,7 @@ const results = await pipeline(
     return {
       ref: issue.ref,
       issuePath: issue.path,
-      outcome: criticAccepted(verdict) ? 'accepted' : (verdict ? 'refuted' : 'critic_failed'),
+      outcome: accepted ? 'accepted' : (verdict ? 'refuted' : 'critic_failed'),
       worktree: impl && impl.worktree, branch: impl && impl.branch, commits: impl && impl.commits,
       corrections, reviewFix: state.reviewFix, review: state.review, verdict,
       decisions: [...((impl && impl.decisions) || []), ...((verdict && verdict.decisionsForOperator) || [])],

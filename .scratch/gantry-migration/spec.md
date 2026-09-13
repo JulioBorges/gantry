@@ -166,6 +166,8 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Made the executable round workflow fail closed unless the Critic supplies one passing,
+  non-empty evidence entry for every acceptance criterion returned by `acceptance.py`.
 - 2026-09-13 — Corrected the executable canonical plan and round workflows, policy-derived Issue/Spec artifact discovery, read-only acceptance CLI, and parked Issue reporting before readiness filtering.
 - 2026-09-13 — Added the canonical harness-neutral Gantry workflow skill, default templates and portable legacy script contracts with regression coverage.
 - 2026-09-13 — Added portable legacy policy defaults, optional repository overlay resolution and policy-rendered workflow paths while preserving the Markdown issue parser.

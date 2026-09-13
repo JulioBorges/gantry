@@ -28,11 +28,19 @@ class CanonicalGantryWorkflowTests(unittest.TestCase):
             check=False,
         )
 
-    def write_issue(self, root: Path, ref: str, status: str, blockers: list[str] | None = None) -> Path:
+    def write_issue(
+        self,
+        root: Path,
+        ref: str,
+        status: str,
+        blockers: list[str] | None = None,
+        criteria: list[str] | None = None,
+    ) -> Path:
         slug, number = ref.split("#")
         path = root / ".scratch" / slug / "issues" / f"{int(number):02d}-example.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         blocked_by = "\n".join(f"- `{blocker}` — prerequisite" for blocker in blockers or []) or "- None"
+        acceptance_criteria = "\n".join(f"- [ ] {criterion}" for criterion in criteria or ["exposes a deterministic behaviour"])
         path.write_text(
             f"""# Example {ref}
 
@@ -52,7 +60,7 @@ Preserve the portable workflow contract.
 
 ## Acceptance criteria
 
-- [ ] exposes a deterministic behaviour
+{acceptance_criteria}
 
 ## Blocked by
 
@@ -86,6 +94,18 @@ Preserve the portable workflow contract.
             encoding="utf-8",
         )
         return roadmap
+
+    def critic_evidence(self, root: Path, issue: Path) -> list[dict[str, object]]:
+        accepted = self.run_script(root, "acceptance.py", str(issue), "--json")
+        self.assertEqual(0, accepted.returncode, accepted.stderr)
+        return [
+            {
+                "index": criterion["index"],
+                "met": True,
+                "evidence": f"real test evidence for criterion {criterion['index']}",
+            }
+            for criterion in json.loads(accepted.stdout)["criteria"]
+        ]
 
     def run_workflow(self, filename: str, args: dict) -> dict:
         source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
@@ -311,7 +331,7 @@ Slice: `planned#01`
                         "paths": {},
                         "date": "2026-09-13",
                         "criticResult": {
-                            "complete": True, "criteria": [], "gatesVerdict": gates_verdict, "gateFailures": ["real gate evidence failed"],
+                            "complete": True, "criteria": self.critic_evidence(root, issue), "gatesVerdict": gates_verdict, "gateFailures": ["real gate evidence failed"],
                             "refutations": ["gate evidence is not green"], "requiredFixes": ["make the declared gate pass"],
                             "decisionsForOperator": [],
                         },
@@ -319,8 +339,68 @@ Slice: `planned#01`
                 )
 
                 self.assertEqual("refuted", run["result"]["results"][0]["outcome"])
-                self.assertEqual([], run["commandCalls"])
+                self.assertFalse(any('gates.py" --run' in call["command"] for call in run["commandCalls"]))
+                self.assertFalse(any('roadmap.py" done' in call["command"] for call in run["commandCalls"]))
                 self.assertEqual("ready-for-agent", parse_issue(issue).status)
+
+    def test_round_rejects_missing_or_invalid_critic_evidence_without_state_change(self) -> None:
+        cases = {
+            "empty": [],
+            "partial": [{"index": 1, "met": True, "evidence": "proves the behaviour"}],
+            "duplicate": [
+                {"index": 1, "met": True, "evidence": "first proof"},
+                {"index": 1, "met": True, "evidence": "duplicate proof"},
+            ],
+            "blank-evidence": [{"index": 1, "met": True, "evidence": "   "}],
+            "unmet": [
+                {"index": 1, "met": False, "evidence": "the behaviour remains unproven"},
+                {"index": 2, "met": True, "evidence": "the second behaviour is proven"},
+            ],
+        }
+        for name, criteria in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                self.init_repo(root)
+                issue = self.write_issue(
+                    root,
+                    "evidence#01",
+                    "ready-for-agent",
+                    criteria=["exposes the first behaviour", "exposes the second behaviour"],
+                )
+                roadmap = self.write_roadmap(root)
+                before_issue = issue.read_bytes()
+                before_roadmap = roadmap.read_bytes()
+
+                run = self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": 1,
+                        "issues": [{"ref": "evidence#01", "path": str(issue.relative_to(root)), "title": "Evidence issue", "specPath": ".scratch/evidence/spec.md"}],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": "gantry/evidence",
+                        "baseRef": "HEAD",
+                        "isolate": False,
+                        "correctionBudget": 0,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 0}},
+                        "paths": {},
+                        "date": "2026-09-13",
+                        "commandMode": "real",
+                        "criticResult": {
+                            "complete": True, "criteria": criteria, "gatesVerdict": "pass", "gateFailures": [],
+                            "refutations": [], "requiredFixes": [], "decisionsForOperator": [],
+                        },
+                    },
+                )
+
+                self.assertEqual("refuted", run["result"]["results"][0]["outcome"])
+                self.assertEqual(before_issue, issue.read_bytes())
+                self.assertEqual(before_roadmap, roadmap.read_bytes())
+                commands = [call["command"] for call in run["commandCalls"]]
+                self.assertTrue(any('acceptance.py"' in command for command in commands))
+                self.assertFalse(any('gates.py" --run' in command for command in commands))
+                self.assertFalse(any('roadmap.py" done' in command for command in commands))
 
     def test_round_stops_without_state_change_when_integration_gate_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -346,13 +426,17 @@ Slice: `planned#01`
                     "paths": {},
                     "date": "2026-09-13",
                     "commandMode": "real",
+                    "criticResult": {
+                        "criteria": self.critic_evidence(root, issue),
+                    },
                 },
             )
 
             self.assertEqual("integration_failed", run["result"]["results"][0]["outcome"])
             self.assertEqual("ready-for-agent", parse_issue(issue).status)
-            self.assertEqual(1, len(run["commandCalls"]))
-            self.assertIn('gates.py" --run', run["commandCalls"][0]["command"])
+            self.assertEqual(2, len(run["commandCalls"]))
+            self.assertIn('acceptance.py"', run["commandCalls"][0]["command"])
+            self.assertIn('gates.py" --run', run["commandCalls"][1]["command"])
 
     def test_round_serially_integrates_then_gates_then_marks_done(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -391,18 +475,22 @@ Slice: `planned#01`
                     "date": "2026-09-13",
                     "issueBranch": "gantry/serial-issue",
                     "commandMode": "real",
+                    "criticResult": {
+                        "criteria": self.critic_evidence(root, issue),
+                    },
                 },
             )
 
             self.assertEqual("done", run["result"]["results"][0]["outcome"])
             self.assertEqual("done", parse_issue(issue).status)
             commands = [call["command"] for call in run["commandCalls"]]
-            self.assertEqual(5, len(commands))
-            self.assertIn('git merge --no-ff "gantry/serial-issue"', commands[0])
-            self.assertIn('gates.py" --run', commands[1])
-            self.assertIn('roadmap.py" done serial#01', commands[2])
-            self.assertIn('git add -- ROADMAP.md', commands[3])
-            self.assertIn('git commit -m "gantry: complete serial#01"', commands[4])
+            self.assertEqual(6, len(commands))
+            self.assertIn('acceptance.py"', commands[0])
+            self.assertIn('git merge --no-ff "gantry/serial-issue"', commands[1])
+            self.assertIn('gates.py" --run', commands[2])
+            self.assertIn('roadmap.py" done serial#01', commands[3])
+            self.assertIn('git add -- ROADMAP.md', commands[4])
+            self.assertIn('git commit -m "gantry: complete serial#01"', commands[5])
             self.assertFalse(any('roadmap.py" status' in command for command in commands))
 
     def test_frontier_rejects_invalid_graphs_and_uses_authoritative_statuses(self) -> None:
