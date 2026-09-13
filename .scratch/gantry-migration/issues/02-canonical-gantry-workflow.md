@@ -1,7 +1,7 @@
 # Canonical Gantry workflow skill
 
 Type: issue
-Status: ready-for-agent
+Status: blocked
 Slice: `gantry-migration#02`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -28,3 +28,4 @@ Create the canonical `.agents/skills/gantry/` skill by moving the portable legac
 - `gantry-migration#01` — consumes the portable policy contract and de-hardcoded legacy workflow.
 
 ## Comments
+- 2026-09-13 — Critic refutation after correction budget exhausted: the executable round workflow accepts a Critic result with criteria: [] when complete is true and gatesVerdict is pass, then invokes roadmap.py done. This violates fail-closed adversarial verification because there is no evidence entry for each Issue criterion. Required fix: validate exactly one passing, non-empty evidence entry for every authoritative criterion before integration or roadmap.py done. Worktree: /Users/julioborges/src/personal/gantry-asdlc-gantry-migration. Branch: asdlc/gantry-migration.
