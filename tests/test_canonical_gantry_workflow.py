@@ -135,12 +135,13 @@ const runCommand = async (command, options = {{}}) => {{
   return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}' : '' }};
 }};
 const agent = async (prompt, options) => {{
-  calls.push({{ label: options.label, prompt }});
+  calls.push({{ label: options.label, prompt, schema: options.schema }});
   if (options.label.startsWith('research:')) return 'factual research';
   if (options.label.startsWith('plan')) {{
     if (args.plannerRawResults && args.plannerRawResults.length) {{
       return args.plannerRawResults.shift();
     }}
+    if (args.plannerResult) return args.plannerResult;
     if (args.testDraftPath) {{
       mkdirSync(dirname(args.testDraftPath), {{ recursive: true }});
       writeFileSync(args.testDraftPath, args.testDraftText);
@@ -366,7 +367,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             issue = self.write_issue(root, "sample#01", "ready-for-agent")
             self.write_roadmap(root)
 
-            for script in ("common.py", "frontier.py", "acceptance.py", "gates.py", "roadmap.py", "result.py"):
+            for script in ("common.py", "frontier.py", "acceptance.py", "budget.py", "gates.py", "roadmap.py", "result.py"):
                 result = self.run_script(root, script, "--help")
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertIn("usage:", result.stdout.lower())
@@ -390,6 +391,9 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             roadmap = self.write_roadmap(root)
             before = roadmap.read_bytes()
             draft = root / ".scratch" / "planned" / "issues" / "01-planned.md"
+            spec = root / ".scratch" / "planned" / "spec.md"
+            spec.parent.mkdir(parents=True)
+            spec.write_text("# Planned Spec\n", encoding="utf-8")
             draft_text = """# Planned Issue
 
 Type: issue
@@ -408,7 +412,7 @@ Slice: `planned#01`
                 "plan-workflow.md",
                 {
                     "target": {"kind": "spec", "slug": "planned", "specPath": str(root / ".scratch" / "planned" / "spec.md")},
-                    "models": {"plan": "plan", "critic": "critic"},
+                    "models": {"plan": "claude-opus-4-5", "critic": "critic"},
                     "skillDir": str(SKILL_DIR),
                     "repoRoot": str(root),
                     "policy": {"git": {"target": "main", "prefix": "gantry/"}},
@@ -424,6 +428,7 @@ Slice: `planned#01`
                     "date": "2026-09-13",
                     "testDraftPath": str(draft),
                     "testDraftText": draft_text,
+                    "commandMode": "real",
                 },
             )
             self.assertTrue(plan["result"]["awaitingOperatorApproval"])
@@ -434,7 +439,7 @@ Slice: `planned#01`
                 "plan-workflow.md",
                 {
                     "target": {"kind": "spec", "slug": "planned", "specPath": str(root / ".scratch" / "planned" / "spec.md")},
-                    "models": {"plan": "plan", "critic": "critic"},
+                    "models": {"plan": "claude-opus-4-5", "critic": "critic"},
                     "skillDir": str(SKILL_DIR),
                     "repoRoot": str(root),
                     "policy": {"git": {"target": "main", "prefix": "gantry/"}},
@@ -462,7 +467,171 @@ Slice: `planned#01`
             self.assertIn('roadmap.py" status planned#01 ready-for-agent', approval_commands[0])
             self.assertIn('roadmap.py" waves', approval_commands[1])
             self.assertIn('roadmap.py" check', approval_commands[2])
+            self.assertTrue(any('budget.py"' in command for command in commands))
             self.assertIn("planned#01", roadmap.read_text(encoding="utf-8"))
+
+    def test_planner_contract_requires_every_consumed_issue_field_and_rejects_a_pathless_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            draft = self.write_issue(root, "planned#01", "draft")
+            spec = root / ".scratch" / "planned" / "spec.md"
+            spec.write_text("# Planned Spec\n", encoding="utf-8")
+            plan_args = {
+                "target": {"kind": "spec", "slug": "planned", "specPath": str(root / ".scratch" / "planned" / "spec.md")},
+                "models": {"plan": "claude-opus-4-5", "critic": "critic"},
+                "skillDir": str(SKILL_DIR),
+                "repoRoot": str(root),
+                "commandMode": "real",
+                "policy": {"git": {"target": "main", "prefix": "gantry/"}},
+                "paths": {
+                    "issueDir": str(root / ".scratch" / "planned" / "issues"),
+                    "specPath": str(root / ".scratch" / "planned" / "spec.md"),
+                    "exemplarIssue": str(root / "docs" / "agents" / "issue-tracker.md"),
+                    "decisions": str(root / "docs" / "adr"),
+                    "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
+                    "context": str(root / "CONTEXT.md"),
+                    "adrs": str(root / "docs" / "adr"),
+                },
+                "plannerResult": {
+                    "filesWritten": [],
+                    "issues": [{
+                        "ref": "planned#01",
+                        "title": "Pathless planned Issue",
+                        "criteriaCount": 1,
+                        "blockedBy": [],
+                    }],
+                    "roadmapAdditions": [],
+                    "openDecisions": [],
+                },
+            }
+            rejected = self.run_workflow("plan-workflow.md", plan_args)
+            self.assertFalse(rejected["result"]["awaitingOperatorApproval"])
+            self.assertFalse(rejected["result"]["approved"])
+            self.assertEqual("planner", rejected["result"]["protocolFailure"]["role"])
+            self.assertFalse(any('budget.py"' in call["command"] for call in rejected["commandCalls"]))
+            self.assertFalse(any('roadmap.py"' in call["command"] for call in rejected["commandCalls"]))
+
+            valid = self.run_workflow(
+                "plan-workflow.md",
+                {
+                    **plan_args,
+                    "plannerResult": {
+                        **plan_args["plannerResult"],
+                        "issues": [{
+                            **plan_args["plannerResult"]["issues"][0],
+                            "path": str(draft),
+                        }],
+                    },
+                },
+            )
+            self.assertTrue(valid["result"]["awaitingOperatorApproval"])
+
+    def test_plan_critic_refutes_a_real_measured_over_budget_package(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            draft = root / ".scratch" / "planned" / "issues" / "01-planned.md"
+            spec = root / ".scratch" / "planned" / "spec.md"
+            spec.parent.mkdir(parents=True)
+            spec.write_text("# Planned Spec\n", encoding="utf-8")
+            package = root / "src" / "over-budget.txt"
+            package.parent.mkdir()
+            package.write_bytes(b"x" * 200_000)
+            result = self.run_workflow(
+                "plan-workflow.md",
+                {
+                    "target": {"kind": "spec", "slug": "planned", "specPath": str(spec)},
+                    "models": {"plan": "claude-opus-4-5", "critic": "critic"},
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}},
+                    "paths": {
+                        "issueDir": str(draft.parent),
+                        "specPath": str(spec),
+                        "exemplarIssue": str(draft),
+                        "decisions": str(root / "docs" / "adr"),
+                        "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "context": str(root / "CONTEXT.md"),
+                        "adrs": str(root / "docs" / "adr"),
+                    },
+                    "date": "2026-09-13",
+                    "testDraftPath": str(draft),
+                    "testDraftText": """# Planned Issue
+
+Type: issue
+Status: draft
+Slice: `planned#01`
+Spec: `.scratch/planned/spec.md`
+
+## What to build
+
+### Files to read
+
+- `src/over-budget.txt`
+
+## Acceptance criteria
+
+- [ ] remains under the initial context budget
+
+## Blocked by
+
+- None
+""",
+                    "commandMode": "real",
+                },
+            )
+
+            critique = result["result"]["critique"]
+            self.assertFalse(critique["acceptable"])
+            measurement = critique["budgets"][0]
+            self.assertTrue(measurement["overBudget"])
+            self.assertGreater(measurement["estimatedTokens"], measurement["budgetTokens"])
+            for field in ("estimatedTokens", "budgetTokens", "contextShare", "contextWindow"):
+                self.assertIn(str(measurement[field]), critique["problems"][0]["problem"])
+            self.assertTrue(any("/budget.py" in call["command"] for call in result["commandCalls"]))
+
+    def test_round_never_raises_the_two_correction_ceiling(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            issue = self.write_issue(root, "ceiling#01", "ready-for-agent")
+            self.write_roadmap(root)
+            refutation = {
+                "complete": False,
+                "criteria": [],
+                "gatesVerdict": "fail",
+                "gateFailures": ["the criterion is not proven"],
+                "refutations": ["the criterion is not proven"],
+                "requiredFixes": ["add real evidence"],
+                "decisionsForOperator": [],
+            }
+
+            result = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{"ref": "ceiling#01", "path": str(issue.relative_to(root)), "title": "Ceiling", "specPath": ".scratch/ceiling/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/ceiling",
+                    "baseRef": "HEAD",
+                    "isolate": False,
+                    "correctionBudget": 10,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 10}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "criticResults": [refutation, refutation, refutation],
+                },
+            )
+
+            delivery = result["result"]["results"][0]
+            self.assertEqual("refuted", delivery["outcome"])
+            self.assertEqual(2, delivery["corrections"])
+            labels = [call["label"] for call in result["calls"]]
+            self.assertEqual(3, sum(label.startswith("critic:") for label in labels))
+            self.assertEqual(3, sum(label.startswith("implement:") for label in labels))
 
     def test_round_rejects_critic_completion_without_a_passing_gate(self) -> None:
         cases = ("fail", "no_gates")
@@ -1017,6 +1186,12 @@ Slice: `portable#01`
             text = (SKILL_DIR / "templates" / name).read_text(encoding="utf-8")
             for heading in headings:
                 self.assertIn(heading, text, name)
+        issue_template = (SKILL_DIR / "templates" / "issue.md").read_text(encoding="utf-8")
+        self.assertIn("### Files to read", issue_template)
+        self.assertIn("- `<repository-relative-path>`", issue_template)
+        plan_workflow = (SKILL_DIR / "reference" / "plan-workflow.md").read_text(encoding="utf-8")
+        self.assertIn("### Files to read", plan_workflow)
+        self.assertIn("repository-relative paths", plan_workflow)
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -1113,7 +1288,7 @@ Slice: `legacy#07`
             "typing",
         }
         self.assertEqual(
-            {"acceptance.py", "common.py", "frontier.py", "gates.py", "result.py", "roadmap.py"},
+            {"acceptance.py", "budget.py", "common.py", "frontier.py", "gates.py", "result.py", "roadmap.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         for script in sorted(SCRIPTS.glob("*.py")):

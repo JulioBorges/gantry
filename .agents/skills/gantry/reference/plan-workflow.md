@@ -25,6 +25,10 @@ The Planner returns `filesWritten`, `issues` (`ref`, `path`, `title`, `criteriaC
 - write only draft Issue files under `args.paths.issueDir`;
 - use `args.paths.specPath`, `decisions`, `context`, `adrs`, `issueTracker` and `exemplarIssue` rather
   than inferred paths;
+- when an Issue needs additional initial-context files, put them under `## What to build` in a
+  `### Files to read` section. Each list item must be exactly one repository-relative path in a code
+  span (`- \`path/to/file\``); prose, code spans outside that list and paths under another heading are
+  not declarations and are not counted by `budget.py`;
 - never write `ROADMAP.md`, set an Issue to `ready-for-agent`, or implement any issue;
 - use English for every artifact.
 
@@ -101,6 +105,59 @@ async function requestRole(role, prompt, options) {
   return (await validRoleResult(role, retry)) ? retry : null
 }
 
+function shellQuote(value) {
+  return `"${String(value).replace(/(["\\$`])/g, '\\$1')}"`
+}
+
+async function measureBudgets(plan) {
+  if (!plan || !Array.isArray(plan.issues) || typeof runCommand !== 'function') return []
+  const measurements = []
+  for (const [index, issue] of plan.issues.entries()) {
+    const ref = issue && typeof issue.ref === 'string' && issue.ref.trim()
+      ? issue.ref.trim()
+      : `issues[${index}]`
+    if (!issue || typeof issue.path !== 'string' || !issue.path.trim()) {
+      throw new Error(`planned Issue ${ref} has no valid path`)
+    }
+    const command = `python3 ${shellQuote(`${scripts}/budget.py`)} ${shellQuote(issue.path.trim())} --model ${shellQuote(A.models.plan)} --json`
+    const result = await runCommand(command, { cwd: A.repoRoot })
+    if (!result || ![0, 1].includes(result.exitCode)) {
+      throw new Error(`context budget command failed: ${command}`)
+    }
+    let payload
+    try {
+      payload = JSON.parse(result.stdout)
+    } catch {
+      throw new Error(`context budget command returned invalid JSON: ${command}`)
+    }
+    if (!payload || typeof payload !== 'object' || typeof payload.error === 'string' ||
+        !Number.isFinite(payload.estimatedTokens) || !Number.isFinite(payload.contextWindow) ||
+        !Number.isFinite(payload.contextShare) || !Number.isFinite(payload.budgetTokens) ||
+        typeof payload.overBudget !== 'boolean') {
+      throw new Error(`context budget configuration is invalid: ${command}`)
+    }
+    measurements.push(payload)
+  }
+  return measurements
+}
+
+function applyBudgetRefutations(critique, measurements) {
+  const overBudget = measurements.filter(measurement => measurement.overBudget)
+  if (!overBudget.length) return { ...critique, budgets: measurements }
+  const problems = Array.isArray(critique && critique.problems) ? critique.problems : []
+  const refutations = overBudget.map(measurement => ({
+    problem: `Initial Context Budget exceeded for ${measurement.issue}: ${measurement.estimatedTokens} estimated tokens exceeds ${measurement.budgetTokens} tokens (${measurement.contextShare} of ${measurement.contextWindow}).`,
+    fix: 'Reduce the Issue initial package or split the Issue before requesting approval.',
+  }))
+  return {
+    ...(critique || {}),
+    acceptable: false,
+    problems: [...problems, ...refutations],
+    frontierErrors: Array.isArray(critique && critique.frontierErrors) ? critique.frontierErrors : [],
+    budgets: measurements,
+  }
+}
+
 function planPrompt(feedback) {
   return `You are the Planner for ${targetText} in ${A.repoRoot}.
 
@@ -111,6 +168,10 @@ Write only draft Issue files under ${paths.issueDir}/NN-<slug>.md, using ${paths
 ${paths.issueTracker}. Read ${paths.specPath}, ${paths.decisions}, ${paths.context} and ${paths.adrs}.
 Every Issue is a demonstrable vertical slice with observable checkbox criteria and real, acyclic
 \`## Blocked by\` refs. Use \`Status: draft\`, the rendered effective paths, and English artifacts.
+When additional initial-context files are needed, declare them only under \`## What to build\` as
+\`### Files to read\`, using list items exactly in the form \`- \`path/to/file\`\` with
+repository-relative paths. \`budget.py\` counts only those list items, not prose, incidental code spans,
+or paths under another heading.
 The effective Git policy is target \`${policy.git.target}\`, prefix \`${policy.git.prefix}\`.
 ${t.kind === 'goal' ? `First draft ${paths.specPath} in the existing Spec format.` : ''}
 ${t.kind === 'issue' ? `Rewrite only ${t.issuePath}; preserve its number and slug.` : ''}
@@ -119,15 +180,19 @@ roadmapAdditions and openDecisions as structured output.
 ${feedback ? `Address every previous critic finding:\n${feedback.map((item, index) => `${index + 1}. ${item.problem} → ${item.fix}`).join('\n')}` : ''}`
 }
 
-function critiquePrompt(plan) {
+function critiquePrompt(plan, measurements) {
   return `You are the adversarial Plan Critic for ${targetText}. Default to acceptable=false when uncertain.
 Read every file in: ${plan.filesWritten.join(', ') || '(none)'}.
 Refute non-vertical slices, unobservable criteria, invented or re-owned contracts, invalid format or
 dependencies, and incomplete Spec coverage. Run:
 \`python3 ${scripts}/frontier.py --scope ${t.slug} --include-parked --json\`
-and report every graph error. Confirm every new Issue remains \`Status: draft\`; neither ROADMAP.md nor
-ready-for-agent state may be written before explicit operator approval. Do not edit files.
-Return acceptable, problems (with actionable fixes), and frontierErrors as structured output.`
+and report every graph error. The deterministic context-budget measurements are:
+${JSON.stringify(measurements)}
+Every entry with \`overBudget: true\` is a required numeric refutation: quote its \`estimatedTokens\`,
+\`budgetTokens\`, \`contextShare\` and \`contextWindow\`, and set \`acceptable: false\`. Confirm every new
+Issue remains \`Status: draft\`; neither ROADMAP.md nor ready-for-agent state may be written before explicit
+operator approval. Do not edit files. Return acceptable, problems (with actionable fixes), frontierErrors
+and budgets as structured output.`
 }
 
 phase('Research')
@@ -153,7 +218,17 @@ if (!plan) {
   }
 }
 phase('Critique')
-let critique = await requestRole('plan-critic', critiquePrompt(plan), {
+let measurements
+try {
+  measurements = await measureBudgets(plan)
+} catch (error) {
+  return {
+    target: t, plan, critique: null,
+    budgetFailure: String(error.message || error),
+    awaitingOperatorApproval: false, approved: false,
+  }
+}
+let critique = await requestRole('plan-critic', critiquePrompt(plan, measurements), {
   label: 'critique', phase: 'Critique', model: A.models.critic,
 })
 if (!critique) {
@@ -163,6 +238,7 @@ if (!critique) {
     awaitingOperatorApproval: false, approved: false,
   }
 }
+critique = applyBudgetRefutations(critique, measurements)
 if (!critique.acceptable) {
   log(`plan refuted: ${critique.problems.length} problem(s) — one revision pass`)
   const revisedPlan = await requestRole('planner', planPrompt(critique.problems), {
@@ -176,7 +252,16 @@ if (!critique.acceptable) {
     }
   }
   plan = revisedPlan
-  const revisedCritique = await requestRole('plan-critic', critiquePrompt(plan), {
+  try {
+    measurements = await measureBudgets(plan)
+  } catch (error) {
+    return {
+      target: t, plan, critique: null,
+      budgetFailure: String(error.message || error),
+      awaitingOperatorApproval: false, approved: false,
+    }
+  }
+  const revisedCritique = await requestRole('plan-critic', critiquePrompt(plan, measurements), {
     label: 'critique:2', phase: 'Critique', model: A.models.critic,
   })
   if (!revisedCritique) {
@@ -186,7 +271,7 @@ if (!critique.acceptable) {
       awaitingOperatorApproval: false, approved: false,
     }
   }
-  critique = revisedCritique
+  critique = applyBudgetRefutations(revisedCritique, measurements)
 }
 
 async function runApprovalCommand(command) {

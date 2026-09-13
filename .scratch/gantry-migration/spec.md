@@ -166,6 +166,8 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Made the Planner Issue result contract require every workflow-consumed field and fail planning before approval when an Issue has no valid path for deterministic context-budget measurement.
+- 2026-09-13 — Added deterministic initial context-budget estimation from an Issue, its parent Spec and explicitly named files; declared model windows per harness and made over-budget plans numeric refutations with a two-attempt correction ceiling.
 - 2026-09-13 — Added declared absolute and RFC 6901-mapped differential gates with isolated base comparisons, normalized finding identities, and severity-aware regressions.
 - 2026-09-13 — Added role result contracts, standard-library validation and protocol-failure handling with one re-request before the phase fails.
 - 2026-09-13 — Operator-approved a `make test` repository gate for the canonical workflow slice so the Run can establish a real passing gate instead of relying on a `no_gates` exception.
