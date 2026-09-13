@@ -144,6 +144,48 @@ class GuardHookTests(unittest.TestCase):
             events = [json.loads(line) for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()]
             self.assertEqual(1, len([event for event in events if event["event"] == "hook.denied"]))
 
+    # -- Issue creation exemption -----------------------------------------------------------
+
+    def test_allows_writing_a_new_draft_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            draft_content = "Type: issue\nStatus: draft\n\n## Acceptance criteria\n\n- [ ] Some criterion\n"
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Write",
+                "tool_input": {"file_path": ".scratch/sample/issues/10-new.md", "content": draft_content},
+            }
+            allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+
+    def test_denies_writing_over_an_existing_issue_that_changes_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text("Type: issue\nStatus: draft\n\n## Acceptance criteria\n\n- [ ] Some criterion\n", encoding="utf-8")
+
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    "content": "Type: issue\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] Some criterion\n",
+                },
+            }
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode)
+            self.assertIn("issue-status-protected", denied.stdout)
+
     # -- subagent + degradation --------------------------------------------------------------
 
     def test_subagent_stop_appends_event_and_malformed_payload_still_degrades_safely(self) -> None:

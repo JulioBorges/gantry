@@ -35,8 +35,9 @@ MODIFYING_TOOLS = {"edit", "write", "multiedit", "notebookedit", "applypatch", "
 BASH_TOOLS = {"bash", "shell", "exec"}
 
 ISSUE_FILE_RE = re.compile(r"^\d{2,}-[a-z0-9-]+\.md$")
-STATUS_LINE_RE = re.compile(r"(?m)^Status:\s*\S")
+STATUS_LINE_RE = re.compile(r"(?m)^Status:\s*(\S+)")
 CHECKBOX_LINE_RE = re.compile(r"(?m)^\s*-\s\[[ xX]\]")
+CHECKED_CHECKBOX_RE = re.compile(r"(?m)^\s*-\s\[[xX]\]")
 PUSH_RE = re.compile(r"\bgit\b[^&|;]*\bpush\b")
 FORCE_FLAG_RE = re.compile(r"(--force(-with-lease)?\b|(?:^|\s)-f\b)")
 FORCE_REFSPEC_RE = re.compile(r"(?:^|\s)\+\S")
@@ -104,6 +105,32 @@ def extract_text(arguments: dict) -> str:
     return "\n".join(parts)
 
 
+def extract_new_text(arguments: dict) -> str:
+    """The resulting text a modifying tool would write -- never the text it replaces."""
+    parts: list[str] = []
+    for key in ("new_string", "newString", "content", "text"):
+        value = arguments.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    edits = arguments.get("edits")
+    if isinstance(edits, list):
+        for edit in edits:
+            if isinstance(edit, dict):
+                for key in ("new_string", "newString"):
+                    value = edit.get(key)
+                    if isinstance(value, str):
+                        parts.append(value)
+    return "\n".join(parts)
+
+
+def is_draft_safe(new_text: str) -> bool:
+    """True when the resulting content only ever declares `Status: draft` and no checked box."""
+    statuses = STATUS_LINE_RE.findall(new_text)
+    if any(status.lower() != "draft" for status in statuses):
+        return False
+    return CHECKED_CHECKBOX_RE.search(new_text) is None
+
+
 def extract_command(arguments: dict) -> str | None:
     value = _first(arguments, ("command", "cmd"))
     return str(value) if value else None
@@ -154,6 +181,11 @@ def decide(payload: dict, cwd: Path) -> Decision:
         if basename == "ROADMAP.md":
             return Decision(False, "roadmap-protected", path)
         if ISSUE_FILE_RE.match(basename):
+            if normalized_name in {"write", "multiedit"}:
+                target = Path(path)
+                target = target if target.is_absolute() else cwd / target
+                if not target.exists() or is_draft_safe(extract_new_text(arguments)):
+                    return Decision(True)
             changed = extract_text(arguments)
             if STATUS_LINE_RE.search(changed):
                 return Decision(False, "issue-status-protected", path)
