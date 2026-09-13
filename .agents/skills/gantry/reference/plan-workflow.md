@@ -82,8 +82,57 @@ const CRITIQUE_SCHEMA = {
     acceptable: { type: 'boolean' },
     problems: { type: 'array', items: { type: 'object' } },
     frontierErrors: { type: 'array', items: { type: 'string' } },
+    budgets: { type: 'array', items: { type: 'object' } },
   },
   required: ['acceptable', 'problems', 'frontierErrors'],
+}
+
+function shellQuote(value) {
+  return `"${String(value).replace(/(["\\$`])/g, '\\$1')}"`
+}
+
+async function measureBudgets(plan) {
+  if (!plan || !Array.isArray(plan.issues) || typeof runCommand !== 'function') return []
+  const measurements = []
+  for (const issue of plan.issues) {
+    if (!issue || typeof issue.path !== 'string') continue
+    const command = `python3 ${shellQuote(`${scripts}/budget.py`)} ${shellQuote(issue.path)} --model ${shellQuote(A.models.plan)} --json`
+    const result = await runCommand(command, { cwd: A.repoRoot })
+    if (!result || ![0, 1].includes(result.exitCode)) {
+      throw new Error(`context budget command failed: ${command}`)
+    }
+    let payload
+    try {
+      payload = JSON.parse(result.stdout)
+    } catch {
+      throw new Error(`context budget command returned invalid JSON: ${command}`)
+    }
+    if (!payload || typeof payload !== 'object' || typeof payload.error === 'string' ||
+        !Number.isFinite(payload.estimatedTokens) || !Number.isFinite(payload.contextWindow) ||
+        !Number.isFinite(payload.contextShare) || !Number.isFinite(payload.budgetTokens) ||
+        typeof payload.overBudget !== 'boolean') {
+      throw new Error(`context budget configuration is invalid: ${command}`)
+    }
+    measurements.push(payload)
+  }
+  return measurements
+}
+
+function applyBudgetRefutations(critique, measurements) {
+  const overBudget = measurements.filter(measurement => measurement.overBudget)
+  if (!overBudget.length) return { ...critique, budgets: measurements }
+  const problems = Array.isArray(critique && critique.problems) ? critique.problems : []
+  const refutations = overBudget.map(measurement => ({
+    problem: `Initial Context Budget exceeded for ${measurement.issue}: ${measurement.estimatedTokens} estimated tokens exceeds ${measurement.budgetTokens} tokens (${measurement.contextShare} of ${measurement.contextWindow}).`,
+    fix: 'Reduce the Issue initial package or split the Issue before requesting approval.',
+  }))
+  return {
+    ...(critique || {}),
+    acceptable: false,
+    problems: [...problems, ...refutations],
+    frontierErrors: Array.isArray(critique && critique.frontierErrors) ? critique.frontierErrors : [],
+    budgets: measurements,
+  }
 }
 
 function planPrompt(feedback) {
@@ -104,15 +153,19 @@ roadmapAdditions and openDecisions as structured output.
 ${feedback ? `Address every previous critic finding:\n${feedback.map((item, index) => `${index + 1}. ${item.problem} → ${item.fix}`).join('\n')}` : ''}`
 }
 
-function critiquePrompt(plan) {
+function critiquePrompt(plan, measurements) {
   return `You are the adversarial Plan Critic for ${targetText}. Default to acceptable=false when uncertain.
 Read every file in: ${plan.filesWritten.join(', ') || '(none)'}.
 Refute non-vertical slices, unobservable criteria, invented or re-owned contracts, invalid format or
 dependencies, and incomplete Spec coverage. Run:
 \`python3 ${scripts}/frontier.py --scope ${t.slug} --include-parked --json\`
-and report every graph error. Confirm every new Issue remains \`Status: draft\`; neither ROADMAP.md nor
-ready-for-agent state may be written before explicit operator approval. Do not edit files.
-Return acceptable, problems (with actionable fixes), and frontierErrors as structured output.`
+and report every graph error. The deterministic context-budget measurements are:
+${JSON.stringify(measurements)}
+Every entry with \`overBudget: true\` is a required numeric refutation: quote its \`estimatedTokens\`,
+\`budgetTokens\`, \`contextShare\` and \`contextWindow\`, and set \`acceptable: false\`. Confirm every new
+Issue remains \`Status: draft\`; neither ROADMAP.md nor ready-for-agent state may be written before explicit
+operator approval. Do not edit files. Return acceptable, problems (with actionable fixes), frontierErrors
+and budgets as structured output.`
 }
 
 phase('Research')
@@ -131,17 +184,21 @@ let plan = await agent(planPrompt(null), {
   label: 'plan', phase: 'Plan', schema: PLAN_SCHEMA, model: A.models.plan,
 })
 phase('Critique')
-let critique = plan && await agent(critiquePrompt(plan), {
+let measurements = await measureBudgets(plan)
+let critique = plan && await agent(critiquePrompt(plan, measurements), {
   label: 'critique', phase: 'Critique', schema: CRITIQUE_SCHEMA, model: A.models.critic,
 })
+critique = applyBudgetRefutations(critique, measurements)
 if (plan && critique && !critique.acceptable) {
   log(`plan refuted: ${critique.problems.length} problem(s) — one revision pass`)
   plan = await agent(planPrompt(critique.problems), {
     label: 'plan:revise', phase: 'Plan', schema: PLAN_SCHEMA, model: A.models.plan,
   }) || plan
-  critique = await agent(critiquePrompt(plan), {
+  measurements = await measureBudgets(plan)
+  critique = await agent(critiquePrompt(plan, measurements), {
     label: 'critique:2', phase: 'Critique', schema: CRITIQUE_SCHEMA, model: A.models.critic,
   }) || critique
+  critique = applyBudgetRefutations(critique, measurements)
 }
 
 async function runApprovalCommand(command) {

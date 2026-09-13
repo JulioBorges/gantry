@@ -1,0 +1,15 @@
+{
+  "tier": "reference",
+  "hooks": true,
+  "structured_output": true,
+  "worktree_isolation": true,
+  "per_role_model": true,
+  "parallel_round": true,
+  "skills_path": ".agents/skills",
+  "hook_events": ["PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "PreCompact"],
+  "payload_fields": ["tool_name", "tool_input", "session_id", "transcript_path"],
+  "models": {
+    "claude-opus-4-5": {"contextWindow": 200000},
+    "claude-sonnet-4-5": {"contextWindow": 200000}
+  }
+}

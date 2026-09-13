@@ -9,7 +9,7 @@ without it.
 
 ```
 implement (TDD) → review (standards + Spec) → one review fix pass
-→ adversarial Critic → correction implementer ⇄ Critic (at most correctionBudget)
+→ adversarial Critic → correction implementer ⇄ Critic (at most two correction attempts)
 ```
 
 ## Per-Issue roles
@@ -30,8 +30,8 @@ findings in the same worktree.
 **Critic:** a fresh adversarial Critic defaults to refutation. It runs `acceptance.py <issue> --json` and
 `gates.py --run --diff-base <baseRef> --cwd "$(pwd)" --json`, verifies evidence per criterion, checks the
 tree and diff for weakened tests, placeholders and scope creep, and returns `complete` only with proof.
-Refutations generate ordered required fixes and consume one correction attempt; budget exhaustion leaves
-the Issue refuted and its worktree retained.
+Refutations generate ordered required fixes and consume one correction attempt; the correction-budget
+ceiling is two and exhaustion leaves the Issue refuted with its worktree retained.
 
 ## Isolation and integration
 
@@ -66,7 +66,10 @@ const A = args
 const scripts = `${A.skillDir}/scripts`
 const paths = A.paths
 const policy = A.policy
-const budget = A.correctionBudget ?? policy.budget.corrections
+const requestedBudget = A.correctionBudget ?? policy.budget.corrections
+const budget = Number.isInteger(requestedBudget) && requestedBudget >= 0
+  ? Math.min(requestedBudget, 2)
+  : 2
 const IMPL_SCHEMA = {
   type: 'object',
   properties: {
@@ -194,7 +197,8 @@ scope-creeping behavior. Do not edit. Return blocking, nonBlocking and summary a
 
 function criticPrompt(issue, impl, review, attempt) {
   return `You are the fresh adversarial Critic for ${issue.ref}, attempt ${attempt}, in ${location(impl)}
-against ${A.baseRef}. Default to complete=false when uncertain; never trust the Implementer.
+against ${A.baseRef}. Default to complete=false when uncertain; never trust the Implementer. The correction
+budget ceiling is two attempts and must never be raised.
 Run \`python3 ${scripts}/acceptance.py ${A.repoRoot}/${issue.path} --json\` and prove every criterion with
 code plus a real test or required command output. Run
 \`python3 ${scripts}/gates.py --run --diff-base ${A.baseRef} --cwd "$(pwd)" --json\`; inspect its verdict

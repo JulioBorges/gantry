@@ -131,6 +131,13 @@ const runCommand = async (command, options = {{}}) => {{
     }};
   }}
   if (args.commandResults && args.commandResults.length) return args.commandResults.shift();
+  if (command.includes('/budget.py')) return {{
+    exitCode: 1,
+    stdout: JSON.stringify({{
+      issue: 'planned#01', estimatedTokens: 40000, contextWindow: 200000,
+      contextShare: 0.15, budgetTokens: 30000, overBudget: true, verdict: 'over_budget',
+    }}),
+  }};
   return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}' : '' }};
 }};
 const agent = async (prompt, options) => {{
@@ -209,7 +216,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             issue = self.write_issue(root, "sample#01", "ready-for-agent")
             self.write_roadmap(root)
 
-            for script in ("common.py", "frontier.py", "acceptance.py", "gates.py", "roadmap.py"):
+            for script in ("common.py", "frontier.py", "acceptance.py", "budget.py", "gates.py", "roadmap.py"):
                 result = self.run_script(root, script, "--help")
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertIn("usage:", result.stdout.lower())
@@ -233,6 +240,9 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             roadmap = self.write_roadmap(root)
             before = roadmap.read_bytes()
             draft = root / ".scratch" / "planned" / "issues" / "01-planned.md"
+            spec = root / ".scratch" / "planned" / "spec.md"
+            spec.parent.mkdir(parents=True)
+            spec.write_text("# Planned Spec\n", encoding="utf-8")
             draft_text = """# Planned Issue
 
 Type: issue
@@ -251,7 +261,7 @@ Slice: `planned#01`
                 "plan-workflow.md",
                 {
                     "target": {"kind": "spec", "slug": "planned", "specPath": str(root / ".scratch" / "planned" / "spec.md")},
-                    "models": {"plan": "plan", "critic": "critic"},
+                    "models": {"plan": "claude-opus-4-5", "critic": "critic"},
                     "skillDir": str(SKILL_DIR),
                     "repoRoot": str(root),
                     "policy": {"git": {"target": "main", "prefix": "gantry/"}},
@@ -277,7 +287,7 @@ Slice: `planned#01`
                 "plan-workflow.md",
                 {
                     "target": {"kind": "spec", "slug": "planned", "specPath": str(root / ".scratch" / "planned" / "spec.md")},
-                    "models": {"plan": "plan", "critic": "critic"},
+                    "models": {"plan": "claude-opus-4-5", "critic": "critic"},
                     "skillDir": str(SKILL_DIR),
                     "repoRoot": str(root),
                     "policy": {"git": {"target": "main", "prefix": "gantry/"}},
@@ -300,11 +310,102 @@ Slice: `planned#01`
             self.assertFalse(approved["result"]["awaitingOperatorApproval"])
             self.assertEqual("ready-for-agent", parse_issue(draft).status)
             commands = [call["command"] for call in approved["commandCalls"]]
-            self.assertEqual(3, len(commands))
-            self.assertIn('roadmap.py" status planned#01 ready-for-agent', commands[0])
-            self.assertIn('roadmap.py" waves', commands[1])
-            self.assertIn('roadmap.py" check', commands[2])
+            self.assertEqual(4, len(commands))
+            self.assertIn('budget.py"', commands[0])
+            self.assertIn('roadmap.py" status planned#01 ready-for-agent', commands[1])
+            self.assertIn('roadmap.py" waves', commands[2])
+            self.assertIn('roadmap.py" check', commands[3])
             self.assertIn("planned#01", roadmap.read_text(encoding="utf-8"))
+
+    def test_plan_critic_refutes_a_measured_over_budget_package(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            draft = root / ".scratch" / "planned" / "issues" / "01-planned.md"
+            result = self.run_workflow(
+                "plan-workflow.md",
+                {
+                    "target": {"kind": "spec", "slug": "planned", "specPath": str(root / ".scratch" / "planned" / "spec.md")},
+                    "models": {"plan": "claude-opus-4-5", "critic": "critic"},
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}},
+                    "paths": {
+                        "issueDir": str(draft.parent),
+                        "specPath": str(root / ".scratch" / "planned" / "spec.md"),
+                        "exemplarIssue": str(draft),
+                        "decisions": str(root / "docs" / "adr"),
+                        "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "context": str(root / "CONTEXT.md"),
+                        "adrs": str(root / "docs" / "adr"),
+                    },
+                    "date": "2026-09-13",
+                    "testDraftPath": str(draft),
+                    "testDraftText": """# Planned Issue
+
+Type: issue
+Status: draft
+Slice: `planned#01`
+
+## Acceptance criteria
+
+- [ ] remains under the initial context budget
+
+## Blocked by
+
+- None
+""",
+                },
+            )
+
+            critique = result["result"]["critique"]
+            self.assertFalse(critique["acceptable"])
+            self.assertEqual(40000, critique["budgets"][0]["estimatedTokens"])
+            self.assertIn("40000", critique["problems"][0]["problem"])
+            self.assertIn("30000", critique["problems"][0]["problem"])
+            self.assertTrue(any("/budget.py" in call["command"] for call in result["commandCalls"]))
+
+    def test_round_never_raises_the_two_correction_ceiling(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            issue = self.write_issue(root, "ceiling#01", "ready-for-agent")
+            self.write_roadmap(root)
+            refutation = {
+                "complete": False,
+                "criteria": [],
+                "gatesVerdict": "fail",
+                "gateFailures": ["the criterion is not proven"],
+                "refutations": ["the criterion is not proven"],
+                "requiredFixes": ["add real evidence"],
+                "decisionsForOperator": [],
+            }
+
+            result = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{"ref": "ceiling#01", "path": str(issue.relative_to(root)), "title": "Ceiling", "specPath": ".scratch/ceiling/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/ceiling",
+                    "baseRef": "HEAD",
+                    "isolate": False,
+                    "correctionBudget": 10,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 10}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "criticResults": [refutation, refutation, refutation],
+                },
+            )
+
+            delivery = result["result"]["results"][0]
+            self.assertEqual("refuted", delivery["outcome"])
+            self.assertEqual(2, delivery["corrections"])
+            labels = [call["label"] for call in result["calls"]]
+            self.assertEqual(3, sum(label.startswith("critic:") for label in labels))
+            self.assertEqual(3, sum(label.startswith("implement:") for label in labels))
 
     def test_round_rejects_critic_completion_without_a_passing_gate(self) -> None:
         cases = ("fail", "no_gates")
@@ -779,7 +880,7 @@ Slice: `legacy#07`
             "sys",
         }
         self.assertEqual(
-            {"acceptance.py", "common.py", "frontier.py", "gates.py", "roadmap.py"},
+            {"acceptance.py", "budget.py", "common.py", "frontier.py", "gates.py", "roadmap.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         for script in sorted(SCRIPTS.glob("*.py")):
