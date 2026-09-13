@@ -1,0 +1,15 @@
+{
+  "tier": "supported",
+  "hooks": true,
+  "structured_output": false,
+  "worktree_isolation": false,
+  "per_role_model": true,
+  "parallel_round": false,
+  "skills_path": ".agents/skills",
+  "hook_events": ["tool.execute.before", "session.compacted"],
+  "payload_fields": ["tool", "args", "sessionID"],
+  "models": {
+    "anthropic/claude-opus-4-5": {"contextWindow": 200000},
+    "openai/gpt-5.2-codex": {"contextWindow": 272000}
+  }
+}

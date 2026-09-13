@@ -1,6 +1,6 @@
 ---
 name: asdlc
-description: Agentic SDLC orchestrator for this repository. Implements specs, waves or single issues in rounds of parallel subagents — deterministic frontier (Python) → research + plan when unplanned → TDD implementer → two-axis code review → adversarial critic that verifies every acceptance criterion and every project gate → roadmap update. Asks up front which model runs Plan, Implement, Review and Critic. Use for "implement spec X", "run wave 0", "execute release-engineering#01", "rodar o ASDLC", "implementa as issues", "executa a onda".
+description: Agentic SDLC workflow for a repository. Implements specs, waves or single issues in rounds of parallel subagents — deterministic frontier (Python) → research + plan when unplanned → TDD implementer → two-axis code review → adversarial critic that verifies every acceptance criterion and every project gate → roadmap update. Asks up front which model runs Plan, Implement, Review and Critic. Use for "implement spec X", "run wave 0", "execute spec#01", "rodar o ASDLC", "implementa as issues", "executa a onda".
 argument-hint: <spec-slug | spec#NN | wave:N | frontier | all | "free-text goal"> [--limit N] [--budget N]
 ---
 
@@ -32,6 +32,7 @@ The models are asked once at the start and passed into every `agent()` call thro
 
 | Script | Decides | Used by |
 |---|---|---|
+| `common.py` | resolves sparse pack policy with the optional repository `.gantry/config.json` overlay and keeps the Markdown issue parser | orchestrator, every workflow |
 | `frontier.py --scope … --json` | which issues are in scope, their dependency rounds, cycles, parked and externally blocked issues | orchestrator, plan critic |
 | `acceptance.py <ref> --json` | the authoritative acceptance-criteria list of an issue; `--check` exits 1 unless done and fully ticked | critic, orchestrator |
 | `gates.py --run --diff-base <ref> --cwd <dir> --json` | detects and runs the repo's real gates (package scripts, pytest, Makefile, pre-commit), lists CI jobs and hooks, flags dirty tree and frontend changes | implementer, critic, orchestrator after integration |
@@ -44,30 +45,37 @@ Resolve it once in preflight and pass it in `args.skillDir`.
 ## Step 0 — Preflight (inline)
 
 1. Parse the arguments: scope tokens, `--limit N` (max issues per round, default 4), `--budget N`
-   (correction budget per issue, default 2). Derive `<scope-slug>` from the scope tokens
-   (`release-engineering`, `wave-0`, `release-engineering-01`, …).
-2. `git status --short && git branch --show-current`. A dirty tree must be committed or stashed by the user
+   (correction budget per issue, default `policy.budget.corrections`). Derive `<scope-slug>` from the scope tokens
+   (`spec-slug`, `wave-0`, `spec-slug-01`, …).
+2. Resolve `policy` with `common.resolve_policy(repoRoot)`, before creating a worktree, so its Git policy
+   selects the target and branch prefix.
+3. `git status --short && git branch --show-current`. A dirty tree must be committed or stashed by the user
    first — report and stop.
-3. **Offer a dedicated worktree — always, before anything is created.** An ASDLC run takes a long time and
+4. **Offer a dedicated worktree — always, before anything is created.** An ASDLC run takes a long time and
    commits continuously; if it runs in the user's checkout, the user cannot work on anything else meanwhile.
    Ask one single-select question (put it in the same message as the scope question if the scope is
    missing):
 
    > Run this ASDLC session in its own git worktree so you can keep working here in parallel?
    > - **Yes, dedicated worktree (Recommended)** — `../<repo>-asdlc-<scope-slug>` on branch
-   >   `asdlc/<scope-slug>`, created from `main`. Your current checkout is untouched.
-   > - **No, run here** — creates/switches to `asdlc/<scope-slug>` in this checkout; you should not edit
+   >   `<policy.git.prefix><scope-slug>`, created from `<policy.git.target>`. Your current checkout is untouched.
+   > - **No, run here** — creates/switches to `<policy.git.prefix><scope-slug>` in this checkout; you should not edit
    >   files here until the run ends.
 
    - **Yes** → create it (Claude Code: `EnterWorktree`; elsewhere
-     `git worktree add ../<repo>-asdlc-<scope-slug> -b asdlc/<scope-slug> main && cd` into it). From here
+     `git worktree add ../<repo>-asdlc-<scope-slug> -b <policy.git.prefix><scope-slug> <policy.git.target> && cd` into it). From here
      on `repoRoot` is the worktree path: every script, every `agent()` and every commit runs there, and the
-     `.scratch/` and `ROADMAP.md` edits land on the `asdlc/<scope-slug>` branch.
-   - **No** → refuse to run on `main`: create or switch to `asdlc/<scope-slug>` in the current checkout.
+     repository artifacts and `ROADMAP.md` edits land on the run branch.
+   - **No** → refuse to run on the target branch: create or switch to `<policy.git.prefix><scope-slug>` in the current checkout.
 
-   If the current checkout already *is* an `asdlc/*` worktree (resumed run), skip the question and continue
+   If the current checkout already uses the configured branch prefix (resumed run), skip the question and continue
    there.
-4. `python3 --version` (3.10+) and `python3 <skillDir>/scripts/roadmap.py check` inside `repoRoot`. Drift
+5. Render its artifact patterns for the current
+   scope into `paths`: `specPath`, `issueDir`, `exemplarIssue`, `decisions`, `issueTracker`, `context` and `adrs`.
+   `common.resolve_workflow_paths(repoRoot, scopeSlug)` renders the default policy and optional overlay. `policy`
+   keeps the effective values; `paths` contains only the corresponding repository paths. Pass both to every
+   workflow invocation — no workflow assumes an artifact location.
+5. `python3 --version` (3.10+) and `python3 <skillDir>/scripts/roadmap.py check` inside `repoRoot`. Drift
    between the roadmap and the issues is fixed with the user before anything else runs.
 
 ## Step 1 — Ask the models
@@ -117,7 +125,7 @@ For each round `k` in `rounds`:
 
 1. `baseRef = git rev-parse HEAD` on the round branch. `isolate = round.length > 1`.
 2. Run the round workflow described in `reference/round-workflow.md` (see **Harness notes**) with
-   `args = { round: k, issues, models, branch, baseRef, isolate, correctionBudget, skillDir, repoRoot, date }`
+   `args = { round: k, issues, models, branch, baseRef, isolate, correctionBudget, skillDir, repoRoot, policy, paths, date }`
    where `issues[i] = { ref, path, title, specPath }` comes from the `frontier.py` output and `date` is
    today's ISO date. Scale nothing down: every issue in the round runs its full chain.
 3. Read the result. Per issue:
@@ -127,7 +135,7 @@ For each round `k` in `rounds`:
      Conflicts: use the `resolving-merge-conflicts` skill; never resolve by discarding one side. After a green
      integration run `python3 <skillDir>/scripts/roadmap.py done <ref>`, then `git worktree remove <path>`
      if isolated, and commit the roadmap/issue change with a message naming the slice
-     (`chore(roadmap): release-engineering#01 done`).
+     (`chore(roadmap): spec-slug#01 done`).
    - **`refuted`** → `roadmap.py status <ref> blocked` and `roadmap.py comment <ref> "<critic's top
      refutations + branch/worktree>"`. Keep the branch and worktree. The roadmap stays unticked.
    - **`implementer_failed` / `critic_failed`** → record it; do not retry inside the loop.
@@ -144,8 +152,8 @@ agents surfaced (`decisions`, `decisionsForOperator`, `openDecisions`), then gat
 integration, then the next frontier. Quote the critic's evidence for anything marked done — the roadmap
 checkbox must be traceable to it.
 
-If the run used a dedicated worktree, end with how to bring the work back: the branch `asdlc/<scope-slug>`
-and its worktree path, the command to open a pull request from it (or `git merge --no-ff` into `main` if the
+If the run used a dedicated worktree, end with how to bring the work back: the branch `<policy.git.prefix><scope-slug>`
+and its worktree path, the command to open a pull request from it (or `git merge --no-ff` into `<policy.git.target>` if the
 user prefers), and `git worktree remove <path>` once merged. Do not merge into `main` or remove the worktree
 yourself — that is the user's call. Leave the worktree in place if anything was refuted: the blocked
 issue's branch or worktree is referenced from its `## Comments` and the user may want to inspect it.
@@ -157,11 +165,11 @@ The prompts, schemas, scripts and rules are the same everywhere.
 
 | Need | Claude Code | Other harnesses (Codex, OpenCode, …) |
 |---|---|---|
-| Offer a dedicated worktree for the run | `AskUserQuestion`, then `EnterWorktree` (and `ExitWorktree` only if the user asks to leave it) | ask in a plain message; `git worktree add ../<repo>-asdlc-<scope-slug> -b asdlc/<scope-slug> main`, then run everything from that directory |
+| Offer a dedicated worktree for the run | `AskUserQuestion`, then `EnterWorktree` (and `ExitWorktree` only if the user asks to leave it) | ask in a plain message; create the branch from the rendered `policy.git.prefix` and `policy.git.target`, then run everything from that directory |
 | Ask the four models | `AskUserQuestion` | one message with the four questions; wait for the answer |
 | Run a workflow template | `Workflow` tool with the JavaScript from `reference/*.md` passed inline and the `args` object | execute the same chain by hand: for each issue in the round spawn the harness's subagent for implementer → reviewer → critic using the prompt functions in the template as the prompt text, with `model` set per role. Run issues of one round concurrently if the harness supports it, otherwise sequentially; the order inside one issue never changes |
 | Structured output | `schema` on `agent()` | ask the subagent to answer with a single JSON object matching the schema; re-ask once on invalid JSON |
-| Worktree per implementer | `isolation: 'worktree'` | `git worktree add ../<repo>-<slug>-NN -b asdlc/<slug>-NN <baseRef>` before spawning; pass the path in the prompt |
+| Worktree per implementer | `isolation: 'worktree'` | `git worktree add ../<repo>-<slug>-NN -b <policy.git.prefix><slug>-NN <baseRef>` before spawning; pass the path in the prompt |
 | Invoke `tdd` / `code-review` | Skill tool | if the harness has the skill installed, invoke it; otherwise the prompts already carry the fallback ("run the same two-axis review yourself and say so"; red → green → refactor per behaviour) |
 
 Everything deterministic — frontier, acceptance, gates, roadmap — is a Python script and needs nothing
@@ -175,8 +183,8 @@ from the harness beyond `python3` and `git`.
 - **Never skip, weaken or delete a test to get green**, and never accept a delivery that did.
 - **Correction budget is a ceiling, not a target.** When it is spent, the issue is blocked and the operator
   hears about it. Do not raise it silently.
-- **Settled decisions stay settled.** `.scratch/gantry-v4/slice-index.md` is authoritative; an agent that
-  reopens one has produced a blocking finding.
+- **Settled decisions stay settled.** Read them from the repository path passed in `args.paths.decisions`;
+  an agent that reopens one has produced a blocking finding.
 - **Breakdown changes need approval.** Splitting, merging or adding issues, and moving drafts to
   `ready-for-agent`, only after the operator says so.
 - **Frontend changes need Playwright evidence** before they count (AGENTS.md).

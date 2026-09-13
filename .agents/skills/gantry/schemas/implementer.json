@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "properties": {
+    "worktree": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "commits": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "summary": {
+      "type": "string"
+    },
+    "testsAdded": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "gatesResult": {
+      "type": "string"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "worktree",
+    "branch",
+    "commits",
+    "summary",
+    "testsAdded",
+    "gatesResult",
+    "decisions",
+    "blockers"
+  ],
+  "additionalProperties": false
+}

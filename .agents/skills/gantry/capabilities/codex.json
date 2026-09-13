@@ -1,0 +1,14 @@
+{
+  "tier": "compatible",
+  "hooks": false,
+  "structured_output": false,
+  "worktree_isolation": false,
+  "per_role_model": false,
+  "parallel_round": false,
+  "skills_path": ".agents/skills",
+  "hook_events": [],
+  "payload_fields": [],
+  "models": {
+    "gpt-5.2-codex": {"contextWindow": 272000}
+  }
+}

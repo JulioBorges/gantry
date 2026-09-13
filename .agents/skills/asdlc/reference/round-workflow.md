@@ -18,21 +18,30 @@ JavaScript except where marked; everything variable comes in through `args`.
 {
   "round": 1,
   "issues": [
-    { "ref": "release-engineering#01", "path": ".scratch/release-engineering/issues/01-repository-bootstrap.md",
-      "title": "Repository bootstrap and the first required checks", "specPath": ".scratch/release-engineering/spec.md" }
+    { "ref": "<spec-slug>#01", "path": "<rendered-issue-path>",
+      "title": "<issue title>", "specPath": "<rendered-spec-path>" }
   ],
   "models": { "implement": "opus", "review": "sonnet", "critic": "fable" },
-  "branch": "asdlc/release-engineering",
-  "baseRef": "main",
+  "branch": "<policy-prefix><scope-slug>",
+  "baseRef": "<round-base-ref>",
   "isolate": false,
   "correctionBudget": 2,
   "skillDir": "/abs/path/to/repo/.agents/skills/asdlc",
   "repoRoot": "/abs/path/to/repo",
+  "policy": { "artifacts": {}, "templates": {}, "git": {}, "budget": {}, "dashboard": {} },
+  "paths": {
+    "decisions": "<repository-decisions-path>",
+    "issueTracker": "<repository-issue-tracker-path>",
+    "context": "<repository-context-path>",
+    "adrs": "<repository-ADRs-path>"
+  },
   "date": "2026-09-12"
 }
 ```
 
 - `issues` comes straight from `frontier.py --json` (`rounds[k]` resolved through `issues[ref]`).
+- `policy` is the effective pack policy resolved by `common.py`; `paths` holds its repository-specific
+  paths after the caller renders the artifact patterns.
 - `isolate` is `true` whenever the round has more than one issue: each implementer then gets its own git
   worktree and the orchestrator integrates the branches serially afterwards (ADR-0002).
 - `repoRoot` is where the run lives: the dedicated ASDLC worktree when the user accepted one in preflight,
@@ -58,6 +67,8 @@ export const meta = {
 const A = args
 const budget = A.correctionBudget ?? 2
 const scripts = `${A.skillDir}/scripts`
+const policy = A.policy
+const paths = A.paths
 
 const IMPL_SCHEMA = {
   type: 'object',
@@ -120,14 +131,14 @@ function implementPrompt(issue, feedback, prev) {
 ${feedback.items.map((f, i) => `${i + 1}. ${typeof f === 'string' ? f : `[${f.axis}] ${f.file || ''} ${f.finding} → ${f.fix || ''}`}`).join('\n')}
 ${feedback.gateFailures && feedback.gateFailures.length ? `Gate failures reported: ${feedback.gateFailures.join('; ')}` : ''}
 Address every item, keep the tests that already pass green, then re-run the gates.` : ''
-  return `You are the implementer for issue ${issue.ref} — "${issue.title}" in the Gantry repository.
+  return `You are the implementer for issue ${issue.ref} — "${issue.title}" in the repository.
 ${loc}
 
 ## Read first, in this order
 1. ${issue.path} — the whole file. The \`## Acceptance criteria\` list is the contract; \`## What to build\` is the design.
 2. ${issue.specPath} — the parent spec.
-3. .scratch/gantry-v4/slice-index.md — settled operator decisions and contract ownership. Never re-litigate them.
-4. CONTEXT.md and docs/adr/ — vocabulary and standing architectural decisions.
+3. ${paths.decisions} — settled operator decisions and contract ownership. Never re-litigate them.
+4. ${paths.context} and ${paths.adrs} — vocabulary and standing architectural decisions.
 
 ## Scope
 Deliver this slice completely: every acceptance criterion, demonstrable on its own. Nothing beyond it — other
@@ -147,6 +158,7 @@ Before you finish run:
 and make it pass. If it prints \`verdict: no_gates\`, the acceptance criteria themselves define the gates
 (this is the case for the bootstrap issue): create the real scripts and make them pass. If it reports
 \`frontend_touched\`, AGENTS.md requires Playwright validation before the work counts as done.
+The effective Git policy is target \`${policy.git.target}\` with branch prefix \`${policy.git.prefix}\`.
 
 ## Hard rules
 - Commit in small, meaningful commits on the current branch. Leave a clean working tree (\`git status --porcelain\` empty).
@@ -166,7 +178,7 @@ Working copy: ${where(impl)} (run \`cd ${where(impl)}\` first). Fixed point: ${A
 
 Invoke the \`code-review\` skill (Skill tool, skill name "code-review") with fixed point \`${A.baseRef}\` and the
 spec at ${issue.path}. If the skill cannot be invoked, run the same two-axis review yourself and say so:
-- Standards: documented repo standards (AGENTS.md, CONTEXT.md, docs/adr/, any CONTRIBUTING/CODING_STANDARDS) plus
+- Standards: documented repo standards (AGENTS.md, ${paths.context}, ${paths.adrs}, any CONTRIBUTING/CODING_STANDARDS) plus
   the Fowler smell baseline as judgement calls. Skip anything tooling enforces.
 - Spec: for every acceptance criterion and every paragraph of \`## What to build\`, report what is missing or
   partial, what was built that was not asked for, and what looks implemented but wrong. Quote the issue line.
@@ -174,7 +186,7 @@ spec at ${issue.path}. If the skill cannot be invoked, run the same two-axis rev
 Classify each finding:
 - blocking — must be fixed before delivery: a missing/partial criterion, wrong behaviour, a skipped/disabled/
   weakened test, a mock standing in for something the criterion says must be real, a breach of a documented
-  standard, a settled slice-index decision re-litigated, scope from another issue implemented here.
+  standard, a settled decision re-litigated, scope from another issue implemented here.
 - nonBlocking — everything else worth recording.
 
 Do not fix anything. Do not edit files. Return structured output only.`
@@ -207,7 +219,7 @@ ${priorBlocking}
    criterion says must be real, tests that pass without asserting anything.
 5. AGENTS.md compliance: ROADMAP.md untouched by the implementer; the issue's \`Status:\` line and checkboxes
    untouched; Playwright evidence present if frontend_touched.
-6. .scratch/gantry-v4/slice-index.md: no settled decision re-litigated, no other issue's contract implemented
+6. ${paths.decisions}: no settled decision re-litigated, no other issue's contract implemented
    here (scope creep), the boundaries named in \`## What to build\` respected.
 7. Prior review findings (above) actually addressed, not just acknowledged.
 
