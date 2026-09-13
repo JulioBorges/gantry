@@ -166,6 +166,7 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Added declared absolute and RFC 6901-mapped differential gates with isolated base comparisons, normalized finding identities, and severity-aware regressions.
 - 2026-09-13 — Operator-approved a `make test` repository gate for the canonical workflow slice so the Run can establish a real passing gate instead of relying on a `no_gates` exception.
 - 2026-09-13 — Made the executable round workflow fail closed unless the Critic supplies one passing,
   non-empty evidence entry for every acceptance criterion returned by `acceptance.py`.

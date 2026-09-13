@@ -160,7 +160,7 @@ const agent = async (prompt, options) => {{
     blocking: [], nonBlocking: [], summary: 'no findings',
   }};
   if (options.label.startsWith('critic:')) return {{
-    complete: true, criteria: [], gatesVerdict: 'pass', gateFailures: [],
+    complete: true, criteria: [], gatesVerdict: 'pass', gateResult: {{ verdict: 'pass' }}, gateFailures: [],
     refutations: [], requiredFixes: [], decisionsForOperator: [],
     ...(args.criticResults && args.criticResults.length ? args.criticResults.shift() : (args.criticResult || {{}})),
   }};
@@ -331,7 +331,8 @@ Slice: `planned#01`
                         "paths": {},
                         "date": "2026-09-13",
                         "criticResult": {
-                            "complete": True, "criteria": self.critic_evidence(root, issue), "gatesVerdict": gates_verdict, "gateFailures": ["real gate evidence failed"],
+                            "complete": True, "criteria": self.critic_evidence(root, issue), "gatesVerdict": gates_verdict,
+                            "gateResult": {"verdict": gates_verdict}, "gateFailures": ["real gate evidence failed"],
                             "refutations": ["gate evidence is not green"], "requiredFixes": ["make the declared gate pass"],
                             "decisionsForOperator": [],
                         },
@@ -388,7 +389,8 @@ Slice: `planned#01`
                         "date": "2026-09-13",
                         "commandMode": "real",
                         "criticResult": {
-                            "complete": True, "criteria": criteria, "gatesVerdict": "pass", "gateFailures": [],
+                            "complete": True, "criteria": criteria, "gatesVerdict": "pass",
+                            "gateResult": {"verdict": "pass"}, "gateFailures": [],
                             "refutations": [], "requiredFixes": [], "decisionsForOperator": [],
                         },
                     },
@@ -777,6 +779,7 @@ Slice: `legacy#07`
             "shutil",
             "subprocess",
             "sys",
+            "tempfile",
         }
         self.assertEqual(
             {"acceptance.py", "common.py", "frontier.py", "gates.py", "roadmap.py"},
