@@ -226,6 +226,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             "complete": False,
             "criteria": [{"index": 1, "met": False, "evidence": "x" * 200_000}],
             "gatesVerdict": "fail",
+            "gateResult": {"verdict": "fail", "checks": []},
             "gateFailures": ["a declared gate failed"],
             "refutations": ["criterion one remains unproven"],
             "requiredFixes": ["add a real proof"],
@@ -243,6 +244,17 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
         elapsed = time.monotonic() - started
         self.assertEqual(0, valid.returncode, valid.stdout + valid.stderr)
         self.assertLess(elapsed, 1)
+
+        missing_gate_verdict = subprocess.run(
+            [sys.executable, str(SCRIPTS / "result.py"), "--role", "critic", "--json"],
+            input=json.dumps({**valid_payload, "gateResult": {"checks": []}}),
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(1, missing_gate_verdict.returncode)
+        self.assertIn("gateResult.verdict", missing_gate_verdict.stdout)
 
         invalid_verdict = subprocess.run(
             [sys.executable, str(SCRIPTS / "result.py"), "--role", "critic", "--json"],
@@ -267,21 +279,21 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             "plan-critic": {"acceptable", "problems", "frontierErrors"},
             "implementer": {"worktree", "branch", "commits", "summary", "testsAdded", "gatesResult", "decisions", "blockers"},
             "reviewer": {"blocking", "nonBlocking", "summary"},
-            "critic": {"complete", "criteria", "gatesVerdict", "gateFailures", "refutations", "requiredFixes", "decisionsForOperator"},
+            "critic": {"complete", "criteria", "gatesVerdict", "gateResult", "gateFailures", "refutations", "requiredFixes", "decisionsForOperator"},
             "learner": {"candidates"},
         }
 
-        def validate_schema(schema: object) -> None:
+        def validate_schema(schema: object, allow_open_object: bool = False) -> None:
             self.assertIsInstance(schema, dict)
             if schema.get("type") == "object":
                 self.assertEqual(set(schema["properties"]), set(schema["required"]))
-                self.assertFalse(schema["additionalProperties"])
+                self.assertEqual(allow_open_object, schema["additionalProperties"])
             for key, value in schema.items():
                 self.assertIn(key, supported)
                 if key == "properties":
                     self.assertIsInstance(value, dict)
-                    for nested in value.values():
-                        validate_schema(nested)
+                    for name, nested in value.items():
+                        validate_schema(nested, allow_open_object=name == "gateResult")
                 elif key == "items":
                     validate_schema(value)
 
@@ -628,6 +640,7 @@ Slice: `planned#01`
                         "complete": False,
                         "criteria": self.critic_evidence(root, issue),
                         "gatesVerdict": "fail",
+                        "gateResult": {"verdict": "fail"},
                         "gateFailures": ["the gate is red"],
                         "refutations": ["criterion needs a correction"],
                         "requiredFixes": ["make the criterion pass"],

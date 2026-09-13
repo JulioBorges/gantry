@@ -36,6 +36,24 @@
         "not_run"
       ]
     },
+    "gateResult": {
+      "type": "object",
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "no_gates",
+            "not_run"
+          ]
+        }
+      },
+      "required": [
+        "verdict"
+      ],
+      "additionalProperties": true
+    },
     "gateFailures": {
       "type": "array",
       "items": {
@@ -65,6 +83,7 @@
     "complete",
     "criteria",
     "gatesVerdict",
+    "gateResult",
     "gateFailures",
     "refutations",
     "requiredFixes",
