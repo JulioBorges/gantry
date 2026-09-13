@@ -20,6 +20,14 @@ FIXTURE_ROOT = Path(__file__).resolve().parent.parent
 EXCLUDED_RELATIVE_PATHS = {Path("tools") / "copy_fixture.py"}
 ISSUES_RELATIVE_DIR = Path(".scratch") / "greeting" / "issues"
 BASELINE_DATE = "2000-01-01T00:00:00Z"
+GENERATED_ARTIFACT_NAMES = {"__pycache__", ".pytest_cache", ".git"}
+GENERATED_ARTIFACT_SUFFIXES = (".pyc", ".pyo", ".pyd")
+
+
+def _is_generated_artifact(relative: Path) -> bool:
+    if set(relative.parts) & GENERATED_ARTIFACT_NAMES:
+        return True
+    return relative.suffix in GENERATED_ARTIFACT_SUFFIXES
 
 
 def copy_fixture_content(dest: Path, mode: str) -> None:
@@ -29,6 +37,8 @@ def copy_fixture_content(dest: Path, mode: str) -> None:
             continue
         relative = source.relative_to(FIXTURE_ROOT)
         if relative in EXCLUDED_RELATIVE_PATHS:
+            continue
+        if _is_generated_artifact(relative):
             continue
         if mode == "unplanned" and ISSUES_RELATIVE_DIR in relative.parents:
             continue
@@ -42,7 +52,11 @@ def install_skill(dest: Path, skill_dir: Path) -> None:
     skill_name = skill_dir.name
     installed = dest / ".agents" / "skills" / skill_name
     installed.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(skill_dir, installed)
+    shutil.copytree(
+        skill_dir,
+        installed,
+        ignore=shutil.ignore_patterns("__pycache__", "*.py[cod]", ".pytest_cache", ".git"),
+    )
     claude_skills = dest / ".claude" / "skills"
     claude_skills.parent.mkdir(parents=True, exist_ok=True)
     claude_skills.symlink_to(Path("..") / ".agents" / "skills", target_is_directory=True)

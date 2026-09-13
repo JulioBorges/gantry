@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -95,6 +96,47 @@ class CopyFixtureApprovedModeTests(unittest.TestCase):
                 self.assertIn("## Blocked by", text)
 
 
+FIXTURE_CONTENT_FILES = {
+    ".gantry/config.json",
+    ".gitignore",
+    ".scratch/greeting/spec.md",
+    "README.md",
+    "cli.py",
+    "greeting.py",
+    "pyproject.toml",
+    "tests/test_greeting.py",
+    "tools/lint.py",
+}
+FIXTURE_ISSUE_FILES = {
+    ".scratch/greeting/issues/01-greet-a-valid-name.md",
+    ".scratch/greeting/issues/02-greeting-cli.md",
+    ".scratch/greeting/issues/03-greeting-regression-tests.md",
+}
+
+
+class CopyFixtureBaselineFileListTests(unittest.TestCase):
+    def assert_baseline_matches_expected_fixture_content(self, mode: str, expected: set[str]) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "dest"
+            dest.mkdir()
+            self.assertEqual(run_copy_fixture(mode, dest).returncode, 0)
+
+            tracked = {
+                path
+                for path in git(dest, "ls-files").splitlines()
+                if not path.startswith((".agents/skills/", ".claude/skills"))
+            }
+            self.assertEqual(tracked, expected)
+
+    def test_unplanned_baseline_carries_exactly_the_expected_fixture_files(self) -> None:
+        self.assert_baseline_matches_expected_fixture_content("unplanned", FIXTURE_CONTENT_FILES)
+
+    def test_approved_baseline_carries_exactly_the_expected_fixture_files_and_issues(self) -> None:
+        self.assert_baseline_matches_expected_fixture_content(
+            "approved", FIXTURE_CONTENT_FILES | FIXTURE_ISSUE_FILES
+        )
+
+
 class CopyFixtureSkillInstallationTests(unittest.TestCase):
     def test_skill_is_pack_visible_and_copies_stay_independent_of_each_other_and_the_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -113,7 +155,15 @@ class CopyFixtureSkillInstallationTests(unittest.TestCase):
 
                 visible_skill_md = dest / ".claude" / "skills" / "gantry" / "SKILL.md"
                 self.assertTrue(visible_skill_md.is_file())
-                self.assertTrue((dest / ".claude" / "skills").is_symlink())
+                claude_skills_link = dest / ".claude" / "skills"
+                self.assertTrue(claude_skills_link.is_symlink())
+                self.assertEqual(os.readlink(claude_skills_link), str(Path("..") / ".agents" / "skills"))
+
+                tracked = git(dest, "ls-files").splitlines()
+                self.assertTrue(tracked, "expected tracked files in the baseline commit")
+                for path in tracked:
+                    self.assertNotIn("__pycache__", path, msg=path)
+                    self.assertFalse(path.endswith((".pyc", ".pyo", ".pyd")), msg=path)
 
             source_unit = unit_id(REPO_ROOT)
             first_unit = unit_id(first)
@@ -158,6 +208,10 @@ class CopyFixtureRunnableChecksTests(unittest.TestCase):
             self.assertEqual(lint_gate["status"], "pass")
             self.assertEqual(lint_gate["new"], [])
             self.assertEqual(lint_gate["aggravated"], [])
+
+            self.assertEqual(git(dest, "status", "--porcelain"), "")
+            self.assertTrue(payload["git"]["tree_clean"])
+            self.assertEqual(payload["requirements"], [])
 
     def test_approved_copy_carries_a_runnable_absolute_and_differential_check(self) -> None:
         self.assert_copy_has_runnable_checks("approved")
