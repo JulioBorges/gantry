@@ -106,14 +106,22 @@ class LearnerTests(unittest.TestCase):
             )
             agents_md = root / "AGENTS.md"
             context_md = root / "CONTEXT.md"
+            template = root / "templates" / "issue.md"
+            template.parent.mkdir(parents=True, exist_ok=True)
+            policy = root / ".gantry" / "config.json"
+            policy.parent.mkdir(parents=True, exist_ok=True)
             agents_md.write_text("original agents\n", encoding="utf-8")
             context_md.write_text("original context\n", encoding="utf-8")
+            template.write_text("original template\n", encoding="utf-8")
+            policy.write_text('{"original": true}\n', encoding="utf-8")
 
             result = self.run_learner(str(log), "--json")
 
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual("original agents\n", agents_md.read_text(encoding="utf-8"))
             self.assertEqual("original context\n", context_md.read_text(encoding="utf-8"))
+            self.assertEqual("original template\n", template.read_text(encoding="utf-8"))
+            self.assertEqual('{"original": true}\n', policy.read_text(encoding="utf-8"))
             self.assertEqual(1, len(json.loads(result.stdout)["candidates"]))
 
     def test_single_occurrence_produces_no_candidate(self) -> None:
