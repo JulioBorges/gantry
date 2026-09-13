@@ -70,6 +70,27 @@ const targetText = t.kind === 'goal' ? `the goal "${t.goal}" (new slug: ${t.slug
   : t.kind === 'issue' ? `the Issue at ${t.issuePath} (Spec ${t.specPath})`
   : `the Spec at ${t.specPath} (slug ${t.slug})`
 
+async function validateSpecBeforePlanning() {
+  if (t.kind === 'goal') return null
+  const specPath = t.specPath || paths.specPath
+  const check = await runCommand(`python3 "${scripts}/spec.py" --check "${specPath}" --json`, { cwd: A.repoRoot })
+  let findings = {}
+  try {
+    findings = JSON.parse(check.stdout || '{}')
+  } catch {
+    findings = { error: 'spec.py did not return JSON findings' }
+  }
+  if (check && check.exitCode === 0 && findings.valid === true) return findings
+  const details = ['missing', 'out_of_order', 'placeholders', 'malformed_scenarios']
+    .flatMap((key) => findings[key] || [])
+    .map((item) => typeof item === 'string' ? item : JSON.stringify(item))
+  return {
+    ...findings,
+    valid: false,
+    report: `Spec structural validation failed: ${details.join('; ') || findings.error || check.stderr || 'unknown finding'}`,
+  }
+}
+
 async function roleSchema(role) {
   const result = await runCommand(
     `python3 "${scripts}/result.py" --role "${role}" --schema`,
@@ -155,6 +176,17 @@ function applyBudgetRefutations(critique, measurements) {
     problems: [...problems, ...refutations],
     frontierErrors: Array.isArray(critique && critique.frontierErrors) ? critique.frontierErrors : [],
     budgets: measurements,
+  }
+}
+
+phase('Validation')
+const structuralValidation = await validateSpecBeforePlanning()
+if (structuralValidation && !structuralValidation.valid) {
+  return {
+    target: t, structuralValidation, plan: null, critique: null,
+    awaitingOperatorApproval: true, approved: false,
+    blocked: 'spec_structural_validation_failed',
+    report: structuralValidation.report,
   }
 }
 
@@ -293,5 +325,5 @@ async function approvePlan() {
 }
 
 const approved = await approvePlan()
-return { target: t, plan, critique, awaitingOperatorApproval: !approved, approved }
+return { target: t, structuralValidation, plan, critique, awaitingOperatorApproval: !approved, approved }
 ```

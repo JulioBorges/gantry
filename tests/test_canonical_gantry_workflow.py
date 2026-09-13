@@ -127,6 +127,7 @@ const defaultIssueWorktree = args.issueWorktree || (
 );
 const runCommand = async (command, options = {{}}) => {{
   commandCalls.push({{ command, cwd: options.cwd || args.repoRoot }});
+  if (command.includes('/spec.py')) return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
   if (args.commandMode === 'real') {{
     const completed = spawnSync(command, {{
       cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8', input: options.input,
@@ -139,7 +140,8 @@ const runCommand = async (command, options = {{}}) => {{
   if (args.commandResults && args.commandResults.length) return args.commandResults.shift();
   if (command.includes('/common.py')) return {{ exitCode: 0, stdout: JSON.stringify({{ issueBranch: args.issueBranch || args.branch }}) }};
   if (command === 'git branch --show-current') return {{ exitCode: 0, stdout: args.issueBranch || args.branch }};
-  return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}' : '' }};
+  return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}'
+    : command.includes('/spec.py') ? '{{"valid":true}}' : '' }};
 }};
 const agent = async (prompt, options) => {{
   calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd }});
@@ -380,7 +382,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             issue = self.write_issue(root, "sample#01", "ready-for-agent")
             self.write_roadmap(root)
 
-            for script in ("common.py", "frontier.py", "acceptance.py", "budget.py", "cleanup.py", "gates.py", "roadmap.py", "result.py", "runlog.py"):
+            for script in ("common.py", "frontier.py", "acceptance.py", "budget.py", "cleanup.py", "gates.py", "roadmap.py", "result.py", "runlog.py", "spec.py"):
                 result = self.run_script(root, script, "--help")
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertIn("usage:", result.stdout.lower())
@@ -481,6 +483,7 @@ Slice: `planned#01`
             self.assertIn('roadmap.py" waves', approval_commands[1])
             self.assertIn('roadmap.py" check', approval_commands[2])
             self.assertTrue(any('budget.py"' in command for command in commands))
+            self.assertIn('spec.py" --check', commands[0])
             self.assertIn("planned#01", roadmap.read_text(encoding="utf-8"))
 
     def test_planner_contract_requires_every_consumed_issue_field_and_rejects_a_pathless_issue(self) -> None:
@@ -1319,7 +1322,7 @@ Slice: `legacy#07`
             "typing",
         }
         self.assertEqual(
-            {"acceptance.py", "budget.py", "cleanup.py", "common.py", "frontier.py", "gates.py", "result.py", "roadmap.py", "runlog.py"},
+            {"acceptance.py", "budget.py", "cleanup.py", "common.py", "frontier.py", "gates.py", "result.py", "roadmap.py", "runlog.py", "spec.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         for script in sorted(SCRIPTS.glob("*.py")):

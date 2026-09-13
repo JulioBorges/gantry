@@ -71,6 +71,30 @@ def resolve_policy(root: Path | None = None) -> dict:
     return _merge_policy(DEFAULT_POLICY, overlay)
 
 
+def resolve_effective_template(root: Path | None, kind: str) -> Path:
+    """Locate a repository template, falling back to the pack default."""
+    if kind not in {"spec", "prd", "issue"}:
+        raise ValueError(f"unknown template kind: {kind}")
+    root = repo_root(root)
+    configured = root / resolve_policy(root)["templates"]["dir"] / f"{kind}.md"
+    if configured.exists():
+        return configured
+    return Path(__file__).resolve().parent.parent / "templates" / f"{kind}.md"
+
+
+def resolve_heading_map(root: Path | None = None) -> dict[str, str]:
+    """Return policy-declared equivalent headings as canonical Markdown headings."""
+    raw_map = resolve_policy(root)["templates"].get("headingMap", {})
+    if not isinstance(raw_map, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in raw_map.items()):
+        raise ValueError("templates.headingMap must map heading strings to heading strings")
+
+    def heading(value: str) -> str:
+        value = value.strip()
+        return value if value.startswith("## ") else f"## {value.lstrip('#').strip()}"
+
+    return {heading(alias): heading(canonical) for alias, canonical in raw_map.items()}
+
+
 def resolve_workflow_paths(root: Path, slug: str) -> dict[str, Path]:
     """Render the effective policy's repository paths for a workflow run."""
     root = repo_root(root)
