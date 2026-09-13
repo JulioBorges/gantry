@@ -78,6 +78,20 @@ Slice: `sample#01`
             self.assertEqual([False, True], [criterion.checked for criterion in issue.criteria])
             self.assertEqual(["other#02", "third#03"], issue.blocked_by)
 
+    def test_existing_issue_keeps_its_reference_status_criteria_and_blockers(self) -> None:
+        issue = parse_issue(
+            Path(__file__).resolve().parents[1]
+            / ".scratch"
+            / "gantry-migration"
+            / "issues"
+            / "01-portable-policy-and-legacy-loop.md"
+        )
+
+        self.assertEqual("gantry-migration#01", issue.ref)
+        self.assertEqual("ready-for-agent", issue.status)
+        self.assertEqual(5, len(issue.criteria))
+        self.assertEqual([], issue.blocked_by)
+
 
 if __name__ == "__main__":
     unittest.main()
