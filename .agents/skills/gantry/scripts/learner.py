@@ -41,28 +41,33 @@ def collect_lesson_events(paths: list[Path]) -> list[dict]:
 
 
 def draft_candidates(paths: list[Path], target: str = DEFAULT_TARGET) -> list[dict]:
-    """Group recurring refutations/review findings across Issues or attempts into candidates."""
+    """Group recurring refutations/review findings across Issues or attempts into candidates.
+
+    Recurrence is counted per occurrence (each matching event), not per distinct Issue: two
+    refutation events sharing a message on the same Issue (e.g. two correction attempts) count
+    as two occurrences, just as the same message on two different Issues does.
+    """
     order: list[str] = []
-    issues_by_message: dict[str, dict[str, None]] = {}
+    occurrences_by_message: dict[str, list[str]] = {}
     for event in collect_lesson_events(paths):
         message = lesson_message(event)
         issue = event.get("issue")
         if not message or not isinstance(issue, str):
             continue
-        if message not in issues_by_message:
-            issues_by_message[message] = {}
+        if message not in occurrences_by_message:
+            occurrences_by_message[message] = []
             order.append(message)
-        issues_by_message[message][issue] = None
+        occurrences_by_message[message].append(issue)
 
     candidates = []
     for message in order:
-        issues = list(issues_by_message[message])
-        if len(issues) < 2:
+        occurrences = occurrences_by_message[message]
+        if len(occurrences) < 2:
             continue
         candidates.append(
             {
                 "lesson": message,
-                "evidence": [f"{issue}: {message}" for issue in issues],
+                "evidence": [f"{issue}: {message}" for issue in occurrences],
                 "target": target,
             }
         )

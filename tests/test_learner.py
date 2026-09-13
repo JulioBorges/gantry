@@ -124,6 +124,27 @@ class LearnerTests(unittest.TestCase):
             self.assertEqual('{"original": true}\n', policy.read_text(encoding="utf-8"))
             self.assertEqual(1, len(json.loads(result.stdout)["candidates"]))
 
+    def test_recurring_refutation_on_same_issue_across_attempts_yields_one_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log = self.write_run_log(
+                root,
+                "run-01.jsonl",
+                [
+                    self.event("refutation", "greeting#01", "criterion 3 has no test"),
+                    self.event("refutation", "greeting#01", "criterion 3 has no test"),
+                ],
+            )
+
+            result = self.run_learner(str(log), "--json")
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(1, len(payload["candidates"]))
+            candidate = payload["candidates"][0]
+            self.assertEqual("criterion 3 has no test", candidate["lesson"])
+            self.assertEqual(2, len(candidate["evidence"]))
+
     def test_single_occurrence_produces_no_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
