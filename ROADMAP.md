@@ -36,7 +36,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **8 / 18** |
+| Issues completed | **9 / 18** |
 | Specs completed | **0 / 1** |
 | Execution waves | **7** |
 
@@ -114,7 +114,7 @@ longer exist.
 
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
-| 01 | `gantry-migration` | 8/18 | 0–6 |
+| 01 | `gantry-migration` | 9/18 | 0–6 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -149,9 +149,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-migration#12`** — Explicit cleanup plan and execution
   <br>↳ blocked by: gantry-migration#02
 
-### Wave 3 — 0/6 done
+### Wave 3 — 1/6 done
 
-- [ ] **`gantry-migration#04`** — Requirement Critic stops ambiguous planning
+- [x] **`gantry-migration#04`** — Requirement Critic stops ambiguous planning
   <br>↳ blocked by: gantry-migration#03
 - [ ] **`gantry-migration#09`** — Guard hooks and Claude Code wiring
   <br>↳ blocked by: gantry-migration#08, gantry-migration#05
