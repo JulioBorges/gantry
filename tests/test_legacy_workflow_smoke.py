@@ -89,6 +89,18 @@ Slice: `portable#01`
             self.assertEqual(1, frontier["issues"]["portable#01"]["criteria_total"])
             self.assertEqual([], frontier["issues"]["portable#01"]["blocked_by"])
 
+            plan_with_parser = self.run_workflow(
+                "plan-workflow.md",
+                plan_args,
+                research_format=frontier,
+            )
+            parser_prompt = self.prompt_for(plan_with_parser["calls"], "plan")
+            self.assertIn('"path":".scratch/portable/issues/01-portable-loop.md"', parser_prompt)
+            self.assertIn('"ref":"portable#01"', parser_prompt)
+            self.assertIn('"status":"draft"', parser_prompt)
+            self.assertIn('"criteria_total":1', parser_prompt)
+            self.assertIn('"blocked_by":[]', parser_prompt)
+
             round_args = {
                 "round": 1,
                 "issues": [],
