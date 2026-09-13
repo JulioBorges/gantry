@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import Issue, issue_levels, load_issues, repo_root, resolve_issue_arg, spec_numbers  # noqa: E402
+from common import Issue, issue_levels, load_issues, load_policy_issues, policy_spec_numbers, repo_root, resolve_issue_arg, spec_numbers  # noqa: E402
 
 PROGRESS_ISSUES_RE = re.compile(r"^(\| Issues completed \| \*\*)(\d+) / (\d+)(\*\* \|)\s*$")
 PROGRESS_SPECS_RE = re.compile(r"^(\| Specs completed \| \*\*)(\d+) / (\d+)(\*\* \|)\s*$")
@@ -60,9 +60,9 @@ def render_issue_checklist(issues: dict[str, Issue], levels: dict[str, int], num
     return "\n".join(output).lstrip("\n") + "\n"
 
 
-def render_roadmap(text: str, issues: dict[str, Issue], scratch: Path) -> str:
+def render_roadmap(text: str, issues: dict[str, Issue], root: Path, *, scratch: Path | None = None) -> str:
     levels = issue_levels(issues)
-    numbers = spec_numbers(scratch)
+    numbers = spec_numbers(scratch) if scratch else policy_spec_numbers(root)
     done_issues, total_issues, done_specs, total_specs = counts(issues)
     blocks = {
         "spec progress": render_spec_progress(issues, levels, numbers),
@@ -109,19 +109,19 @@ def main() -> int:
     parser.add_argument("command", choices=["check", "waves", "done", "status", "comment"])
     parser.add_argument("issue", nargs="?")
     parser.add_argument("value", nargs="?")
-    parser.add_argument("--scratch", default=".scratch")
+    parser.add_argument("--scratch", help="legacy Issue root override")
     parser.add_argument("--roadmap", default="ROADMAP.md")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     root = repo_root()
-    scratch = root / args.scratch
     roadmap = root / args.roadmap
-    issues = load_issues(scratch)
+    scratch = root / args.scratch if args.scratch else None
+    issues = load_issues(scratch) if scratch else load_policy_issues(root)
     if args.command in ("check", "waves"):
         old = roadmap.read_text(encoding="utf-8")
         try:
-            new = render_roadmap(old, issues, scratch)
+            new = render_roadmap(old, issues, root, scratch=scratch)
         except ValueError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 1
@@ -162,10 +162,11 @@ def main() -> int:
     if args.dry_run:
         print(f"would: mark {issue.ref} done")
         return 0
-    from acceptance import flip
-    flip(issue.path, None, True)
+    from acceptance import tick_all
+    tick_all(issue.path)
     set_status(issue.path, "done")
-    new = render_roadmap(roadmap.read_text(encoding="utf-8"), load_issues(scratch), scratch)
+    refreshed_issues = load_issues(scratch) if scratch else load_policy_issues(root)
+    new = render_roadmap(roadmap.read_text(encoding="utf-8"), refreshed_issues, root, scratch=scratch)
     roadmap.write_text(new, encoding="utf-8")
     print(f"did: tick criteria and set Status: done in {issue.path.relative_to(root)}")
     return 0

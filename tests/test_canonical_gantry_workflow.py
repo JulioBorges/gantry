@@ -87,6 +87,74 @@ Preserve the portable workflow contract.
         )
         return roadmap
 
+    def run_workflow(self, filename: str, args: dict) -> dict:
+        source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
+        source = source.replace("export const meta", "const meta", 1)
+        driver = f"""
+import {{ mkdirSync, writeFileSync }} from 'node:fs';
+import {{ dirname }} from 'node:path';
+const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
+const source = {json.dumps(source)};
+const args = {json.dumps(args)};
+const calls = [];
+const agent = async (prompt, options) => {{
+  calls.push({{ label: options.label, prompt }});
+  if (options.label.startsWith('research:')) return 'factual research';
+  if (options.label === 'plan') {{
+    if (args.testDraftPath) {{
+      mkdirSync(dirname(args.testDraftPath), {{ recursive: true }});
+      writeFileSync(args.testDraftPath, args.testDraftText);
+      return {{
+        filesWritten: [args.testDraftPath], issues: [{{ ref: 'planned#01', path: args.testDraftPath,
+          title: 'Planned Issue', criteriaCount: 1, blockedBy: [] }}],
+        roadmapAdditions: ['- [ ] **`planned#01`** — Planned Issue'], openDecisions: [],
+      }};
+    }}
+    return {{ filesWritten: [], issues: [], roadmapAdditions: [], openDecisions: [] }};
+  }}
+  if (options.label.startsWith('critique')) return {{
+    acceptable: true, problems: [], frontierErrors: [],
+  }};
+  if (options.label.startsWith('implement:')) return {{
+    worktree: args.repoRoot, branch: args.branch, commits: ['test commit'],
+    summary: 'workflow execution', testsAdded: [], gatesResult: 'verdict: pass',
+    decisions: [], blockers: [],
+  }};
+  if (options.label.startsWith('review:')) return {{
+    blocking: [], nonBlocking: [], summary: 'no findings',
+  }};
+  if (options.label.startsWith('critic:')) return {{
+    complete: true, criteria: [], gatesVerdict: 'pass', gateFailures: [],
+    refutations: [], requiredFixes: [], decisionsForOperator: [],
+  }};
+  return null;
+}};
+const parallel = async (tasks) => Promise.all(tasks.map((task) => task()));
+const pipeline = async (items, ...steps) => {{
+  const results = [];
+  for (const item of items) {{
+    let value = await steps[0](item);
+    for (const step of steps.slice(1)) value = await step(value, item);
+    results.push(value);
+  }}
+  return results;
+}};
+const phase = () => {{}};
+const log = () => {{}};
+const result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', source)(
+  args, agent, parallel, pipeline, phase, log,
+);
+process.stdout.write(JSON.stringify({{ result, calls }}));
+"""
+        result = subprocess.run(
+            ["node", "--input-type=module", "--eval", driver],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        return json.loads(result.stdout)
+
     def init_repo(self, root: Path) -> None:
         subprocess.run(["git", "init", "--quiet", str(root)], check=True)
 
@@ -127,7 +195,45 @@ Preserve the portable workflow contract.
             self.init_repo(root)
             roadmap = self.write_roadmap(root)
             before = roadmap.read_bytes()
-            draft = self.write_issue(root, "planned#01", "draft")
+            draft = root / ".scratch" / "planned" / "issues" / "01-planned.md"
+            draft_text = """# Planned Issue
+
+Type: issue
+Status: draft
+Slice: `planned#01`
+
+## Acceptance criteria
+
+- [ ] waits for operator approval
+
+## Blocked by
+
+- None
+"""
+            plan = self.run_workflow(
+                "plan-workflow.md",
+                {
+                    "target": {"kind": "spec", "slug": "planned", "specPath": str(root / ".scratch" / "planned" / "spec.md")},
+                    "models": {"plan": "plan", "critic": "critic"},
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}},
+                    "paths": {
+                        "issueDir": str(draft.parent),
+                        "specPath": str(root / ".scratch" / "planned" / "spec.md"),
+                        "exemplarIssue": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "decisions": str(root / "docs" / "adr"),
+                        "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "context": str(root / "CONTEXT.md"),
+                        "adrs": str(root / "docs" / "adr"),
+                    },
+                    "date": "2026-09-13",
+                    "testDraftPath": str(draft),
+                    "testDraftText": draft_text,
+                },
+            )
+            self.assertTrue(plan["result"]["awaitingOperatorApproval"])
+            self.assertTrue(any(call["label"] == "plan" for call in plan["calls"]))
             self.assertEqual(before, roadmap.read_bytes())
             self.assertEqual("draft", parse_issue(draft).status)
             approved = self.run_script(root, "roadmap.py", "status", "planned#01", "ready-for-agent")
@@ -181,6 +287,145 @@ Preserve the portable workflow contract.
 
             self.assertEqual(1, result.returncode)
             self.assertIn("dependency cycle", "\n".join(json.loads(result.stdout)["errors"]))
+
+    def test_frontier_reports_parked_issues_before_readiness_filtering(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            self.write_issue(root, "waiting#01", "ready-for-agent", ["waiting#02"])
+            self.write_issue(root, "waiting#02", "draft", ["waiting#03"])
+            self.write_issue(root, "waiting#03", "blocked", ["waiting#04"])
+            self.write_issue(root, "waiting#04", "needs-operator")
+
+            result = self.run_script(root, "frontier.py", "--scope", "frontier", "--json")
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(
+                {
+                    "waiting#02": "draft",
+                    "waiting#03": "blocked",
+                    "waiting#04": "needs-operator",
+                },
+                payload["parked"],
+            )
+            self.assertEqual([], payload["rounds"])
+
+    def test_acceptance_cli_is_read_only_and_roadmap_done_is_state_route(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            issue = self.write_issue(root, "state#01", "ready-for-agent")
+            roadmap = self.write_roadmap(root)
+            before_issue = issue.read_bytes()
+            before_roadmap = roadmap.read_bytes()
+
+            mutable = self.run_script(root, "acceptance.py", "state#01", "--tick", "all")
+
+            self.assertEqual(2, mutable.returncode)
+            self.assertEqual(before_issue, issue.read_bytes())
+            self.assertEqual(before_roadmap, roadmap.read_bytes())
+
+            done = self.run_script(root, "roadmap.py", "done", "state#01")
+
+            self.assertEqual(0, done.returncode, done.stderr)
+            parsed = parse_issue(issue)
+            self.assertTrue(parsed.done)
+            self.assertTrue(all(criterion.checked for criterion in parsed.criteria))
+            self.assertIn("state#01", roadmap.read_text(encoding="utf-8"))
+
+    def test_custom_artifact_policy_drives_frontier_roadmap_and_workflows(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            config = root / ".gantry" / "config.json"
+            config.parent.mkdir()
+            policy = {
+                "artifacts": {"specs": "product/{slug}.md", "issues": "work/{slug}"},
+                "git": {"target": "main", "prefix": "gantry/"},
+                "budget": {"corrections": 2},
+            }
+            config.write_text(
+                json.dumps(policy),
+                encoding="utf-8",
+            )
+            spec = root / "product" / "portable.md"
+            spec.parent.mkdir()
+            spec.write_text("# Portable Spec\n", encoding="utf-8")
+            issue = root / "work" / "portable" / "01-portable.md"
+            issue.parent.mkdir(parents=True)
+            issue.write_text(
+                """# Portable issue
+
+Type: issue
+Status: ready-for-agent
+Slice: `portable#01`
+
+## Acceptance criteria
+
+- [ ] executes through the effective artifact policy
+
+## Blocked by
+
+- None
+""",
+                encoding="utf-8",
+            )
+            roadmap = self.write_roadmap(root)
+
+            frontier = self.run_script(root, "frontier.py", "--scope", "portable", "--json")
+            accepted = self.run_script(root, "acceptance.py", "portable#01", "--json")
+            waves = self.run_script(root, "roadmap.py", "waves", "--json")
+            checked = self.run_script(root, "roadmap.py", "check", "--json")
+
+            self.assertEqual(0, frontier.returncode, frontier.stderr)
+            self.assertEqual("work/portable/01-portable.md", json.loads(frontier.stdout)["issues"]["portable#01"]["path"])
+            self.assertEqual(0, accepted.returncode, accepted.stderr)
+            self.assertEqual("product/portable.md", json.loads(accepted.stdout)["spec_path"])
+            self.assertEqual(0, waves.returncode, waves.stderr)
+            self.assertEqual(0, checked.returncode, checked.stderr)
+            self.assertIn("portable#01", roadmap.read_text(encoding="utf-8"))
+
+            paths = {
+                "issueDir": str(root / "work" / "portable"),
+                "specPath": str(spec),
+                "exemplarIssue": str(issue),
+                "decisions": str(root / "docs" / "adr"),
+                "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
+                "context": str(root / "CONTEXT.md"),
+                "adrs": str(root / "docs" / "adr"),
+            }
+            plan = self.run_workflow(
+                "plan-workflow.md",
+                {
+                    "target": {"kind": "spec", "slug": "portable", "specPath": str(spec)},
+                    "models": {"plan": "plan", "critic": "critic"},
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": policy,
+                    "paths": paths,
+                    "date": "2026-09-13",
+                },
+            )
+            round_result = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{"ref": "portable#01", "path": "work/portable/01-portable.md", "title": "Portable issue", "specPath": "product/portable.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/portable",
+                    "baseRef": "HEAD",
+                    "isolate": True,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": policy,
+                    "paths": paths,
+                    "date": "2026-09-13",
+                },
+            )
+            self.assertTrue(any(call["label"] == "plan" for call in plan["calls"]))
+            self.assertTrue(any(call["label"] == "critic:portable#01#1" for call in round_result["calls"]))
 
     def test_templates_and_canonical_parser_keep_legacy_issue_state(self) -> None:
         required = {

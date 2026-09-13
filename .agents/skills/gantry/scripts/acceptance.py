@@ -8,18 +8,17 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import load_issues, parse_issue, repo_root, resolve_issue_arg, section  # noqa: E402
+from common import artifact_path, load_issues, load_policy_issues, parse_issue, repo_root, resolve_issue_arg, section  # noqa: E402
 
 
-def flip(path: Path, indexes: list[int] | None, checked: bool) -> int:
+def tick_all(path: Path) -> int:
+    """Tick every criterion; only roadmap.py invokes this state transition."""
     issue = parse_issue(path)
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     changed = 0
     for criterion in issue.criteria:
-        if indexes is not None and criterion.index not in indexes:
-            continue
         old = lines[criterion.line_no - 1]
-        new = old.replace("- [ ]", "- [x]", 1) if checked else old.replace("- [x]", "- [ ]", 1).replace("- [X]", "- [ ]", 1)
+        new = old.replace("- [ ]", "- [x]", 1)
         if new != old:
             lines[criterion.line_no - 1] = new
             changed += 1
@@ -31,26 +30,20 @@ def flip(path: Path, indexes: list[int] | None, checked: bool) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("issue", help="spec#NN or an Issue path")
-    parser.add_argument("--scratch", default=".scratch")
+    parser.add_argument("--scratch", help="legacy Issue root override")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--check", action="store_true", help="require done Status and every criterion ticked")
-    parser.add_argument("--tick", help="comma-separated indexes or all")
-    parser.add_argument("--untick", help="comma-separated indexes or all")
     args = parser.parse_args()
     root = repo_root()
-    issue = resolve_issue_arg(args.issue, root, load_issues(root / args.scratch))
+    issues = load_issues(root / args.scratch) if args.scratch else load_policy_issues(root)
+    issue = resolve_issue_arg(args.issue, root, issues)
     if not issue:
         print(f"issue not found: {args.issue}", file=sys.stderr)
         return 2
-    for values, checked in ((args.tick, True), (args.untick, False)):
-        if values:
-            indexes = None if values == "all" else [int(value) for value in values.split(",") if value.strip()]
-            print(f"{'ticked' if checked else 'unticked'} {flip(issue.path, indexes, checked)} criteria in {issue.path.relative_to(root)}")
-            issue = parse_issue(issue.path)
     text = issue.path.read_text(encoding="utf-8")
     payload = {
         **issue.to_dict(root),
-        "spec_path": str((issue.path.parent.parent / "spec.md").relative_to(root)),
+        "spec_path": str(artifact_path(root, "specs", issue.spec).relative_to(root)),
         "criteria": [{"index": item.index, "text": item.text, "checked": item.checked} for item in issue.criteria],
         "what_to_build": section(text, "What to build").strip(),
         "notes": section(text, "Notes").strip(),

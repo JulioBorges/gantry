@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import Issue, load_issues, normalise_ref, repo_root, roadmap_waves  # noqa: E402
+from common import Issue, load_issues, load_policy_issues, normalise_ref, repo_root, roadmap_waves  # noqa: E402
 
 
 def select_scope(scopes: list[str], issues: dict[str, Issue], roadmap: str) -> tuple[set[str], list[str]]:
@@ -23,7 +23,11 @@ def select_scope(scopes: list[str], issues: dict[str, Issue], roadmap: str) -> t
         elif scope == "frontier":
             selected |= {
                 ref for ref, issue in issues.items()
-                if not issue.done and (not issue.blocked_by or all(issues.get(blocker) and issues[blocker].done for blocker in issue.blocked_by))
+                if not issue.done and (
+                    issue.parked
+                    or not issue.blocked_by
+                    or all(issues.get(blocker) and issues[blocker].done for blocker in issue.blocked_by)
+                )
             }
         elif scope.startswith("wave:"):
             try:
@@ -143,7 +147,7 @@ def schedule(selected: set[str], issues: dict[str, Issue], limit: int | None) ->
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scope", action="append", default=[], help="scope selector (repeatable)")
-    parser.add_argument("--scratch", default=".scratch")
+    parser.add_argument("--scratch", help="legacy Issue root override")
     parser.add_argument("--roadmap", default="ROADMAP.md")
     parser.add_argument("--limit", type=int, default=None, help="maximum Issues per round")
     parser.add_argument("--include-parked", action="store_true", help="include blocked, needs-operator and draft Issues")
@@ -151,9 +155,10 @@ def main() -> int:
     args = parser.parse_args()
 
     root = repo_root()
-    issues = load_issues(root / args.scratch)
+    issues = load_issues(root / args.scratch) if args.scratch else load_policy_issues(root)
     if not issues:
-        print(f"no issues found under {root / args.scratch}", file=sys.stderr)
+        location = root / args.scratch if args.scratch else "the effective artifacts.issues policy path"
+        print(f"no issues found under {location}", file=sys.stderr)
         return 2
     roadmap_path = root / args.roadmap
     selected, errors = select_scope(args.scope or ["frontier"], issues, roadmap_path.read_text(encoding="utf-8") if roadmap_path.exists() else "")
@@ -180,7 +185,7 @@ def main() -> int:
             print(f"  ERROR: {error}")
     if errors:
         return 1
-    return 0 if selected else 2
+    return 0 if selected or parked else 2
 
 
 if __name__ == "__main__":

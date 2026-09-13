@@ -88,6 +88,43 @@ def resolve_workflow_paths(root: Path, slug: str) -> dict[str, Path]:
     }
 
 
+def artifact_path(root: Path, name: str, slug: str) -> Path:
+    """Render one effective artifact path for an Issue's parent Spec."""
+    root = repo_root(root)
+    return root / resolve_policy(root)["artifacts"][name].format(slug=slug)
+
+
+def load_policy_issues(root: Path, policy: dict | None = None) -> dict[str, Issue]:
+    """Load Issue files from the policy's rendered, slug-aware issue directory."""
+    root = repo_root(root)
+    effective = policy or resolve_policy(root)
+    pattern = effective["artifacts"]["issues"].format(slug="*").rstrip("/")
+    issues: dict[str, Issue] = {}
+    for path in sorted(root.glob(f"{pattern}/*.md")):
+        if ISSUE_FILE_RE.match(path.name):
+            issue = parse_issue(path)
+            issues[issue.ref] = issue
+    return issues
+
+
+def policy_spec_numbers(root: Path, policy: dict | None = None) -> dict[str, int]:
+    """Read Spec numbers from the policy's rendered, slug-aware spec paths."""
+    root = repo_root(root)
+    effective = policy or resolve_policy(root)
+    template = effective["artifacts"]["specs"]
+    pattern = template.format(slug="*")
+    slug_matcher = re.compile("^" + re.escape(template).replace(re.escape("{slug}"), r"(?P<slug>[^/]+)") + "$")
+    result: dict[str, int] = {}
+    for path in sorted(root.glob(pattern)):
+        match = re.search(r"\(spec\s+(\d+)", path.read_text(encoding="utf-8"))
+        if match:
+            relative = path.relative_to(root).as_posix()
+            slug = slug_matcher.match(relative)
+            if slug:
+                result[slug.group("slug")] = int(match.group(1))
+    return result
+
+
 def section(text: str, heading: str) -> str:
     """Return a level-two Markdown section body."""
     match = re.search(rf"^##\s+{re.escape(heading)}\s*$", text, re.MULTILINE | re.IGNORECASE)
