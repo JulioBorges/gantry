@@ -173,6 +173,7 @@ Scenario: The run ends with an offered draft pull request
   research or Issue slicing; a blocking finding quotes the Spec and stops the run for the operator to
   amend the Spec, and structural validation and Requirement Review are documented as not approving
   planning by themselves.
+- 2026-09-13 — Added the read-only, loopback-only multi-Run kanban dashboard (`dashboard.py` and the `gantry-dashboard` skill): swimlanes per Run, Ready/Plan/Implement/Review/Critic/Integrate/Done/Blocked columns, per-Issue badges, and staleness computed only from each Run's own `run.started` `staleAfterSeconds` snapshot.
 - 2026-09-13 — Added an explicit, read-only cleanup plan that removes only done Issue branches and worktrees already merged into the Run branch after operator authorization.
 - 2026-09-13 — Added effective-template Spec structural validation before planning, including mapped headings, required-section order, placeholder and Gherkin scenario checks.
 - 2026-09-13 — Added an append-only, shared-worktree Run log with validated lifecycle events, atomic JSONL appends, policy snapshots, and interrupted Issue queries.
