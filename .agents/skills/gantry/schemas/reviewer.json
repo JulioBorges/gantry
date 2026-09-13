@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "blocking": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "nonBlocking": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "blocking",
+    "nonBlocking",
+    "summary"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,36 @@
+{
+  "type": "object",
+  "properties": {
+    "filesWritten": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "roadmapAdditions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "openDecisions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "filesWritten",
+    "issues",
+    "roadmapAdditions",
+    "openDecisions"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,74 @@
+{
+  "type": "object",
+  "properties": {
+    "complete": {
+      "type": "boolean"
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "met": {
+            "type": "boolean"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "met",
+          "evidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "gatesVerdict": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "no_gates",
+        "not_run"
+      ]
+    },
+    "gateFailures": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "refutations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requiredFixes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "decisionsForOperator": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "complete",
+    "criteria",
+    "gatesVerdict",
+    "gateFailures",
+    "refutations",
+    "requiredFixes",
+    "decisionsForOperator"
+  ],
+  "additionalProperties": false
+}

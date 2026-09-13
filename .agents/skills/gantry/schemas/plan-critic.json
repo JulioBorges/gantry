@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "acceptable": {
+      "type": "boolean"
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "frontierErrors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "acceptable",
+    "problems",
+    "frontierErrors"
+  ],
+  "additionalProperties": false
+}
