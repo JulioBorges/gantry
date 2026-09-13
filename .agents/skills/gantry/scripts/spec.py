@@ -11,15 +11,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from common import repo_root, resolve_effective_template, resolve_heading_map  # noqa: E402
 
-HEADING_RE = re.compile(r"^##(?!#)\s+(.+?)\s*$", re.MULTILINE)
-SCENARIO_RE = re.compile(r"^\s*Scenario:\s*(.+?)\s*$", re.MULTILINE)
-STEP_RE = re.compile(r"^\s*(Given|When|Then|And|But)\s+(.+?)\s*$")
+HEADING_RE = re.compile(r"^##(?!#)[ \t]+(.+?)[ \t]*$", re.MULTILINE)
+SCENARIO_RE = re.compile(r"^[ \t]*Scenario:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
+STEP_RE = re.compile(r"^[ \t]*(Given|When|Then|And|But)[ \t]+(.+?)[ \t]*$")
 PLACEHOLDER_RE = re.compile(r"<[^>\n]+>|YYYY-MM-DD")
 
 
 def headings(text: str) -> list[str]:
     """Return the document's level-two Markdown headings."""
-    return [f"## {match.group(1)}" for match in HEADING_RE.finditer(text)]
+    outside_fences: list[str] = []
+    fenced = False
+    for line in text.splitlines(keepends=True):
+        if re.match(r"^\s*(?:`{3,}|~{3,})", line):
+            fenced = not fenced
+        elif not fenced:
+            outside_fences.append(line)
+    return [f"## {match.group(1)}" for match in HEADING_RE.finditer("".join(outside_fences))]
 
 
 def canonical_heading(heading: str, heading_map: dict[str, str]) -> str:
@@ -44,23 +51,42 @@ def validate_scenarios(text: str, required: bool) -> list[dict[str, object]]:
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
         steps = [
             (line_number, step.group(1))
-            for line_number, line in enumerate(text[match.end():end].splitlines(), text[:match.end()].count("\n") + 1)
+            for line_number, line in enumerate(
+                text[match.end():end].splitlines(),
+                text[:match.end()].count("\n") + 1,
+            )
             if (step := STEP_RE.match(line))
         ]
-        primary = [kind for _, kind in steps if kind in {"Given", "When", "Then"}]
-        valid = (
-            primary
-            and primary[0] == "Given"
-            and "When" in primary
-            and "Then" in primary
-            and primary.index("Given") < primary.index("When") < primary.index("Then")
-        )
-        if not valid:
+
+        phase: str | None = None
+        errors: list[tuple[int, str]] = []
+        for line_number, kind in steps:
+            if kind == "Given":
+                if phase in {None, "given"}:
+                    phase = "given"
+                else:
+                    errors.append((line_number, "Given cannot follow When or Then"))
+            elif kind == "When":
+                if phase == "given":
+                    phase = "when"
+                else:
+                    errors.append((line_number, "When must follow Given and precede Then"))
+            elif kind == "Then":
+                if phase == "when":
+                    phase = "then"
+                else:
+                    errors.append((line_number, "Then must follow When"))
+            elif phase is None:
+                errors.append((line_number, "And or But must follow Given, When or Then"))
+
+        if phase != "then":
+            errors.append((text[:match.start()].count("\n") + 1, "Scenario must end with Then steps"))
+        for line_number, reason in errors:
             malformed.append(
                 {
-                    "line": text[:match.start()].count("\n") + 1,
+                    "line": line_number,
                     "scenario": match.group(1),
-                    "reason": "Scenario must contain Given, When and Then steps in that order",
+                    "reason": reason,
                 }
             )
     return malformed
@@ -140,15 +166,23 @@ def main() -> int:
     root = repo_root(Path(args.cwd))
     spec = Path(args.spec)
     spec = spec if spec.is_absolute() else root / spec
-    if not spec.exists():
-        payload = {"spec": str(spec), "error": "Spec does not exist"}
+    if not spec.is_file():
+        payload = {"spec": str(spec), "error": "Spec is not a readable file"}
         if args.json:
             print(json.dumps(payload, indent=2))
         else:
-            print(f"Spec does not exist: {spec}", file=sys.stderr)
+            print(f"Spec is not a readable file: {spec}", file=sys.stderr)
         return 2
 
-    payload = validate(spec.resolve(), root)
+    try:
+        payload = validate(spec.resolve(), root)
+    except (OSError, UnicodeError, ValueError) as exc:
+        payload = {"spec": str(spec), "error": str(exc)}
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            print(f"Spec cannot be validated: {exc}", file=sys.stderr)
+        return 2
     if args.json:
         print(json.dumps(payload, indent=2))
     else:

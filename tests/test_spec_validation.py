@@ -172,6 +172,95 @@ Scenario: incomplete scenario
             self.assertEqual(0, passed.returncode, passed.stderr)
             self.assertLess(elapsed, 1)
 
+    def test_rejects_gherkin_steps_that_regress_or_precede_their_phase(self) -> None:
+        cases = {
+            "given after when": (
+                self.valid_spec().replace(
+                    "  When the workflow script checks it",
+                    "  When the workflow script checks it\n  Given a regression in setup",
+                ),
+                "Given cannot follow When",
+                15,
+            ),
+            "then before when": (
+                self.valid_spec().replace(
+                    "  When the workflow script checks it\n  Then the structural result passes",
+                    "  Then the structural result passes\n  When the workflow script checks it",
+                ),
+                "Then must follow When",
+                14,
+            ),
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            for name, (contents, reason, line) in cases.items():
+                with self.subTest(name=name):
+                    spec = root / f"{name}.md"
+                    spec.write_text(contents, encoding="utf-8")
+
+                    result = self.run_spec(root, spec)
+
+                    self.assertEqual(1, result.returncode, result.stderr)
+                    finding = json.loads(result.stdout)["malformed_scenarios"][0]
+                    self.assertEqual(line, finding["line"])
+                    self.assertIn(reason, finding["reason"])
+
+    def test_accepts_complete_gherkin_sequences(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            spec = root / "spec.md"
+            spec.write_text(
+                self.valid_spec().replace(
+                    "  Given a repository with a Spec\n"
+                    "  When the workflow script checks it\n"
+                    "  Then the structural result passes",
+                    "  Given a repository with a Spec\n"
+                    "  And a configured effective template\n"
+                    "  But no malformed placeholders\n"
+                    "  When the workflow script checks it\n"
+                    "  And it reads the configured template\n"
+                    "  But it does not alter the Spec\n"
+                    "  Then the structural result passes\n"
+                    "  And it reports no findings",
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_spec(root, spec)
+
+            self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_ignores_headings_inside_fenced_code_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            spec = root / "spec.md"
+            spec.write_text(
+                self.valid_spec().replace(
+                    "\n## Changelog\n\n- 2026-09-13 — Added structural validation coverage.\n",
+                    "\n```markdown\n## Changelog\n```\n",
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_spec(root, spec)
+
+            self.assertEqual(1, result.returncode, result.stderr)
+            self.assertEqual(["## Changelog"], json.loads(result.stdout)["missing"])
+
+    def test_checking_a_directory_returns_json_error_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+
+            result = self.run_spec(root, root)
+
+            self.assertEqual(2, result.returncode, result.stderr)
+            self.assertEqual("", result.stderr)
+            self.assertIn("error", json.loads(result.stdout))
+
     def test_help_json_contract_and_standard_library_imports(self) -> None:
         help_result = subprocess.run(
             [sys.executable, str(SPEC), "--help"],
