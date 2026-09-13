@@ -3,6 +3,9 @@
 Use this workflow only for an unplanned Spec, an Issue with no criteria, or an approved free-text goal.
 The caller resolves and supplies `args.skillDir`, `args.repoRoot`, effective `args.policy`, rendered
 `args.paths`, and `args.models.plan` / `args.models.critic`; this file assumes no repository location.
+For the approval transition, the host supplies its command runner as `runCommand(command, { cwd })`.
+`args.operatorApproved` is `true` only after the host has obtained explicit operator approval; an omitted
+or any other value leaves the plan awaiting approval.
 
 ## Roles and sequence
 
@@ -140,5 +143,25 @@ if (plan && critique && !critique.acceptable) {
     label: 'critique:2', phase: 'Critique', schema: CRITIQUE_SCHEMA, model: A.models.critic,
   }) || critique
 }
-return { target: t, plan, critique, awaitingOperatorApproval: true }
+
+async function runApprovalCommand(command) {
+  const result = await runCommand(command, { cwd: A.repoRoot })
+  if (!result || result.exitCode !== 0) {
+    throw new Error(`planning approval transition failed: ${command}`)
+  }
+  return result
+}
+
+async function approvePlan() {
+  if (A.operatorApproved !== true || !plan || !critique || !critique.acceptable) return false
+  for (const issue of plan.issues) {
+    await runApprovalCommand(`python3 "${scripts}/roadmap.py" status ${issue.ref} ready-for-agent`)
+  }
+  await runApprovalCommand(`python3 "${scripts}/roadmap.py" waves`)
+  await runApprovalCommand(`python3 "${scripts}/roadmap.py" check`)
+  return true
+}
+
+const approved = await approvePlan()
+return { target: t, plan, critique, awaitingOperatorApproval: !approved, approved }
 ```

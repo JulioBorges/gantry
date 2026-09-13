@@ -4,6 +4,8 @@ One round contains only Issues selected by `frontier.py` whose dependency readin
 caller supplies `args.round`, `args.issues`, `args.models`, `args.branch`, `args.baseRef`,
 `args.isolate`, `args.correctionBudget`, `args.skillDir`, `args.repoRoot`, effective `args.policy` and
 rendered `args.paths`.
+The host supplies its command runner as `runCommand(command, { cwd })`; integration cannot proceed
+without it.
 
 ```
 implement (TDD) → review (standards + Spec) → one review fix pass
@@ -100,6 +102,34 @@ function location(impl) {
   return impl && impl.worktree ? impl.worktree : A.repoRoot
 }
 
+function criticAccepted(verdict) {
+  return Boolean(verdict && verdict.complete === true && verdict.gatesVerdict === 'pass')
+}
+
+async function runWorkflowCommand(command) {
+  const result = await runCommand(command, { cwd: A.repoRoot })
+  if (!result || result.exitCode !== 0) {
+    throw new Error(`workflow command failed: ${command}`)
+  }
+  return result
+}
+
+async function integrationGatePasses() {
+  let result
+  try {
+    result = await runWorkflowCommand(
+      `python3 "${scripts}/gates.py" --run --diff-base ${A.baseRef} --cwd "${A.repoRoot}" --json`,
+    )
+  } catch {
+    return false
+  }
+  try {
+    return JSON.parse(result.stdout).verdict === 'pass'
+  } catch {
+    return false
+  }
+}
+
 function implementPrompt(issue, feedback, previous) {
   const work = previous
     ? `Continue in ${previous.worktree} on ${previous.branch}.`
@@ -173,14 +203,14 @@ const results = await pipeline(
       verdict = await agent(criticPrompt(issue, impl, state.review, attempt), {
         label: `critic:${issue.ref}#${attempt}`, phase: 'Critic', schema: CRITIC_SCHEMA, model: A.models.critic,
       })
-      if (!verdict || verdict.complete || corrections >= budget) break
+      if (!verdict || criticAccepted(verdict) || corrections >= budget) break
       corrections += 1
       impl = await implement(issue, { kind: 'critic', items: verdict.requiredFixes }, impl)
       if (!impl) break
     }
     return {
       ref: issue.ref,
-      outcome: verdict && verdict.complete ? 'complete' : (verdict ? 'refuted' : 'critic_failed'),
+      outcome: criticAccepted(verdict) ? 'accepted' : (verdict ? 'refuted' : 'critic_failed'),
       worktree: impl && impl.worktree, branch: impl && impl.branch, commits: impl && impl.commits,
       corrections, reviewFix: state.reviewFix, review: state.review, verdict,
       decisions: [...((impl && impl.decisions) || []), ...((verdict && verdict.decisionsForOperator) || [])],
@@ -188,8 +218,45 @@ const results = await pipeline(
     }
   },
 )
-return { round: A.round, date: A.date, results: results.filter(Boolean) }
+
+const deliveries = results.filter(Boolean)
+let integrationStopped = false
+for (const delivery of deliveries) {
+  if (delivery.outcome !== 'accepted') continue
+  if (integrationStopped) {
+    delivery.outcome = 'integration_pending'
+    continue
+  }
+  if (A.isolate) {
+    if (!delivery.branch) {
+      delivery.outcome = 'integration_failed'
+      integrationStopped = true
+      continue
+    }
+    try {
+      await runWorkflowCommand(`git merge --no-ff "${delivery.branch}" -m "gantry: integrate ${delivery.ref}"`)
+    } catch {
+      delivery.outcome = 'integration_failed'
+      integrationStopped = true
+      continue
+    }
+  }
+  if (!await integrationGatePasses()) {
+    delivery.outcome = 'integration_failed'
+    integrationStopped = true
+    continue
+  }
+  try {
+    await runWorkflowCommand(`python3 "${scripts}/roadmap.py" done ${delivery.ref}`)
+    delivery.outcome = 'done'
+  } catch {
+    delivery.outcome = 'integration_failed'
+    integrationStopped = true
+  }
+}
+return { round: A.round, date: A.date, results: deliveries }
 ```
 
-The Workflow returns only accepted or refuted delivery results. The host harness performs serial
-integration and applies the authoritative completion transition only after its integration gate passes.
+The Workflow returns `done` only after serial integration (when isolated), a passing post-integration
+gate and `roadmap.py done`. `no_gates` is not a generic acceptance path: a future bootstrap contract must
+explicitly supply and prove its exceptional checks before it can be modeled here.

@@ -93,10 +93,26 @@ Preserve the portable workflow contract.
         driver = f"""
 import {{ mkdirSync, writeFileSync }} from 'node:fs';
 import {{ dirname }} from 'node:path';
+import {{ spawnSync }} from 'node:child_process';
 const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
 const source = {json.dumps(source)};
 const args = {json.dumps(args)};
 const calls = [];
+const commandCalls = [];
+const runCommand = async (command, options = {{}}) => {{
+  commandCalls.push({{ command, cwd: options.cwd || args.repoRoot }});
+  if (args.commandMode === 'real') {{
+    const completed = spawnSync(command, {{
+      cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8',
+    }});
+    return {{
+      exitCode: completed.status ?? 1, stdout: completed.stdout || '',
+      stderr: completed.stderr || '',
+    }};
+  }}
+  if (args.commandResults && args.commandResults.length) return args.commandResults.shift();
+  return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}' : '' }};
+}};
 const agent = async (prompt, options) => {{
   calls.push({{ label: options.label, prompt }});
   if (options.label.startsWith('research:')) return 'factual research';
@@ -116,7 +132,7 @@ const agent = async (prompt, options) => {{
     acceptable: true, problems: [], frontierErrors: [],
   }};
   if (options.label.startsWith('implement:')) return {{
-    worktree: args.repoRoot, branch: args.branch, commits: ['test commit'],
+    worktree: args.repoRoot, branch: args.issueBranch || args.branch, commits: ['test commit'],
     summary: 'workflow execution', testsAdded: [], gatesResult: 'verdict: pass',
     decisions: [], blockers: [],
   }};
@@ -126,6 +142,7 @@ const agent = async (prompt, options) => {{
   if (options.label.startsWith('critic:')) return {{
     complete: true, criteria: [], gatesVerdict: 'pass', gateFailures: [],
     refutations: [], requiredFixes: [], decisionsForOperator: [],
+    ...(args.criticResults && args.criticResults.length ? args.criticResults.shift() : (args.criticResult || {{}})),
   }};
   return null;
 }};
@@ -141,10 +158,10 @@ const pipeline = async (items, ...steps) => {{
 }};
 const phase = () => {{}};
 const log = () => {{}};
-const result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', source)(
-  args, agent, parallel, pipeline, phase, log,
+const result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'runCommand', source)(
+  args, agent, parallel, pipeline, phase, log, runCommand,
 );
-process.stdout.write(JSON.stringify({{ result, calls }}));
+process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
 """
         result = subprocess.run(
             ["node", "--input-type=module", "--eval", driver],
@@ -236,16 +253,154 @@ Slice: `planned#01`
             self.assertTrue(any(call["label"] == "plan" for call in plan["calls"]))
             self.assertEqual(before, roadmap.read_bytes())
             self.assertEqual("draft", parse_issue(draft).status)
-            approved = self.run_script(root, "roadmap.py", "status", "planned#01", "ready-for-agent")
-            self.assertEqual(0, approved.returncode, approved.stderr)
-            self.assertEqual(before, roadmap.read_bytes())
-
-            projected = self.run_script(root, "roadmap.py", "waves")
-            self.assertEqual(0, projected.returncode, projected.stderr)
-            checked = self.run_script(root, "roadmap.py", "check", "--json")
-            self.assertEqual(0, checked.returncode, checked.stderr)
-            self.assertEqual([], json.loads(checked.stdout)["drift"])
+            approved = self.run_workflow(
+                "plan-workflow.md",
+                {
+                    "target": {"kind": "spec", "slug": "planned", "specPath": str(root / ".scratch" / "planned" / "spec.md")},
+                    "models": {"plan": "plan", "critic": "critic"},
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}},
+                    "paths": {
+                        "issueDir": str(draft.parent),
+                        "specPath": str(root / ".scratch" / "planned" / "spec.md"),
+                        "exemplarIssue": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "decisions": str(root / "docs" / "adr"),
+                        "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
+                        "context": str(root / "CONTEXT.md"),
+                        "adrs": str(root / "docs" / "adr"),
+                    },
+                    "date": "2026-09-13",
+                    "testDraftPath": str(draft),
+                    "testDraftText": draft_text,
+                    "operatorApproved": True,
+                    "commandMode": "real",
+                },
+            )
+            self.assertFalse(approved["result"]["awaitingOperatorApproval"])
+            self.assertEqual("ready-for-agent", parse_issue(draft).status)
+            commands = [call["command"] for call in approved["commandCalls"]]
+            self.assertEqual(3, len(commands))
+            self.assertIn('roadmap.py" status planned#01 ready-for-agent', commands[0])
+            self.assertIn('roadmap.py" waves', commands[1])
+            self.assertIn('roadmap.py" check', commands[2])
             self.assertIn("planned#01", roadmap.read_text(encoding="utf-8"))
+
+    def test_round_rejects_critic_completion_without_a_passing_gate(self) -> None:
+        cases = ("fail", "no_gates")
+        for gates_verdict in cases:
+            with self.subTest(gates_verdict=gates_verdict), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                self.init_repo(root)
+                issue = self.write_issue(root, "gates#01", "ready-for-agent")
+                self.write_roadmap(root)
+
+                run = self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": 1,
+                        "issues": [{"ref": "gates#01", "path": str(issue.relative_to(root)), "title": "Gate issue", "specPath": ".scratch/gates/spec.md"}],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": "gantry/gates",
+                        "baseRef": "HEAD",
+                        "isolate": False,
+                        "correctionBudget": 0,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 0}},
+                        "paths": {},
+                        "date": "2026-09-13",
+                        "criticResult": {
+                            "complete": True, "criteria": [], "gatesVerdict": gates_verdict, "gateFailures": ["real gate evidence failed"],
+                            "refutations": ["gate evidence is not green"], "requiredFixes": ["make the declared gate pass"],
+                            "decisionsForOperator": [],
+                        },
+                    },
+                )
+
+                self.assertEqual("refuted", run["result"]["results"][0]["outcome"])
+                self.assertEqual([], run["commandCalls"])
+                self.assertEqual("ready-for-agent", parse_issue(issue).status)
+
+    def test_round_stops_without_state_change_when_integration_gate_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            issue = self.write_issue(root, "integration-fail#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@false\n", encoding="utf-8")
+
+            run = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{"ref": "integration-fail#01", "path": str(issue.relative_to(root)), "title": "Integration gate", "specPath": ".scratch/integration-fail/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/integration-fail",
+                    "baseRef": "HEAD",
+                    "isolate": False,
+                    "correctionBudget": 0,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 0}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "commandMode": "real",
+                },
+            )
+
+            self.assertEqual("integration_failed", run["result"]["results"][0]["outcome"])
+            self.assertEqual("ready-for-agent", parse_issue(issue).status)
+            self.assertEqual(1, len(run["commandCalls"]))
+            self.assertIn('gates.py" --run', run["commandCalls"][0]["command"])
+
+    def test_round_serially_integrates_then_gates_then_marks_done(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "serial#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            (root / "base.txt").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+            run_branch = subprocess.run(["git", "branch", "--show-current"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+            subprocess.run(["git", "checkout", "--quiet", "-b", "gantry/serial-issue"], cwd=root, check=True)
+            (root / "delivery.txt").write_text("integrated\n", encoding="utf-8")
+            subprocess.run(["git", "add", "delivery.txt"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "delivery"], cwd=root, check=True)
+            subprocess.run(["git", "checkout", "--quiet", run_branch], cwd=root, check=True)
+
+            run = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{"ref": "serial#01", "path": str(issue.relative_to(root)), "title": "Serial integration", "specPath": ".scratch/serial/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": run_branch,
+                    "baseRef": base_ref,
+                    "isolate": True,
+                    "correctionBudget": 0,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 0}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "issueBranch": "gantry/serial-issue",
+                    "commandMode": "real",
+                },
+            )
+
+            self.assertEqual("done", run["result"]["results"][0]["outcome"])
+            self.assertEqual("done", parse_issue(issue).status)
+            commands = [call["command"] for call in run["commandCalls"]]
+            self.assertEqual(3, len(commands))
+            self.assertIn('git merge --no-ff "gantry/serial-issue"', commands[0])
+            self.assertIn('gates.py" --run', commands[1])
+            self.assertIn('roadmap.py" done serial#01', commands[2])
 
     def test_frontier_rejects_invalid_graphs_and_uses_authoritative_statuses(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
