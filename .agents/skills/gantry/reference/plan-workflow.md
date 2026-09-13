@@ -25,6 +25,10 @@ The Planner returns `filesWritten`, `issues` (`ref`, `path`, `title`, `criteriaC
 - write only draft Issue files under `args.paths.issueDir`;
 - use `args.paths.specPath`, `decisions`, `context`, `adrs`, `issueTracker` and `exemplarIssue` rather
   than inferred paths;
+- when an Issue needs additional initial-context files, put them under `## What to build` in a
+  `### Files to read` section. Each list item must be exactly one repository-relative path in a code
+  span (`- \`path/to/file\``); prose, code spans outside that list and paths under another heading are
+  not declarations and are not counted by `budget.py`;
 - never write `ROADMAP.md`, set an Issue to `ready-for-agent`, or implement any issue;
 - use English for every artifact.
 
@@ -145,6 +149,10 @@ Write only draft Issue files under ${paths.issueDir}/NN-<slug>.md, using ${paths
 ${paths.issueTracker}. Read ${paths.specPath}, ${paths.decisions}, ${paths.context} and ${paths.adrs}.
 Every Issue is a demonstrable vertical slice with observable checkbox criteria and real, acyclic
 \`## Blocked by\` refs. Use \`Status: draft\`, the rendered effective paths, and English artifacts.
+When additional initial-context files are needed, declare them only under \`## What to build\` as
+\`### Files to read\`, using list items exactly in the form \`- \`path/to/file\`\` with
+repository-relative paths. \`budget.py\` counts only those list items, not prose, incidental code spans,
+or paths under another heading.
 The effective Git policy is target \`${policy.git.target}\`, prefix \`${policy.git.prefix}\`.
 ${t.kind === 'goal' ? `First draft ${paths.specPath} in the existing Spec format.` : ''}
 ${t.kind === 'issue' ? `Rewrite only ${t.issuePath}; preserve its number and slug.` : ''}

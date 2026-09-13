@@ -131,13 +131,6 @@ const runCommand = async (command, options = {{}}) => {{
     }};
   }}
   if (args.commandResults && args.commandResults.length) return args.commandResults.shift();
-  if (command.includes('/budget.py')) return {{
-    exitCode: 1,
-    stdout: JSON.stringify({{
-      issue: 'planned#01', estimatedTokens: 40000, contextWindow: 200000,
-      contextShare: 0.15, budgetTokens: 30000, overBudget: true, verdict: 'over_budget',
-    }}),
-  }};
   return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}' : '' }};
 }};
 const agent = async (prompt, options) => {{
@@ -277,6 +270,7 @@ Slice: `planned#01`
                     "date": "2026-09-13",
                     "testDraftPath": str(draft),
                     "testDraftText": draft_text,
+                    "commandMode": "real",
                 },
             )
             self.assertTrue(plan["result"]["awaitingOperatorApproval"])
@@ -317,22 +311,28 @@ Slice: `planned#01`
             self.assertIn('roadmap.py" check', commands[3])
             self.assertIn("planned#01", roadmap.read_text(encoding="utf-8"))
 
-    def test_plan_critic_refutes_a_measured_over_budget_package(self) -> None:
+    def test_plan_critic_refutes_a_real_measured_over_budget_package(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self.init_repo(root)
             draft = root / ".scratch" / "planned" / "issues" / "01-planned.md"
+            spec = root / ".scratch" / "planned" / "spec.md"
+            spec.parent.mkdir(parents=True)
+            spec.write_text("# Planned Spec\n", encoding="utf-8")
+            package = root / "src" / "over-budget.txt"
+            package.parent.mkdir()
+            package.write_bytes(b"x" * 200_000)
             result = self.run_workflow(
                 "plan-workflow.md",
                 {
-                    "target": {"kind": "spec", "slug": "planned", "specPath": str(root / ".scratch" / "planned" / "spec.md")},
+                    "target": {"kind": "spec", "slug": "planned", "specPath": str(spec)},
                     "models": {"plan": "claude-opus-4-5", "critic": "critic"},
                     "skillDir": str(SKILL_DIR),
                     "repoRoot": str(root),
                     "policy": {"git": {"target": "main", "prefix": "gantry/"}},
                     "paths": {
                         "issueDir": str(draft.parent),
-                        "specPath": str(root / ".scratch" / "planned" / "spec.md"),
+                        "specPath": str(spec),
                         "exemplarIssue": str(draft),
                         "decisions": str(root / "docs" / "adr"),
                         "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
@@ -346,6 +346,13 @@ Slice: `planned#01`
 Type: issue
 Status: draft
 Slice: `planned#01`
+Spec: `.scratch/planned/spec.md`
+
+## What to build
+
+### Files to read
+
+- `src/over-budget.txt`
 
 ## Acceptance criteria
 
@@ -355,14 +362,17 @@ Slice: `planned#01`
 
 - None
 """,
+                    "commandMode": "real",
                 },
             )
 
             critique = result["result"]["critique"]
             self.assertFalse(critique["acceptable"])
-            self.assertEqual(40000, critique["budgets"][0]["estimatedTokens"])
-            self.assertIn("40000", critique["problems"][0]["problem"])
-            self.assertIn("30000", critique["problems"][0]["problem"])
+            measurement = critique["budgets"][0]
+            self.assertTrue(measurement["overBudget"])
+            self.assertGreater(measurement["estimatedTokens"], measurement["budgetTokens"])
+            for field in ("estimatedTokens", "budgetTokens", "contextShare", "contextWindow"):
+                self.assertIn(str(measurement[field]), critique["problems"][0]["problem"])
             self.assertTrue(any("/budget.py" in call["command"] for call in result["commandCalls"]))
 
     def test_round_never_raises_the_two_correction_ceiling(self) -> None:
@@ -795,6 +805,12 @@ Slice: `portable#01`
             text = (SKILL_DIR / "templates" / name).read_text(encoding="utf-8")
             for heading in headings:
                 self.assertIn(heading, text, name)
+        issue_template = (SKILL_DIR / "templates" / "issue.md").read_text(encoding="utf-8")
+        self.assertIn("### Files to read", issue_template)
+        self.assertIn("- `<repository-relative-path>`", issue_template)
+        plan_workflow = (SKILL_DIR / "reference" / "plan-workflow.md").read_text(encoding="utf-8")
+        self.assertIn("### Files to read", plan_workflow)
+        self.assertIn("repository-relative paths", plan_workflow)
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

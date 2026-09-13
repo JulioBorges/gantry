@@ -10,7 +10,7 @@ from pathlib import Path
 
 from common import artifact_path, parse_issue, repo_root, resolve_policy, section
 
-FILES_TO_READ_HEADING_RE = re.compile(r"^###\s+Files to read\s*$", re.IGNORECASE | re.MULTILINE)
+FILES_TO_READ_HEADING_RE = re.compile(r"^###\s+Files to read\s*$", re.MULTILINE)
 LISTED_FILE_RE = re.compile(r"^\s*-\s+`([^`\r\n]+)`\s*$")
 
 

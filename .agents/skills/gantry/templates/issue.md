@@ -14,6 +14,13 @@ Created: YYYY-MM-DD
 
 <One complete, demonstrable behaviour.>
 
+### Files to read
+
+List every additional initial-context file here. Each item must be exactly one
+repository-relative path in a code span; only this list is counted in the context budget.
+
+- `<repository-relative-path>`
+
 ## Acceptance criteria
 
 - [ ] <Observable behaviour with runnable proof.>
