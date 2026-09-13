@@ -108,6 +108,12 @@ Preserve the portable workflow contract.
             for criterion in json.loads(accepted.stdout)["criteria"]
         ]
 
+    def read_run_log_events(self, state_root: Path, unit_id: str, run_id: str) -> list[dict]:
+        path = state_root / unit_id / "runs" / f"{run_id}.jsonl"
+        if not path.is_file():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
     def run_workflow(self, filename: str, args: dict) -> dict:
         source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
         source = source.replace("export const meta", "const meta", 1)
@@ -178,8 +184,11 @@ const agent = async (prompt, options) => {{
       const committed = spawnSync('git', ['commit', '--quiet', '-m', 'delivery'], {{ cwd: options.cwd, encoding: 'utf8' }});
       if (added.status !== 0 || committed.status !== 0) throw new Error(added.stderr || committed.stderr);
     }}
+    const ref = options.label.split(':')[1];
+    const assigned = (args.issueAssignments && args.issueAssignments[ref]) || {{}};
     return {{
-    worktree: defaultIssueWorktree, branch: args.issueBranch || args.branch, commits: ['test commit'],
+    worktree: assigned.worktree || defaultIssueWorktree, branch: assigned.branch || args.issueBranch || args.branch,
+    commits: ['test commit'],
     summary: 'workflow execution', testsAdded: [], gatesResult: 'verdict: pass',
     decisions: [], blockers: [],
     }};
@@ -1018,6 +1027,296 @@ Spec: `.scratch/planned/spec.md`
             finally:
                 subprocess.run(["git", "worktree", "remove", "--force", str(issue_worktree)], cwd=root, check=False)
 
+    def test_round_workflow_records_the_recorded_run_lifecycle_events(self) -> None:
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "lifecycle#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+
+            state_root = Path(state_dir)
+            unit_id = "abababababab"
+            run_id = "run-lifecycle-1"
+
+            run = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 3,
+                    "issues": [{"ref": "lifecycle#01", "path": str(issue.relative_to(root)), "title": "Lifecycle", "specPath": ".scratch/lifecycle/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/lifecycle",
+                    "baseRef": base_ref,
+                    "isolate": False,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "commandMode": "real",
+                    "runId": run_id,
+                    "unitId": unit_id,
+                    "stateRoot": str(state_root),
+                    "tier": "reference",
+                    "criticResult": {
+                        "criteria": self.critic_evidence(root, issue),
+                    },
+                },
+            )
+
+            self.assertEqual("done", run["result"]["results"][0]["outcome"])
+            events = self.read_run_log_events(state_root, unit_id, run_id)
+            sequence = [(event["event"], event.get("issue"), event.get("phase")) for event in events]
+            self.assertEqual(
+                [
+                    ("run.started", None, None),
+                    ("round.started", None, None),
+                    ("phase.started", "lifecycle#01", "Implement"),
+                    ("subagent.started", "lifecycle#01", "Implement"),
+                    ("subagent.stopped", "lifecycle#01", "Implement"),
+                    ("phase.finished", "lifecycle#01", "Implement"),
+                    ("phase.started", "lifecycle#01", "Review"),
+                    ("subagent.started", "lifecycle#01", "Review"),
+                    ("subagent.stopped", "lifecycle#01", "Review"),
+                    ("phase.finished", "lifecycle#01", "Review"),
+                    ("review.finding", "lifecycle#01", "Review"),
+                    ("phase.started", "lifecycle#01", "Critic"),
+                    ("subagent.started", "lifecycle#01", "Critic"),
+                    ("subagent.stopped", "lifecycle#01", "Critic"),
+                    ("phase.finished", "lifecycle#01", "Critic"),
+                    ("issue.done", "lifecycle#01", None),
+                    ("round.finished", None, None),
+                    ("run.finished", None, None),
+                ],
+                sequence,
+            )
+            started = events[0]
+            self.assertEqual(str(root), started["data"]["repositoryRoot"])
+            self.assertEqual("reference", started["data"]["tier"])
+            self.assertEqual(900, started["data"]["staleAfterSeconds"])
+            self.assertTrue(started["data"]["policyHash"])
+            done_event = next(event for event in events if event["event"] == "issue.done")
+            self.assertEqual(str(root), done_event["data"]["worktree"])
+            round_started = next(event for event in events if event["event"] == "round.started")
+            self.assertEqual(3, round_started["data"]["round"])
+
+    def test_round_workflow_resume_emits_run_resumed_and_preserves_worktree_and_corrections(self) -> None:
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "resume#01", "ready-for-agent")
+            roadmap = self.write_roadmap(root)
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            before_issue = issue.read_bytes()
+            before_roadmap = roadmap.read_bytes()
+
+            issue_branch = "gantry/resume-01"
+            issue_worktree = Path(f"{root}.gantry-resume-01")
+            subprocess.run(["git", "worktree", "add", "--quiet", "-b", issue_branch, str(issue_worktree), "HEAD"], cwd=root, check=True)
+
+            state_root = Path(state_dir)
+            unit_id = "cdcdcdcdcdcd"
+            run_id = "run-resume-2"
+
+            try:
+                run = self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": 1,
+                        "issues": [{"ref": "resume#01", "path": str(issue.relative_to(root)), "title": "Resume", "specPath": ".scratch/resume/spec.md"}],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": "gantry/resume",
+                        "baseRef": "HEAD",
+                        "isolate": True,
+                        "correctionBudget": 1,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 1}},
+                        "paths": {},
+                        "date": "2026-09-13",
+                        "commandMode": "real",
+                        "runId": run_id,
+                        "unitId": unit_id,
+                        "stateRoot": str(state_root),
+                        "tier": "reference",
+                        "priorRun": {
+                            "run": "run-resume-1",
+                            "worktree": str(issue_worktree),
+                            "branch": issue_branch,
+                            "issue": "resume#01",
+                            "correctionsSpent": 1,
+                        },
+                        "issueBranch": issue_branch,
+                        "issueWorktree": str(issue_worktree),
+                        "criticResult": {
+                            "complete": False,
+                            "criteria": [],
+                            "gatesVerdict": "fail",
+                            "gateResult": {"verdict": "fail"},
+                            "gateFailures": ["still not proven"],
+                            "refutations": ["criterion one remains unproven"],
+                            "requiredFixes": ["add real evidence"],
+                            "decisionsForOperator": [],
+                        },
+                    },
+                )
+
+                delivery = run["result"]["results"][0]
+                self.assertEqual("refuted", delivery["outcome"])
+                self.assertEqual(1, delivery["corrections"])
+                self.assertFalse(any("worktree add" in call["command"] for call in run["commandCalls"]))
+                self.assertEqual(before_issue, issue.read_bytes())
+                self.assertEqual(before_roadmap, roadmap.read_bytes())
+                self.assertTrue(issue_worktree.is_dir())
+
+                events = self.read_run_log_events(state_root, unit_id, run_id)
+                self.assertEqual("run.started", events[0]["event"])
+                resumed = next(event for event in events if event["event"] == "run.resumed")
+                self.assertEqual("run-resume-1", resumed["data"]["priorRun"])
+                self.assertEqual(str(issue_worktree), resumed["data"]["worktree"])
+                refutation = next(event for event in events if event["event"] == "refutation")
+                self.assertEqual("resume#01", refutation["issue"])
+                self.assertEqual(["criterion one remains unproven"], refutation["data"]["refutations"])
+                blocked = next(event for event in events if event["event"] == "issue.blocked")
+                self.assertEqual("resume#01", blocked["issue"])
+                self.assertEqual(str(issue_worktree), blocked["data"]["worktree"])
+                self.assertEqual(1, blocked["data"]["corrections"])
+            finally:
+                subprocess.run(["git", "worktree", "remove", "--force", str(issue_worktree)], cwd=root, check=False)
+
+    def test_round_workflow_isolated_multi_issue_round_stops_the_run_on_a_red_post_merge_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue_one = self.write_issue(root, "multi#01", "ready-for-agent")
+            issue_two = self.write_issue(root, "multi#02", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text(
+                "test:\n"
+                "\t@n=$$(( $$(cat .gatecount 2>/dev/null || echo 0) + 1 )); echo $$n > .gatecount; test $$n -lt 2\n",
+                encoding="utf-8",
+            )
+            (root / ".gitignore").write_text(".gatecount\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+            run_branch = subprocess.run(["git", "branch", "--show-current"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+
+            worktree_one = Path(f"{root}.gantry-multi-01")
+            worktree_two = Path(f"{root}.gantry-multi-02")
+            state_root = Path(state_dir)
+            unit_id = "efefefefefef"
+            run_id = "run-multi-3"
+
+            try:
+                run = self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": 1,
+                        "issues": [
+                            {"ref": "multi#01", "path": str(issue_one.relative_to(root)), "title": "Multi one", "specPath": ".scratch/multi/spec.md"},
+                            {"ref": "multi#02", "path": str(issue_two.relative_to(root)), "title": "Multi two", "specPath": ".scratch/multi/spec.md"},
+                        ],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": run_branch,
+                        "baseRef": base_ref,
+                        "isolate": True,
+                        "correctionBudget": 0,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 0}},
+                        "paths": {},
+                        "date": "2026-09-13",
+                        "commandMode": "real",
+                        "runId": run_id,
+                        "unitId": unit_id,
+                        "stateRoot": str(state_root),
+                        "tier": "reference",
+                        "implementerCommitText": "integrated\n",
+                        "issueAssignments": {
+                            "multi#01": {"worktree": str(worktree_one), "branch": "gantry/multi-01"},
+                            "multi#02": {"worktree": str(worktree_two), "branch": "gantry/multi-02"},
+                        },
+                        "criticResults": [
+                            {"criteria": self.critic_evidence(root, issue_one)},
+                            {"criteria": self.critic_evidence(root, issue_two)},
+                        ],
+                    },
+                )
+
+                outcomes = {result["ref"]: result["outcome"] for result in run["result"]["results"]}
+                self.assertEqual("done", outcomes["multi#01"])
+                self.assertEqual("integration_failed", outcomes["multi#02"])
+                self.assertEqual("done", parse_issue(issue_one).status)
+                self.assertEqual("ready-for-agent", parse_issue(issue_two).status)
+                commands = [call["command"] for call in run["commandCalls"]]
+                self.assertEqual(1, sum('roadmap.py" done' in command for command in commands))
+                self.assertIn('roadmap.py" done multi#01', "\n".join(commands))
+
+                events = self.read_run_log_events(state_root, unit_id, run_id)
+                self.assertEqual(["multi#01"], [event["issue"] for event in events if event["event"] == "issue.done"])
+                self.assertEqual([], [event for event in events if event["event"] == "issue.blocked"])
+                cancelled = next(event for event in events if event["event"] == "run.cancelled")
+                self.assertEqual("multi#02", cancelled["issue"])
+                self.assertEqual("integration_gate_failed", cancelled["data"]["reason"])
+                self.assertNotIn("run.finished", [event["event"] for event in events])
+            finally:
+                subprocess.run(["git", "worktree", "remove", "--force", str(worktree_one)], cwd=root, check=False)
+                subprocess.run(["git", "worktree", "remove", "--force", str(worktree_two)], cwd=root, check=False)
+
+    def test_roadmap_check_reports_drift_from_issue_files_not_from_the_run_log(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            issue = self.write_issue(root, "drift#01", "ready-for-agent")
+            self.write_roadmap(root)
+
+            state_root = root / "state"
+            unit_id = "010101010101"
+            run_id = "run-drift-1"
+            append = subprocess.run(
+                [sys.executable, str(SCRIPTS / "runlog.py"), "append", unit_id, run_id, "--state-root", str(state_root)],
+                input=json.dumps({
+                    "ts": "2026-09-13T00:00:00Z", "run": run_id, "event": "run.started",
+                    "data": {"repositoryRoot": str(root), "policyHash": "deadbeef", "tier": "reference", "staleAfterSeconds": 900},
+                }),
+                cwd=root, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(0, append.returncode, append.stderr)
+            append_done = subprocess.run(
+                [sys.executable, str(SCRIPTS / "runlog.py"), "append", unit_id, run_id, "--state-root", str(state_root)],
+                input=json.dumps({"ts": "2026-09-13T00:01:00Z", "run": run_id, "event": "issue.done", "issue": "drift#01"}),
+                cwd=root, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(0, append_done.returncode, append_done.stderr)
+
+            # Hand-tick the roadmap without going through roadmap.py or the Issue's own Status line.
+            roadmap_path = root / "ROADMAP.md"
+            roadmap_path.write_text(
+                roadmap_path.read_text(encoding="utf-8").replace(
+                    "<!-- BEGIN GENERATED: issue checklist -->",
+                    "<!-- BEGIN GENERATED: issue checklist -->\n- [x] **`drift#01`** — Example",
+                ),
+                encoding="utf-8",
+            )
+
+            check = self.run_script(root, "roadmap.py", "check", "--json")
+            self.assertEqual(1, check.returncode, check.stdout + check.stderr)
+            payload = json.loads(check.stdout)
+            self.assertTrue(payload.get("drift") or payload.get("mismatches") or payload.get("issues"))
+            self.assertEqual("ready-for-agent", parse_issue(issue).status)
+
     def test_frontier_rejects_invalid_graphs_and_uses_authoritative_statuses(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -1299,6 +1598,17 @@ Slice: `legacy#07`
             "default templates and portable legacy script contracts with regression coverage.",
             spec,
         )
+        self.assertIn(
+            "Wired the canonical `SKILL.md` preflight and `round-workflow.md` execution to the Run log",
+            spec,
+        )
+        for phrase in (
+            "run.started",
+            "run.resumed",
+            "preserved worktree",
+            "spent correction attempts retained",
+        ):
+            self.assertIn(phrase, spec)
 
     def test_canonical_scripts_import_only_standard_library_or_pack_modules(self) -> None:
         allowed = {
