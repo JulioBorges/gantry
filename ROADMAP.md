@@ -36,9 +36,9 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **0 / 0** |
-| Specs completed | **0 / 0** |
-| Execution waves | **0** |
+| Issues completed | **0 / 18** |
+| Specs completed | **0 / 1** |
+| Execution waves | **7** |
 
 ## Specs
 
@@ -114,6 +114,7 @@ longer exist.
 
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
+| 01 | `gantry-migration` | 0/18 | 0–6 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -124,6 +125,60 @@ of the others, and an issue never waits on anything in its own wave or a later o
 
 <!-- BEGIN GENERATED: issue checklist -->
 
+### Wave 0 — 0/1 done
 
+- [ ] **`gantry-migration#01`** — Portable policy defaults for the legacy loop _(no blockers)_
+
+### Wave 1 — 0/1 done
+
+- [ ] **`gantry-migration#02`** — Canonical Gantry workflow skill
+  <br>↳ blocked by: gantry-migration#01
+
+### Wave 2 — 0/6 done
+
+- [ ] **`gantry-migration#03`** — Effective-template Spec validation
+  <br>↳ blocked by: gantry-migration#02
+- [ ] **`gantry-migration#05`** — Initial context budget and capabilities
+  <br>↳ blocked by: gantry-migration#02
+- [ ] **`gantry-migration#06`** — Result contracts and protocol failures
+  <br>↳ blocked by: gantry-migration#02
+- [ ] **`gantry-migration#07`** — Differential quality gates with RFC 6901 mappings
+  <br>↳ blocked by: gantry-migration#02
+- [ ] **`gantry-migration#08`** — Append-only Run log and snapshots
+  <br>↳ blocked by: gantry-migration#02
+- [ ] **`gantry-migration#12`** — Explicit cleanup plan and execution
+  <br>↳ blocked by: gantry-migration#02
+
+### Wave 3 — 0/6 done
+
+- [ ] **`gantry-migration#04`** — Requirement Critic stops ambiguous planning
+  <br>↳ blocked by: gantry-migration#03
+- [ ] **`gantry-migration#09`** — Guard hooks and Claude Code wiring
+  <br>↳ blocked by: gantry-migration#08, gantry-migration#05
+- [ ] **`gantry-migration#11`** — Read-only multi-Run dashboard
+  <br>↳ blocked by: gantry-migration#08
+- [ ] **`gantry-migration#13`** — Recurring lesson candidates
+  <br>↳ blocked by: gantry-migration#08, gantry-migration#06
+- [ ] **`gantry-migration#14`** — Resumable and recorded round execution
+  <br>↳ blocked by: gantry-migration#06, gantry-migration#07, gantry-migration#08
+- [ ] **`gantry-migration#16`** — Reference fixture isolation foundation
+  <br>↳ blocked by: gantry-migration#03, gantry-migration#07
+
+### Wave 4 — 0/2 done
+
+- [ ] **`gantry-migration#10`** — Conversational repository setup
+  <br>↳ blocked by: gantry-migration#09
+- [ ] **`gantry-migration#15`** — Offered draft Run pull request
+  <br>↳ blocked by: gantry-migration#06, gantry-migration#14, gantry-migration#05
+
+### Wave 5 — 0/1 done
+
+- [ ] **`gantry-migration#17`** — Claude Code reference-tier end-to-end proof
+  <br>↳ blocked by: gantry-migration#04, gantry-migration#10, gantry-migration#11, gantry-migration#12, gantry-migration#13, gantry-migration#14, gantry-migration#15, gantry-migration#16
+
+### Wave 6 — 0/1 done
+
+- [ ] **`gantry-migration#18`** — Retire ASDLC after canonical proof
+  <br>↳ blocked by: gantry-migration#17
 
 <!-- END GENERATED: issue checklist -->

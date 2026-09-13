@@ -1,0 +1,31 @@
+# Guard hooks and Claude Code wiring
+
+Type: issue
+Status: ready-for-agent
+Slice: `gantry-migration#09`
+Spec: `.scratch/gantry-migration/spec.md`
+Created: 2026-09-13
+
+## Parent
+
+`gantry-migration`
+
+## What to build
+
+Add `.agents/skills/gantry/scripts/guard.py`, `.agents/skills/gantry/hooks/claude-code.settings.json`, `.agents/skills/gantry/hooks/opencode.plugin.js`, and `.agents/skills/gantry/hooks/codex.hooks.json`. Implement Claude Code payload handling for allow, deny, and context decisions; wire each hook entry to invoke `guard.py <event>` with stdin payload. Deny edits to `ROADMAP.md`, Issue `Status:` lines, and Issue criteria checkboxes outside the roadmap script; deny force pushes and test-skip commits; record hook and subagent events through the Run log. Unknown payload shapes must degrade to recording, never grant workflow authority.
+
+## Acceptance criteria
+
+- [ ] A Claude Code `PreToolUse` payload for editing `ROADMAP.md` or an Issue `Status:` line returns one denial line naming its rule and refused path, logs `hook.denied`, and a `Read` payload returns allow.
+- [ ] A Claude Code `PreToolUse` payload changing an Issue acceptance-criteria checkbox returns one denial line naming its rule and refused path, and appends a `hook.denied` event for that edit.
+- [ ] A `SubagentStop` payload appends `subagent.stopped`; malformed or capability-incomplete payloads produce a recorded degradation rather than a false completion or a denial without enough fields.
+- [ ] Tests prove `git push --force` and committed test-skip patterns are denied, while `guard.py` answers a 1 MB payload in under 200 ms and all hook entries invoke the script with their event and stdin payload.
+- [ ] The guard implementation only protects and records: status and checkbox authority stays with `roadmap.py`, and the no-hooks workflow prompts still state and Critic-check every protected rule.
+- [ ] The Spec Changelog receives an English entry in the same merge, and `guard.py` passes the standard-library-only import test and its runnable test command.
+
+## Blocked by
+
+- `gantry-migration#08` — consumes the append-only Run log event contract.
+- `gantry-migration#05` — consumes harness capability fields and support tiers.
+
+## Comments
