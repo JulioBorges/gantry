@@ -68,3 +68,7 @@ header p {
 .badge.waiting {
   border-color: #e67e22;
 }
+
+.badge.compaction {
+  border-color: #8e44ad;
+}

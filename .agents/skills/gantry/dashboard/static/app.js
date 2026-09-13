@@ -49,6 +49,10 @@
       run.repositoryRoot + " — " + run.run + (run.stale ? " (stale)" : "") + " [tier: " + run.tier + "]";
     section.appendChild(heading);
 
+    if (run.compactionAt) {
+      section.appendChild(badge("compacted at " + run.compactionAt, "compaction"));
+    }
+
     const columnsEl = document.createElement("div");
     columnsEl.className = "columns";
 

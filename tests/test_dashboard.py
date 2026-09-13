@@ -99,6 +99,28 @@ class DashboardHelperTests(unittest.TestCase):
             self.assertEqual("Done", issues_b["sample#03"]["column"])
             self.assertEqual("Blocked", issues_b["sample#04"]["column"])
 
+    def test_compaction_signal_and_operator_waiting_reach_reduced_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log_c = root / "unit-cccccccccccc" / "runs" / "run-c.jsonl"
+            write_event(log_c, started_event("run-c", 900, iso(50), "/repo/C"))
+            write_event(log_c, {
+                "ts": iso(40), "run": "run-c", "event": "phase.started",
+                "issue": "sample#05", "phase": "Review",
+                "data": {"worktree": "/wt/c1", "branch": "gantry/sample-05", "operatorWaiting": True},
+            })
+            write_event(log_c, {
+                "ts": iso(20), "run": "run-c", "event": "compaction", "data": {"source": "auto"},
+            })
+
+            runs = dashboard.collect_runs(root)
+            by_unit = {run["unitId"]: run for run in runs}
+            run_c = by_unit["unit-cccccccccccc"]
+
+            self.assertIsNotNone(run_c["compactionAt"])
+            issue_c = run_c["issues"][0]
+            self.assertTrue(issue_c["operatorWaiting"])
+
     def test_staleness_uses_run_started_snapshot_and_ignores_policy_changed(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
