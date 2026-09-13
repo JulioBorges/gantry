@@ -44,13 +44,11 @@ COMMIT_RE = re.compile(r"\bgit\b[^&|;]*\bcommit\b")
 TEST_SKIP_PATTERNS = [
     re.compile(pattern)
     for pattern in (
-        r"@unittest\.skip",
-        r"@pytest\.mark\.skip",
-        r"pytest\.mark\.xfail",
-        r"\bxit\(",
-        r"\bxdescribe\(",
-        r"\.skip\(",
-        r"@Disabled",
+        r"^\s*@unittest\.skip",
+        r"^\s*@pytest\.mark\.(skip|xfail)",
+        r"^\s*@Disabled",
+        r"^\s*(xit|xdescribe)\(",
+        r"\b(it|describe|test)\.skip\(",
         r"\bt\.Skip\(",
     )
 ]

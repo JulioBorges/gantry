@@ -217,6 +217,21 @@ class GuardHookTests(unittest.TestCase):
             allowed_commit = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=commit_payload)
             self.assertEqual(0, allowed_commit.returncode)
 
+    def test_allows_committing_guards_own_source_despite_skip_pattern_literals(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            (root / "guard.py").write_bytes(GUARD.read_bytes())
+            (root / "test_guard.py").write_bytes((REPO_ROOT / "tests" / "test_guard.py").read_bytes())
+            subprocess.run(["git", "add", "guard.py", "test_guard.py"], cwd=root, check=True)
+
+            commit_payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git commit -m 'copy guard sources'"}}
+            allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=commit_payload)
+            self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+
     def test_denies_push_with_a_leading_plus_refspec(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
