@@ -235,33 +235,35 @@ def inflight(root: Path, unit: str) -> list[dict]:
         if not events or events[0]["event"] != "run.started":
             continue
         started = events[0]
-        active: dict | None = None
+        active: dict[str, dict] = {}
         finished = False
         for event in events[1:]:
             if event["event"] in FINISHED_EVENTS:
                 finished = True
                 continue
             if event["event"] == "phase.started":
-                active = {
+                active[event["issue"]] = {
                     "run": event["run"],
                     "issue": event["issue"],
                     "phase": event["phase"],
                     "worktree": event.get("data", {}).get("worktree"),
                 }
-            elif event["event"] == "phase.finished" and active and event["issue"] == active["issue"]:
-                active = None
-            elif event["event"] in {"issue.done", "issue.blocked"} and active and event["issue"] == active["issue"]:
-                active = None
-        if not finished and active and isinstance(active["worktree"], str) and active["worktree"]:
-            result.append(
-                {
-                    **active,
-                    "repositoryRoot": started["data"]["repositoryRoot"],
-                    "policyHash": started["data"]["policyHash"],
-                    "tier": started["data"]["tier"],
-                    "staleAfterSeconds": started["data"]["staleAfterSeconds"],
-                }
-            )
+            elif event["event"] == "phase.finished":
+                active.pop(event["issue"], None)
+            elif event["event"] in {"issue.done", "issue.blocked"}:
+                active.pop(event["issue"], None)
+        if not finished:
+            for item in active.values():
+                if isinstance(item["worktree"], str) and item["worktree"]:
+                    result.append(
+                        {
+                            **item,
+                            "repositoryRoot": started["data"]["repositoryRoot"],
+                            "policyHash": started["data"]["policyHash"],
+                            "tier": started["data"]["tier"],
+                            "staleAfterSeconds": started["data"]["staleAfterSeconds"],
+                        }
+                    )
     return result
 
 

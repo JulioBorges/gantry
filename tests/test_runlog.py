@@ -122,6 +122,62 @@ class RunLogTests(unittest.TestCase):
                     check=False,
                 )
 
+    def test_inflight_preserves_each_issue_when_one_concurrent_phase_finishes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            unit = json.loads(self.run_script(root, "unit-id", "--cwd", str(root), "--json").stdout)["unitId"]
+
+            for event in (
+                self.started("parallel"),
+                {
+                    "ts": "2026-09-13T12:01:00Z",
+                    "run": "parallel",
+                    "event": "phase.started",
+                    "issue": "sample#01",
+                    "phase": "Implement",
+                    "data": {"worktree": "/worktrees/sample-01"},
+                },
+                {
+                    "ts": "2026-09-13T12:01:01Z",
+                    "run": "parallel",
+                    "event": "phase.started",
+                    "issue": "sample#02",
+                    "phase": "Implement",
+                    "data": {"worktree": "/worktrees/sample-02"},
+                },
+                {
+                    "ts": "2026-09-13T12:02:00Z",
+                    "run": "parallel",
+                    "event": "phase.finished",
+                    "issue": "sample#02",
+                    "phase": "Implement",
+                    "data": {},
+                },
+            ):
+                appended = self.run_script(root, "append", unit, "--state-root", str(state), event=event)
+                self.assertEqual(0, appended.returncode, appended.stderr)
+
+            result = self.run_script(root, "inflight", unit, "--state-root", str(state), "--json")
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(
+                [
+                    {
+                        "run": "parallel",
+                        "issue": "sample#01",
+                        "phase": "Implement",
+                        "worktree": "/worktrees/sample-01",
+                        "repositoryRoot": "/repository",
+                        "policyHash": "abc123",
+                        "tier": "supported",
+                        "staleAfterSeconds": 60,
+                    }
+                ],
+                json.loads(result.stdout)["inflight"],
+            )
+
     def test_concurrent_single_write_append_keeps_jsonl_parseable_and_protects_prohibited_data(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
