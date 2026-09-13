@@ -25,6 +25,7 @@ EVENTS = {
     "subagent.stopped",
     "compaction",
     "hook.denied",
+    "hook.degraded",
     "policy.changed",
     "issue.done",
     "issue.blocked",
@@ -183,6 +184,15 @@ def validate_event(payload: object) -> dict:
             raise EventError("hook.denied requires data.rule and data.path")
         require_string(data["rule"], "data.rule")
         require_string(data["path"], "data.path")
+    elif event == "hook.degraded":
+        if not isinstance(data, dict) or not {"source", "missing"} <= set(data):
+            raise EventError("hook.degraded requires data.source and data.missing")
+        require_string(data["source"], "data.source")
+        missing = data["missing"]
+        if not isinstance(missing, list) or not all(isinstance(item, str) and item for item in missing):
+            raise EventError("data.missing must be a list of non-empty strings")
+        if data.get("degraded") is not True:
+            raise EventError("hook.degraded requires data.degraded to be true")
     elif event == "policy.changed":
         if not isinstance(data, dict) or "policyHash" not in data:
             raise EventError("policy.changed requires data.policyHash")

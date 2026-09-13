@@ -374,6 +374,32 @@ class RunLogTests(unittest.TestCase):
             self.assertEqual(0, help_result.returncode, help_result.stderr)
             self.assertIn("usage:", help_result.stdout.lower())
 
+    def test_hook_degraded_requires_source_missing_list_and_degraded_true(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            unit = json.loads(self.run_script(root, "unit-id", "--cwd", str(root), "--json").stdout)["unitId"]
+            started = self.started()
+            self.assertEqual(0, self.run_script(root, "append", unit, "--state-root", str(state), event=started).returncode)
+
+            degraded = {
+                "ts": "2026-09-13T12:00:30Z",
+                "run": "run-01",
+                "event": "hook.degraded",
+                "data": {"source": "PreToolUse", "missing": ["tool_input"], "degraded": True},
+            }
+            accepted = self.run_script(root, "append", unit, "--state-root", str(state), event=degraded)
+            self.assertEqual(0, accepted.returncode, accepted.stderr)
+
+            missing_fields = {**degraded, "data": {"source": "PreToolUse"}}
+            rejected = self.run_script(root, "append", unit, "--state-root", str(state), event=missing_fields)
+            self.assertEqual(1, rejected.returncode)
+
+            not_degraded = {**degraded, "data": {"source": "PreToolUse", "missing": ["tool_input"], "degraded": False}}
+            rejected_flag = self.run_script(root, "append", unit, "--state-root", str(state), event=not_degraded)
+            self.assertEqual(1, rejected_flag.returncode)
+
 
 if __name__ == "__main__":
     unittest.main()
