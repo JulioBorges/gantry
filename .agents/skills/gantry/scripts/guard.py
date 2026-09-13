@@ -170,6 +170,29 @@ def extract_command(arguments: dict) -> str | None:
     return str(value) if value else None
 
 
+def payload_cwd(payload: dict) -> str | None:
+    """The harness-reported working directory for this call, if the payload carries one.
+
+    Claude Code spells it `cwd`, OpenCode spells it `directory`. Neither is a decision
+    concept the capability files gate on -- it is only ever used to pick *where* to look
+    (a git worktree, an Issue path), never to grant or withhold authority on its own.
+    """
+    value = _first(payload, ("cwd", "directory"))
+    return str(value) if value else None
+
+
+def resolve_effective_cwd(payload: dict, fallback: Path) -> Path:
+    """Prefer the payload's own cwd/directory over the `--cwd` fallback when it names a real directory."""
+    candidate = payload_cwd(payload) if isinstance(payload, dict) else None
+    if candidate:
+        candidate_path = Path(candidate)
+        if not candidate_path.is_absolute():
+            candidate_path = fallback / candidate_path
+        if candidate_path.is_dir():
+            return candidate_path.resolve()
+    return fallback
+
+
 def staged_diff_skip_match(cwd: Path) -> str | None:
     """Return the first staged file whose added lines introduce a test-skip pattern."""
     try:
@@ -218,7 +241,12 @@ def decide(payload: dict, cwd: Path) -> Decision:
             if normalized_name in {"write", "multiedit"}:
                 target = Path(path)
                 target = target if target.is_absolute() else cwd / target
-                if not target.exists() or is_draft_safe(extract_new_text(arguments)):
+                # The draft exemption only ever applies to *creating* a new Issue file.
+                # Once the target exists, its Status/checkbox fields are already under
+                # protection, and the new content must fall through to the same
+                # STATUS_LINE_RE / CHECKBOX_LINE_RE checks any other edit would face --
+                # never exempted just because the new content, read alone, looks draft-safe.
+                if not target.exists() and is_draft_safe(extract_new_text(arguments)):
                     return Decision(True)
             changed = extract_text(arguments)
             if STATUS_LINE_RE.search(changed):
@@ -325,7 +353,11 @@ def record_degradation(cwd: Path, args: argparse.Namespace, payload: dict, event
 
 def handle_decision_event(payload: dict, args: argparse.Namespace) -> Decision:
     cwd = Path(args.cwd).resolve()
-    decision = decide(payload, cwd)
+    # decide() looks *where the tool call actually operates* (git worktree, Issue path),
+    # which the payload's own cwd/directory field describes more accurately than the
+    # invocation-wide --cwd when the two diverge; the run log still keys off --cwd.
+    decide_cwd = resolve_effective_cwd(payload, cwd)
+    decision = decide(payload, decide_cwd)
     if not decision.allow:
         run_id = resolve_run_id(payload, args.run_id)
         if run_id:

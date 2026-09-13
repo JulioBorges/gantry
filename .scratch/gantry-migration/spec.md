@@ -166,6 +166,7 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Fixed the guard hook handler's draft-Issue exemption to apply only to *creating* a new Issue file: an existing Issue's Status/checkbox fields now always fall through to protection even when the new content looks draft-safe on its own, and `decide()` now prefers the payload's own `cwd`/`directory` field over `--cwd` when locating an Issue path or the staged diff to check for test-skip commits.
 - 2026-09-13 — Hardened the guard hook handler: capability-incomplete payloads (per the harness's declared `payload_fields`) now record a `hook.degraded` Run log event instead of a false completion or a denial, invalid/undecodable stdin records nothing at all, draft Issue creation is exempt from the Status/checkbox protection, test-skip patterns are anchored so they no longer match their own literals in guard's sources, and a force-pushing `+refspec` is denied alongside `--force`.
 - 2026-09-13 — Added the guard hook handler and its Claude Code, OpenCode and Codex wiring, protecting the roadmap and Issue Status/checkbox fields, force-pushes and test-skip commits, and recording hook and subagent events into the Run log.
 - 2026-09-13 — Added an explicit, read-only cleanup plan that removes only done Issue branches and worktrees already merged into the Run branch after operator authorization.
