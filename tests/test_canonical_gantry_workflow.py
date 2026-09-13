@@ -1106,6 +1106,69 @@ Spec: `.scratch/planned/spec.md`
             round_started = next(event for event in events if event["event"] == "round.started")
             self.assertEqual(3, round_started["data"]["round"])
 
+    def test_round_workflow_resume_with_changed_policy_emits_policy_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "policydrift#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+
+            state_root = Path(state_dir)
+            unit_id = "efefefefefef"
+            run_id = "run-policydrift-2"
+
+            run = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{"ref": "policydrift#01", "path": str(issue.relative_to(root)), "title": "Policy drift", "specPath": ".scratch/policydrift/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/policydrift",
+                    "baseRef": base_ref,
+                    "isolate": False,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "commandMode": "real",
+                    "runId": run_id,
+                    "unitId": unit_id,
+                    "stateRoot": str(state_root),
+                    "tier": "reference",
+                    "priorRun": {
+                        "run": "run-policydrift-1",
+                        "worktree": str(root),
+                        "branch": "gantry/policydrift",
+                        "issue": "policydrift#01",
+                        "correctionsSpent": 0,
+                        "policyHash": "deadbeef",
+                    },
+                    "criticResult": {
+                        "criteria": self.critic_evidence(root, issue),
+                    },
+                },
+            )
+
+            self.assertEqual("done", run["result"]["results"][0]["outcome"])
+            events = self.read_run_log_events(state_root, unit_id, run_id)
+            sequence = [event["event"] for event in events]
+            self.assertEqual(
+                ["run.started", "run.resumed", "policy.changed", "round.started"],
+                sequence[:4],
+            )
+            started = events[0]
+            changed = next(event for event in events if event["event"] == "policy.changed")
+            self.assertEqual(started["data"]["policyHash"], changed["data"]["policyHash"])
+            self.assertNotEqual("deadbeef", changed["data"]["policyHash"])
+
     def test_round_workflow_resume_emits_run_resumed_and_preserves_worktree_and_corrections(self) -> None:
         with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
             root = Path(temp)

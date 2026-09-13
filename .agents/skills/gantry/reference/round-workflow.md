@@ -16,11 +16,13 @@ Run and worktree being continued) opens the recorded Run, then `round.started`, 
 `phase.finished` pair per Implement, Review and Critic phase, one `subagent.started` / `subagent.stopped`
 pair per fresh agent carrying the validated role result, `review.finding` after the Reviewer returns,
 `refutation` on every non-accepted Critic verdict, `issue.blocked` when the correction ceiling is spent
-without acceptance, `issue.done` on successful integration, `run.cancelled` on the first red post-merge
-gate and `round.finished` / `run.finished` at the end. Preflight resolves `args.runId` and `args.unitId`
-once per Run and never rereads the log to decide readiness or completion — only `frontier.py`, Issue
-`Status:` lines and `roadmap.py` decide that. When `args.priorRun` names the Issue being continued
-(`args.priorRun.issue`), its preserved worktree, branch and `correctionsSpent` are reused instead of
+without acceptance, `issue.done` on successful integration, `policy.changed` when `args.priorRun.policyHash`
+(the policy hash recorded on the prior Run) differs from the current effective policy hash,
+`run.cancelled` on the first red post-merge gate and `round.finished` / `run.finished` at the end.
+Preflight resolves `args.runId` and `args.unitId` once per Run and never rereads the log to decide
+readiness or completion — only `frontier.py`, Issue `Status:` lines and `roadmap.py` decide that. When
+`args.priorRun` names the Issue being continued (`args.priorRun.issue`), its preserved worktree, branch
+and `correctionsSpent` are reused instead of
 creating a new worktree or resetting the correction count, and the Issue keeps its authoritative Status
 until the Critic accepts it. Omitting `args.runId` or `args.unitId` disables all of the above and leaves
 the round behaviorally identical, so a harness without a resolved Run log keeps working.
@@ -146,7 +148,7 @@ if (runLogEnabled) {
       worktree: A.priorRun.worktree,
     })
   }
-  if (A.priorPolicyHash && A.priorPolicyHash !== runStartedData.policyHash) {
+  if (A.priorRun && A.priorRun.policyHash && A.priorRun.policyHash !== runStartedData.policyHash) {
     await appendRunEvent('policy.changed', undefined, undefined, { policyHash: runStartedData.policyHash })
   }
   await appendRunEvent('round.started', undefined, undefined, { round: A.round })
