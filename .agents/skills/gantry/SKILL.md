@@ -28,9 +28,9 @@ Before a Run, resolve these values once and pass them as `args` to every referen
 4. `paths` comes from `common.resolve_workflow_paths(repoRoot, scopeSlug)`. Prompts receive paths, not
    repository-specific literals.
 
-Run the five standard-library scripts as `python3 <skillDir>/scripts/<script>.py`. `common.py` provides
+Run the standard-library workflow scripts as `python3 <skillDir>/scripts/<script>.py`. `common.py` provides
 the shared Markdown parser and policy resolution; its `--json` path prints the resolved portable runtime.
-All five scripts provide `--help`, and their data-producing paths support `--json`.
+Every script provides `--help`, and data-producing paths support `--json`.
 
 ## Workflow rules
 
@@ -46,9 +46,16 @@ All five scripts provide `--help`, and their data-producing paths support `--jso
   and Spec axes, one review fix pass, then a fresh adversarial Critic. The Critic alone can establish a
   complete delivery. Its refutation consumes at most the correction budget.
 - A multi-Issue round uses one isolated worktree and branch per implementer. Integrate accepted branches
-  serially, run gates after every merge, and stop on a failed integration gate.
+  serially, run gates after every merge, and stop on a failed integration gate. Create and identify each
+  Issue branch through the `git.issueBranch` policy template (default
+  `{prefix}{spec}-{number:02d}`), rendered by `common.issue_branch(policy, issue)`.
 - Only after Critic acceptance, green gates and a clean worktree may the orchestrator run
   `roadmap.py done <ref>`. Never hand-edit Issue status, criteria checkboxes or the roadmap.
+- At the end of a Run, execute `python3 <skillDir>/scripts/cleanup.py --plan --json` from the Run worktree
+  and present its JSON output as the actual, read-only cleanup plan for the operator's authorization.
+  Only after explicit Cleanup Authorization may the workflow pass that unchanged JSON to
+  `cleanup.py --yes --plan-file <authorized-plan.json>`; it revalidates the plan against the repository
+  state and refuses any divergence. The workflow never executes `cleanup.py --yes` automatically.
 
 ## Harness-neutral execution
 

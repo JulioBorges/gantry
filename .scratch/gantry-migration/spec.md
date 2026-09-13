@@ -166,6 +166,7 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Added an explicit, read-only cleanup plan that removes only done Issue branches and worktrees already merged into the Run branch after operator authorization.
 - 2026-09-13 — Made the Planner Issue result contract require every workflow-consumed field and fail planning before approval when an Issue has no valid path for deterministic context-budget measurement.
 - 2026-09-13 — Added deterministic initial context-budget estimation from an Issue, its parent Spec and explicitly named files; declared model windows per harness and made over-budget plans numeric refutations with a two-attempt correction ceiling.
 - 2026-09-13 — Added declared absolute and RFC 6901-mapped differential gates with isolated base comparisons, normalized finding identities, and severity-aware regressions.

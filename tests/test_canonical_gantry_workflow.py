@@ -120,6 +120,11 @@ const source = {json.dumps(source)};
 const args = {json.dumps(args)};
 const calls = [];
 const commandCalls = [];
+const defaultIssueWorktree = args.issueWorktree || (
+  args.isolate && args.issues && args.issues[0]
+    ? `${{args.repoRoot}}.gantry-${{args.issues[0].ref.replace('#', '-') }}`
+    : args.repoRoot
+);
 const runCommand = async (command, options = {{}}) => {{
   commandCalls.push({{ command, cwd: options.cwd || args.repoRoot }});
   if (args.commandMode === 'real') {{
@@ -132,10 +137,12 @@ const runCommand = async (command, options = {{}}) => {{
     }};
   }}
   if (args.commandResults && args.commandResults.length) return args.commandResults.shift();
+  if (command.includes('/common.py')) return {{ exitCode: 0, stdout: JSON.stringify({{ issueBranch: args.issueBranch || args.branch }}) }};
+  if (command === 'git branch --show-current') return {{ exitCode: 0, stdout: args.issueBranch || args.branch }};
   return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}' : '' }};
 }};
 const agent = async (prompt, options) => {{
-  calls.push({{ label: options.label, prompt, schema: options.schema }});
+  calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd }});
   if (options.label.startsWith('research:')) return 'factual research';
   if (options.label.startsWith('plan')) {{
     if (args.plannerRawResults && args.plannerRawResults.length) {{
@@ -163,8 +170,14 @@ const agent = async (prompt, options) => {{
     if (args.implementerRawResults && args.implementerRawResults.length) {{
       return args.implementerRawResults.shift();
     }}
+    if (args.implementerCommitText) {{
+      writeFileSync(`${{options.cwd}}/delivery.txt`, args.implementerCommitText);
+      const added = spawnSync('git', ['add', 'delivery.txt'], {{ cwd: options.cwd, encoding: 'utf8' }});
+      const committed = spawnSync('git', ['commit', '--quiet', '-m', 'delivery'], {{ cwd: options.cwd, encoding: 'utf8' }});
+      if (added.status !== 0 || committed.status !== 0) throw new Error(added.stderr || committed.stderr);
+    }}
     return {{
-    worktree: args.repoRoot, branch: args.issueBranch || args.branch, commits: ['test commit'],
+    worktree: defaultIssueWorktree, branch: args.issueBranch || args.branch, commits: ['test commit'],
     summary: 'workflow execution', testsAdded: [], gatesResult: 'verdict: pass',
     decisions: [], blockers: [],
     }};
@@ -367,7 +380,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             issue = self.write_issue(root, "sample#01", "ready-for-agent")
             self.write_roadmap(root)
 
-            for script in ("common.py", "frontier.py", "acceptance.py", "budget.py", "gates.py", "roadmap.py", "result.py"):
+            for script in ("common.py", "frontier.py", "acceptance.py", "budget.py", "cleanup.py", "gates.py", "roadmap.py", "result.py"):
                 result = self.run_script(root, script, "--help")
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertIn("usage:", result.stdout.lower())
@@ -937,53 +950,70 @@ Spec: `.scratch/planned/spec.md`
             self.write_roadmap(root)
             (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
             (root / "base.txt").write_text("base\n", encoding="utf-8")
+            policy_path = root / ".gantry" / "config.json"
+            policy_path.parent.mkdir()
+            policy_path.write_text(
+                '{"git":{"issueBranch":"issues/{spec}/{number:02d}"}}',
+                encoding="utf-8",
+            )
             subprocess.run(["git", "add", "."], cwd=root, check=True)
             subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
             base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
             run_branch = subprocess.run(["git", "branch", "--show-current"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
-            subprocess.run(["git", "checkout", "--quiet", "-b", "gantry/serial-issue"], cwd=root, check=True)
-            (root / "delivery.txt").write_text("integrated\n", encoding="utf-8")
-            subprocess.run(["git", "add", "delivery.txt"], cwd=root, check=True)
-            subprocess.run(["git", "commit", "--quiet", "-m", "delivery"], cwd=root, check=True)
-            subprocess.run(["git", "checkout", "--quiet", run_branch], cwd=root, check=True)
+            issue_branch = "issues/serial/01"
+            issue_worktree = Path(f"{root}.gantry-serial-01")
 
-            run = self.run_workflow(
-                "round-workflow.md",
-                {
-                    "round": 1,
-                    "issues": [{"ref": "serial#01", "path": str(issue.relative_to(root)), "title": "Serial integration", "specPath": ".scratch/serial/spec.md"}],
-                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
-                    "branch": run_branch,
-                    "baseRef": base_ref,
-                    "isolate": True,
-                    "correctionBudget": 0,
-                    "skillDir": str(SKILL_DIR),
-                    "repoRoot": str(root),
-                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 0}},
-                    "paths": {},
-                    "date": "2026-09-13",
-                    "issueBranch": "gantry/serial-issue",
-                    "commandMode": "real",
-                    "criticResult": {
-                        "criteria": self.critic_evidence(root, issue),
+            try:
+                run = self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": 1,
+                        "issues": [{"ref": "serial#01", "path": str(issue.relative_to(root)), "title": "Serial integration", "specPath": ".scratch/serial/spec.md"}],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": run_branch,
+                        "baseRef": base_ref,
+                        "isolate": True,
+                        "correctionBudget": 0,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/", "issueBranch": "issues/{spec}/{number:02d}"}, "budget": {"corrections": 0}},
+                        "paths": {},
+                        "date": "2026-09-13",
+                        "issueBranch": issue_branch,
+                        "issueWorktree": str(issue_worktree),
+                        "implementerCommitText": "integrated\n",
+                        "commandMode": "real",
+                        "criticResult": {
+                            "criteria": self.critic_evidence(root, issue),
+                        },
                     },
-                },
-            )
+                )
 
-            self.assertEqual("done", run["result"]["results"][0]["outcome"])
-            self.assertEqual("done", parse_issue(issue).status)
-            commands = [call["command"] for call in run["commandCalls"]]
-            self.assertEqual(9, len(commands))
-            self.assertIn('result.py" --role "implementer" --json', commands[0])
-            self.assertIn('result.py" --role "reviewer" --json', commands[1])
-            self.assertIn('result.py" --role "critic" --json', commands[2])
-            self.assertIn('acceptance.py"', commands[3])
-            self.assertIn('git merge --no-ff "gantry/serial-issue"', commands[4])
-            self.assertIn('gates.py" --run', commands[5])
-            self.assertIn('roadmap.py" done serial#01', commands[6])
-            self.assertIn('git add -- ROADMAP.md', commands[7])
-            self.assertIn('git commit -m "gantry: complete serial#01"', commands[8])
-            self.assertFalse(any('roadmap.py" status' in command for command in commands))
+                self.assertEqual("done", run["result"]["results"][0]["outcome"])
+                self.assertEqual("done", parse_issue(issue).status)
+                self.assertEqual("integrated\n", (root / "delivery.txt").read_text(encoding="utf-8"))
+                commands = [call["command"] for call in run["commandCalls"]]
+                self.assertEqual(12, len(commands))
+                self.assertIn('common.py" --cwd', commands[0])
+                self.assertIn("--issue", commands[0])
+                self.assertIn(f"git worktree add --quiet -b '{issue_branch}'", commands[1])
+                self.assertEqual("git branch --show-current", commands[2])
+                self.assertIn('result.py" --role "implementer" --json', commands[3])
+                self.assertIn('result.py" --role "reviewer" --json', commands[4])
+                self.assertIn('result.py" --role "critic" --json', commands[5])
+                self.assertIn('acceptance.py"', commands[6])
+                self.assertIn(f'git merge --no-ff "{issue_branch}"', commands[7])
+                self.assertIn('gates.py" --run', commands[8])
+                self.assertIn('roadmap.py" done serial#01', commands[9])
+                self.assertIn('git add -- ROADMAP.md', commands[10])
+                self.assertIn('git commit -m "gantry: complete serial#01"', commands[11])
+                self.assertFalse(any('roadmap.py" status' in command for command in commands))
+                self.assertEqual(
+                    [str(issue_worktree)] * 3,
+                    [call["cwd"] for call in run["calls"] if call["label"].split(":", 1)[0] in {"implement", "review", "critic"}],
+                )
+            finally:
+                subprocess.run(["git", "worktree", "remove", "--force", str(issue_worktree)], cwd=root, check=False)
 
     def test_frontier_rejects_invalid_graphs_and_uses_authoritative_statuses(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -1288,7 +1318,7 @@ Slice: `legacy#07`
             "typing",
         }
         self.assertEqual(
-            {"acceptance.py", "budget.py", "common.py", "frontier.py", "gates.py", "result.py", "roadmap.py"},
+            {"acceptance.py", "budget.py", "cleanup.py", "common.py", "frontier.py", "gates.py", "result.py", "roadmap.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         for script in sorted(SCRIPTS.glob("*.py")):

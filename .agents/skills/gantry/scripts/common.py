@@ -20,7 +20,11 @@ DEFAULT_POLICY = {
     },
     "templates": {"dir": ".gantry/templates", "headingMap": {}},
     "checks": [],
-    "git": {"target": "main", "prefix": "gantry/"},
+    "git": {
+        "target": "main",
+        "prefix": "gantry/",
+        "issueBranch": "{prefix}{spec}-{number:02d}",
+    },
     "hooks": {"record": [], "deny": []},
     "budget": {"corrections": 2, "contextShare": 0.15},
     "dashboard": {"staleAfterSeconds": 900},
@@ -212,6 +216,22 @@ def parse_issue(path: Path) -> Issue:
                  status.group(1) if status else "unknown", parse_blocked_by(text, ref_spec), parse_criteria(text))
 
 
+def issue_branch(policy: dict, issue: Issue) -> str:
+    """Render the policy's branch name for an Issue."""
+    template = policy["git"]["issueBranch"]
+    try:
+        branch = template.format(
+            prefix=policy["git"]["prefix"],
+            spec=issue.spec,
+            number=issue.number,
+        )
+    except (AttributeError, KeyError, ValueError) as exc:
+        raise ValueError("git.issueBranch must use only {prefix}, {spec}, and {number}") from exc
+    if not branch:
+        raise ValueError("git.issueBranch must render a non-empty branch name")
+    return branch
+
+
 def load_issues(scratch: Path) -> dict[str, Issue]:
     issues: dict[str, Issue] = {}
     for directory in sorted(scratch.glob("*/issues")):
@@ -286,6 +306,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=main.__doc__)
     parser.add_argument("--cwd", default=".", help="repository or worktree to inspect")
     parser.add_argument("--scope-slug", default="sample", help="slug used to render artifact paths")
+    parser.add_argument("--issue", help="Issue reference or path whose configured branch to render")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -296,10 +317,17 @@ def main() -> int:
         "policy": resolve_policy(root),
         "paths": {name: str(path) for name, path in paths.items()},
     }
+    if args.issue:
+        issue = resolve_issue_arg(args.issue, root, load_policy_issues(root, payload["policy"]))
+        if issue is None:
+            raise ValueError(f"could not resolve Issue {args.issue!r}")
+        payload["issueBranch"] = issue_branch(payload["policy"], issue)
     if args.json:
         print(json.dumps(payload, indent=2))
     else:
         print(f"repo_root: {payload['repo_root']}")
+        if "issueBranch" in payload:
+            print(f"issue_branch: {payload['issueBranch']}")
         for name, path in payload["paths"].items():
             print(f"{name}: {path}")
     return 0
