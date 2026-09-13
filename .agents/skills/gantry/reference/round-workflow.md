@@ -3,7 +3,10 @@
 One round contains only Issues selected by `frontier.py` whose dependency readiness is satisfied. The
 caller supplies `args.round`, `args.issues`, `args.models`, `args.branch`, `args.baseRef`,
 `args.isolate`, `args.correctionBudget`, `args.skillDir`, `args.repoRoot`, effective `args.policy` and
-rendered `args.paths`.
+rendered `args.paths`. For the last round of a Run, the caller also supplies `args.isLastRound` (boolean,
+true only for that final frontier round) and `args.learnerRunLogs` (an array of Run-log JSONL paths,
+normally just the current Run's `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`), so the optional Learner
+phase below can run; `args.models.learn` is optional and falls back to `args.models.critic` when absent.
 The host supplies its command runner as `runCommand(command, { cwd })`; integration cannot proceed
 without it.
 
@@ -33,6 +36,18 @@ tree and diff for weakened tests, placeholders and scope creep, and returns `com
 Refutations generate ordered required fixes and consume one correction attempt; the correction-budget
 ceiling is two and exhaustion leaves the Issue refuted with its worktree retained.
 
+## Learner phase (optional)
+
+After the last round of a Run, an optional Learner reads only the `refutation` and `review.finding`
+events already recorded in the Run log — never source files, `AGENTS.md`, `CONTEXT.md`, a template or
+the repository policy. `learner.py <runlog...> --json` groups identical evidence text across different
+Issues or attempts and drafts one lesson candidate per recurring group, each carrying the recurring
+evidence and a proposed target (the Gantry section of `AGENTS.md`, `CONTEXT.md`, or an effective
+template); a problem that occurred on only one Issue or attempt produces no candidate. When the
+extraction finds nothing recurring, or no Run-log path is available, the phase is skipped. The Learner
+never writes anything: a lesson candidate is a draft for the operator to accept or discard, surfaced by
+the final report, never auto-injected into `AGENTS.md`, `CONTEXT.md`, a template or policy.
+
 ## Isolation and integration
 
 When `args.isolate` is true, each Implementer uses its own worktree and branch from `args.baseRef`; agents
@@ -59,6 +74,7 @@ export const meta = {
     { title: 'Implement', detail: 'one TDD Implementer per Issue' },
     { title: 'Review', detail: 'standards and Spec, with one fix pass' },
     { title: 'Critic', detail: 'adversarial verification and bounded corrections' },
+    { title: 'Learn', detail: 'optional recurring lesson candidates for the operator' },
   ],
 }
 
@@ -339,6 +355,36 @@ const results = await pipeline(
   },
 )
 
+function learnerPrompt(extracted) {
+  return `You are the fresh optional Learner for this Run.
+Read only the recurring refutation and review-finding evidence already extracted below from the Run
+log; never open AGENTS.md, CONTEXT.md, a template, the repository policy or any source file.
+${JSON.stringify(extracted.candidates)}
+Draft one English lesson candidate per recurring group above, unchanged in its evidence, and name its
+proposed target (the Gantry section of AGENTS.md, CONTEXT.md, or an effective template). Never edit
+AGENTS.md, CONTEXT.md, a template or policy; a candidate is a draft for the operator.
+Return candidates as structured output.`
+}
+
+async function learn() {
+  const logs = Array.isArray(A.learnerRunLogs) ? A.learnerRunLogs.filter(Boolean) : []
+  if (!logs.length) return []
+  let extracted
+  try {
+    const result = await runWorkflowCommand(
+      `python3 "${scripts}/learner.py" ${logs.map(shellQuote).join(' ')} --json`,
+    )
+    extracted = JSON.parse(result.stdout)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(extracted.candidates) || !extracted.candidates.length) return []
+  const learned = await requestRole('learner', learnerPrompt(extracted), {
+    label: 'learn', phase: 'Learn', model: A.models.learn ?? A.models.critic, cwd: A.repoRoot,
+  })
+  return learned && Array.isArray(learned.candidates) ? learned.candidates : extracted.candidates
+}
+
 const deliveries = results.filter(Boolean)
 let integrationStopped = false
 for (const delivery of deliveries) {
@@ -376,7 +422,8 @@ for (const delivery of deliveries) {
     integrationStopped = true
   }
 }
-return { round: A.round, date: A.date, results: deliveries }
+const candidates = A.isLastRound ? await learn() : []
+return { round: A.round, date: A.date, results: deliveries, ...(A.isLastRound ? { candidates } : {}) }
 ```
 
 The Workflow returns `done` only after serial integration (when isolated), a passing post-integration
