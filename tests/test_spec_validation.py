@@ -315,6 +315,25 @@ Scenario: incomplete scenario
             root = Path(temp)
             self.init_repo(root)
 
+            prose = root / "prose.md"
+            prose.write_text(
+                self.valid_spec().replace(
+                    "\n## Out of Scope\n",
+                    """
+Scenario: Incomplete prose example
+  Given an example outside a fenced block
+  When a reader copies it
+
+## Out of Scope
+""",
+                ),
+                encoding="utf-8",
+            )
+            ignored_prose = self.run_spec(root, prose)
+
+            self.assertEqual(0, ignored_prose.returncode, ignored_prose.stderr)
+            self.assertEqual([], json.loads(ignored_prose.stdout)["malformed_scenarios"])
+
             example = root / "example.md"
             example.write_text(
                 self.valid_spec().replace(

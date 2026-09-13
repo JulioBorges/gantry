@@ -127,16 +127,15 @@ def canonical_heading(heading: str, heading_map: dict[str, str]) -> str:
 
 
 def validate_scenarios(text: str, required: bool) -> list[dict[str, object]]:
-    """Check that every Scenario has ordered Given, When and Then steps."""
-    unfenced, gherkin_blocks = scenario_blocks(text)
-    blocks = [(unfenced, False), *((block, True) for block in gherkin_blocks)]
-    if required and not any(scenario_matches(lines) for lines, _ in blocks):
+    """Check Gherkin-fenced scenarios for ordered Given, When and Then steps."""
+    _, gherkin_blocks = scenario_blocks(text)
+    if required and not any(scenario_matches(block) for block in gherkin_blocks):
         return [{"line": None, "reason": "expected at least one Scenario with Given, When and Then steps"}]
 
     return [
         finding
-        for lines, strict in blocks
-        for finding in validate_scenario_block(lines, strict)
+        for block in gherkin_blocks
+        for finding in validate_scenario_block(block, True)
     ]
 
 
