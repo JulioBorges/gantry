@@ -120,14 +120,17 @@ const source = {json.dumps(source)};
 const args = {json.dumps(args)};
 const calls = [];
 const commandCalls = [];
+let sequence = 0;
 const defaultIssueWorktree = args.issueWorktree || (
   args.isolate && args.issues && args.issues[0]
     ? `${{args.repoRoot}}.gantry-${{args.issues[0].ref.replace('#', '-') }}`
     : args.repoRoot
 );
 const runCommand = async (command, options = {{}}) => {{
-  commandCalls.push({{ command, cwd: options.cwd || args.repoRoot }});
-  if (command.includes('/spec.py')) return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
+  commandCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});
+  if (command.includes('/spec.py') && args.stubSpecCheck !== false) {{
+    return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
+  }}
   if (args.commandMode === 'real') {{
     const completed = spawnSync(command, {{
       cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8', input: options.input,
@@ -144,7 +147,7 @@ const runCommand = async (command, options = {{}}) => {{
     : command.includes('/spec.py') ? '{{"valid":true}}' : '' }};
 }};
 const agent = async (prompt, options) => {{
-  calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd }});
+  calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, sequence: sequence++ }});
   if (options.label.startsWith('research:')) return 'factual research';
   if (options.label.startsWith('requirement-critic')) {{
     if (args.requirementCriticRawResults && args.requirementCriticRawResults.length) {{
@@ -637,6 +640,15 @@ A fixture Spec.
 
 - [ ] the greeting should be fast
 
+### Scenarios
+
+```gherkin
+Scenario: greet a user
+  Given a fixture Spec
+  When the Requirement Critic reviews it
+  Then the workflow records the outcome
+```
+
 ## Out of Scope
 
 - Nothing yet.
@@ -647,6 +659,10 @@ A fixture Spec.
 """,
                 encoding="utf-8",
             )
+            check = self.run_script(root, "spec.py", "--check", str(spec), "--json")
+            self.assertEqual(0, check.returncode, check.stdout + check.stderr)
+            self.assertTrue(json.loads(check.stdout)["valid"])
+            spec_bytes_before = spec.read_bytes()
             ambiguous_item = "the greeting should be fast"
             result = self.run_workflow(
                 "plan-workflow.md",
@@ -667,6 +683,7 @@ A fixture Spec.
                     },
                     "date": "2026-09-13",
                     "commandMode": "real",
+                    "stubSpecCheck": False,
                     "requirementCriticResult": {
                         "blocking": [
                             {
@@ -687,6 +704,10 @@ A fixture Spec.
             self.assertFalse(any(call["label"].startswith("plan") for call in result["calls"]))
             self.assertFalse(list((root / ".scratch" / "greeting" / "issues").glob("*")) if (root / ".scratch" / "greeting" / "issues").is_dir() else [])
             self.assertFalse(any("roadmap.py" in call["command"] for call in result["commandCalls"]))
+            spec_check_calls = [call["command"] for call in result["commandCalls"] if "spec.py" in call["command"]]
+            self.assertTrue(spec_check_calls)
+            self.assertIn('spec.py" --check', spec_check_calls[0])
+            self.assertEqual(spec_bytes_before, spec.read_bytes())
 
     def test_requirement_critic_protocol_failure_stops_planning_on_invalid_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -710,6 +731,15 @@ A fixture Spec.
 
 - [ ] `greet()` returns "hello" for every call
 
+### Scenarios
+
+```gherkin
+Scenario: greet a user
+  Given a fixture Spec
+  When the Requirement Critic reviews it
+  Then the workflow records the outcome
+```
+
 ## Out of Scope
 
 - Nothing yet.
@@ -720,6 +750,9 @@ A fixture Spec.
 """,
                 encoding="utf-8",
             )
+            check = self.run_script(root, "spec.py", "--check", str(spec), "--json")
+            self.assertEqual(0, check.returncode, check.stdout + check.stderr)
+            self.assertTrue(json.loads(check.stdout)["valid"])
             result = self.run_workflow(
                 "plan-workflow.md",
                 {
@@ -739,6 +772,7 @@ A fixture Spec.
                     },
                     "date": "2026-09-13",
                     "commandMode": "real",
+                    "stubSpecCheck": False,
                     "structuredOutput": False,
                     "requirementCriticRawResults": [{}, {}],
                 },
@@ -774,6 +808,15 @@ A fixture Spec.
 
 - [ ] `greet()` returns "hello" for every call
 
+### Scenarios
+
+```gherkin
+Scenario: greet a user
+  Given a fixture Spec
+  When the Requirement Critic reviews it
+  Then the workflow records the outcome
+```
+
 ## Out of Scope
 
 - Nothing yet.
@@ -784,6 +827,10 @@ A fixture Spec.
 """,
                 encoding="utf-8",
             )
+            check = self.run_script(root, "spec.py", "--check", str(spec), "--json")
+            self.assertEqual(0, check.returncode, check.stdout + check.stderr)
+            self.assertTrue(json.loads(check.stdout)["valid"])
+            spec_bytes_before = spec.read_bytes()
             result = self.run_workflow(
                 "plan-workflow.md",
                 {
@@ -803,6 +850,7 @@ A fixture Spec.
                     },
                     "date": "2026-09-13",
                     "commandMode": "real",
+                    "stubSpecCheck": False,
                     "requirementCriticResult": {"blocking": [], "findings": []},
                 },
             )
@@ -821,6 +869,14 @@ A fixture Spec.
                 index for index, call in enumerate(result["calls"]) if call["label"].startswith("research:")
             )
             self.assertLess(requirement_critic_index, research_index)
+            spec_check_calls = [call for call in result["commandCalls"] if "spec.py" in call["command"]]
+            self.assertTrue(spec_check_calls)
+            self.assertIn('spec.py" --check', spec_check_calls[0]["command"])
+            requirement_critic_call = next(
+                call for call in result["calls"] if call["label"].startswith("requirement-critic")
+            )
+            self.assertLess(spec_check_calls[0]["sequence"], requirement_critic_call["sequence"])
+            self.assertEqual(spec_bytes_before, spec.read_bytes())
 
     def test_round_never_raises_the_two_correction_ceiling(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
