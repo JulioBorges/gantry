@@ -217,6 +217,18 @@ class GuardHookTests(unittest.TestCase):
             allowed_commit = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=commit_payload)
             self.assertEqual(0, allowed_commit.returncode)
 
+    def test_denies_push_with_a_leading_plus_refspec(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            plus_refspec_payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git push origin +main"}}
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=plus_refspec_payload)
+            self.assertEqual(2, denied.returncode)
+            self.assertIn("no-force-push", denied.stdout)
+
     # -- performance --------------------------------------------------------------------------
 
     def test_answers_a_one_megabyte_payload_in_under_200ms(self) -> None:

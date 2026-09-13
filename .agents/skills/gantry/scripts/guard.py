@@ -39,6 +39,7 @@ STATUS_LINE_RE = re.compile(r"(?m)^Status:\s*\S")
 CHECKBOX_LINE_RE = re.compile(r"(?m)^\s*-\s\[[ xX]\]")
 PUSH_RE = re.compile(r"\bgit\b[^&|;]*\bpush\b")
 FORCE_FLAG_RE = re.compile(r"(--force(-with-lease)?\b|(?:^|\s)-f\b)")
+FORCE_REFSPEC_RE = re.compile(r"(?:^|\s)\+\S")
 COMMIT_RE = re.compile(r"\bgit\b[^&|;]*\bcommit\b")
 TEST_SKIP_PATTERNS = [
     re.compile(pattern)
@@ -166,7 +167,7 @@ def decide(payload: dict, cwd: Path) -> Decision:
         command = extract_command(arguments)
         if not command:
             return Decision(True)
-        if PUSH_RE.search(command) and FORCE_FLAG_RE.search(command):
+        if PUSH_RE.search(command) and (FORCE_FLAG_RE.search(command) or FORCE_REFSPEC_RE.search(command)):
             return Decision(False, "no-force-push", command.strip()[:200])
         if COMMIT_RE.search(command):
             matched_file = staged_diff_skip_match(cwd)
