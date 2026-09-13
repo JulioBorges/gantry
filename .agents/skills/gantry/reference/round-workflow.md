@@ -124,7 +124,8 @@ async function integrationGatePasses() {
     return false
   }
   try {
-    return JSON.parse(result.stdout).verdict === 'pass'
+    const payload = JSON.parse(result.stdout)
+    return payload.verdict === 'pass' && Array.isArray(payload.requirements) && payload.requirements.length === 0
   } catch {
     return false
   }
@@ -210,6 +211,7 @@ const results = await pipeline(
     }
     return {
       ref: issue.ref,
+      issuePath: issue.path,
       outcome: criticAccepted(verdict) ? 'accepted' : (verdict ? 'refuted' : 'critic_failed'),
       worktree: impl && impl.worktree, branch: impl && impl.branch, commits: impl && impl.commits,
       corrections, reviewFix: state.reviewFix, review: state.review, verdict,
@@ -248,6 +250,8 @@ for (const delivery of deliveries) {
   }
   try {
     await runWorkflowCommand(`python3 "${scripts}/roadmap.py" done ${delivery.ref}`)
+    await runWorkflowCommand(`git add -- ROADMAP.md "${delivery.issuePath}"`)
+    await runWorkflowCommand(`git commit -m "gantry: complete ${delivery.ref}"`)
     delivery.outcome = 'done'
   } catch {
     delivery.outcome = 'integration_failed'

@@ -397,10 +397,13 @@ Slice: `planned#01`
             self.assertEqual("done", run["result"]["results"][0]["outcome"])
             self.assertEqual("done", parse_issue(issue).status)
             commands = [call["command"] for call in run["commandCalls"]]
-            self.assertEqual(3, len(commands))
+            self.assertEqual(5, len(commands))
             self.assertIn('git merge --no-ff "gantry/serial-issue"', commands[0])
             self.assertIn('gates.py" --run', commands[1])
             self.assertIn('roadmap.py" done serial#01', commands[2])
+            self.assertIn('git add -- ROADMAP.md', commands[3])
+            self.assertIn('git commit -m "gantry: complete serial#01"', commands[4])
+            self.assertFalse(any('roadmap.py" status' in command for command in commands))
 
     def test_frontier_rejects_invalid_graphs_and_uses_authoritative_statuses(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
