@@ -1,7 +1,7 @@
 # Recurring lesson candidates
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-migration#13`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -16,10 +16,10 @@ Add the optional Learner phase to `.agents/skills/gantry/reference/round-workflo
 
 ## Acceptance criteria
 
-- [ ] Given a Run log with “criterion 3 has no test” on `greeting#01` and `greeting#03`, and “cli.py prints to stderr” only on `greeting#02`, the Learner result contains exactly one candidate citing the two recurring references and naming its proposed target.
-- [ ] A test proves the Learner reads no source other than permitted Run-log refutations and review findings, emits a result validated by `schemas/learner.json`, and leaves `AGENTS.md`, `CONTEXT.md`, templates, and policy byte-identical.
-- [ ] The final workflow report exposes lesson candidates as operator decisions and never auto-injects them; fixture artifacts and reports remain English.
-- [ ] The Spec Changelog receives an English entry in the same merge, with the Learner test runnable from the repository.
+- [x] Given a Run log with “criterion 3 has no test” on `greeting#01` and `greeting#03`, and “cli.py prints to stderr” only on `greeting#02`, the Learner result contains exactly one candidate citing the two recurring references and naming its proposed target.
+- [x] A test proves the Learner reads no source other than permitted Run-log refutations and review findings, emits a result validated by `schemas/learner.json`, and leaves `AGENTS.md`, `CONTEXT.md`, templates, and policy byte-identical.
+- [x] The final workflow report exposes lesson candidates as operator decisions and never auto-injects them; fixture artifacts and reports remain English.
+- [x] The Spec Changelog receives an English entry in the same merge, with the Learner test runnable from the repository.
 
 ## Blocked by
 
