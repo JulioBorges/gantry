@@ -47,7 +47,7 @@ class LegacyWorkflowSmokeTests(unittest.TestCase):
             plan_result = self.run_workflow(
                 "plan-workflow.md",
                 plan_args,
-                research_format=self.frontier_json(root, "portable"),
+                research_format=self.frontier_json(root, "portable", include_parked=False),
             )
             self.assertTrue(plan_result["result"]["critique"]["acceptable"])
             self.assertEqual([], plan_result["result"]["plan"]["issues"])
@@ -58,7 +58,25 @@ class LegacyWorkflowSmokeTests(unittest.TestCase):
             self.assertFalse(paths["issueDir"].exists(), "the planning workflow must stop for approval")
 
             issue_path = root / ".scratch" / "portable" / "issues" / "01-portable-loop.md"
+            blocker_path = root / ".scratch" / "portable" / "issues" / "00-parser-prerequisite.md"
             issue_path.parent.mkdir(parents=True)
+            blocker_path.write_text(
+                """# Parser prerequisite
+
+Type: issue
+Status: done
+Slice: `portable#00`
+
+## Acceptance criteria
+
+- [x] provide a completed blocker
+
+## Blocked by
+
+- None
+""",
+                encoding="utf-8",
+            )
             issue_path.write_text(
                 """# Portable loop
 
@@ -68,11 +86,12 @@ Slice: `portable#01`
 
 ## Acceptance criteria
 
-- [ ] preserve the existing parser
+- [ ] preserve the first parser criterion
+- [x] preserve the second parser criterion
 
 ## Blocked by
 
-- None
+- `portable#00` — prerequisite parsed from Markdown
 """,
                 encoding="utf-8",
             )
@@ -80,30 +99,44 @@ Slice: `portable#01`
             issue = parse_issue(issue_path)
             self.assertEqual("portable#01", issue.ref)
             self.assertEqual("draft", issue.status)
-            self.assertEqual(["preserve the existing parser"], [item.text for item in issue.criteria])
-            self.assertEqual([], issue.blocked_by)
+            self.assertEqual(
+                ["preserve the first parser criterion", "preserve the second parser criterion"],
+                [item.text for item in issue.criteria],
+            )
+            self.assertEqual(["portable#00"], issue.blocked_by)
 
-            frontier = self.frontier_json(root, "portable")
+            parsed_issue = self.acceptance_json(root, issue_path)
+            self.assertEqual(".scratch/portable/issues/01-portable-loop.md", parsed_issue["path"])
+            self.assertTrue(parsed_issue["path"].endswith(issue_path.name))
+            self.assertEqual("draft", parsed_issue["status"])
+            self.assertEqual("portable#01", parsed_issue["ref"])
+            self.assertEqual(
+                ["preserve the first parser criterion", "preserve the second parser criterion"],
+                [item["text"] for item in parsed_issue["criteria"]],
+            )
+            self.assertEqual(["portable#00"], parsed_issue["blocked_by"])
+
+            frontier = self.frontier_json(root, "portable", include_parked=True)
             self.assertEqual(["portable#01"], frontier["selected"])
             self.assertEqual("draft", frontier["issues"]["portable#01"]["status"])
-            self.assertEqual(1, frontier["issues"]["portable#01"]["criteria_total"])
-            self.assertEqual([], frontier["issues"]["portable#01"]["blocked_by"])
+            self.assertEqual(2, frontier["issues"]["portable#01"]["criteria_total"])
+            self.assertEqual(["portable#00"], frontier["issues"]["portable#01"]["blocked_by"])
 
             plan_with_parser = self.run_workflow(
                 "plan-workflow.md",
                 plan_args,
-                research_format=frontier,
+                research_format={"frontier": frontier, "issues": [parsed_issue]},
             )
             parser_prompt = self.prompt_for(plan_with_parser["calls"], "plan")
-            self.assertIn('"path":".scratch/portable/issues/01-portable-loop.md"', parser_prompt)
-            self.assertIn('"ref":"portable#01"', parser_prompt)
-            self.assertIn('"status":"draft"', parser_prompt)
-            self.assertIn('"criteria_total":1', parser_prompt)
-            self.assertIn('"blocked_by":[]', parser_prompt)
+            for field in ("path", "status", "ref", "criteria", "blocked_by"):
+                self.assertIn(
+                    json.dumps(parsed_issue[field], separators=(",", ":")),
+                    parser_prompt,
+                    f"planning must receive parser {field}",
+                )
 
             round_args = {
                 "round": 1,
-                "issues": [],
                 "models": {"implement": "test-implement", "review": "test-review", "critic": "test-critic"},
                 "branch": "gantry/portable",
                 "baseRef": "HEAD",
@@ -115,23 +148,28 @@ Slice: `portable#01`
                 "paths": {name: str(path) for name, path in paths.items()},
                 "date": "2026-09-13",
             }
+            no_ready_frontier = self.frontier_json(root, "portable", include_parked=False)
+            self.assertEqual({"portable#01": "draft"}, no_ready_frontier["parked"])
+            round_args["issues"] = self.round_issues(no_ready_frontier, [parsed_issue])
+            self.assertEqual([], round_args["issues"])
             round_result = self.run_workflow("round-workflow.md", round_args)
             self.assertEqual([], round_result["result"]["results"])
             self.assertEqual([], round_result["calls"])
 
-            # A parser-derived issue passed through round args renders the
-            # implementer prompt with policy-configured repository paths.
-            round_args["issues"] = [{
-                "ref": issue.ref,
-                "path": str(issue_path.relative_to(root)),
-                "title": issue.title,
-                "specPath": str(spec_path.relative_to(root)),
-            }]
+            # Reuse the parser output selected by the public frontier rather
+            # than constructing a round issue by hand.
+            round_args["issues"] = self.round_issues(frontier, [parsed_issue])
             rendered_round = self.run_workflow("round-workflow.md", round_args)
             implement_prompt = self.prompt_for(rendered_round["calls"], "implement:portable#01")
             self.assertIn(str(paths["context"]), implement_prompt)
             self.assertIn(str(paths["adrs"]), implement_prompt)
-            self.assertIn(issue.ref, implement_prompt)
+            self.assertIn(parsed_issue["ref"], implement_prompt)
+            self.assertIn(parsed_issue["path"], implement_prompt)
+            critic_prompt = self.prompt_for(rendered_round["calls"], "critic:portable#01#1")
+            self.assertIn(
+                f"acceptance.py {root}/{parsed_issue['path']} --json",
+                critic_prompt,
+            )
 
     def test_workflows_render_configured_paths_from_args(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -197,15 +235,15 @@ Slice: `portable#01`
             self.assertIn(str(paths["adrs"]), implement_prompt)
             self.assertIn("runs/", implement_prompt)
 
-    def frontier_json(self, root: Path, scope: str) -> dict:
+    def frontier_json(self, root: Path, scope: str, *, include_parked: bool) -> dict:
         result = subprocess.run(
             [
                 sys.executable,
                 str(SCRIPTS / "frontier.py"),
                 "--scope",
                 scope,
-                "--include-parked",
                 "--json",
+                *(["--include-parked"] if include_parked else []),
             ],
             cwd=root,
             text=True,
@@ -213,9 +251,34 @@ Slice: `portable#01`
             check=False,
         )
         if result.returncode == 2:
-            return {"selected": [], "reason": "no issues ready"}
+            return json.loads(result.stdout) if result.stdout else {"selected": [], "rounds": []}
         self.assertEqual(0, result.returncode, result.stderr)
         return json.loads(result.stdout)
+
+    def acceptance_json(self, root: Path, issue_path: Path) -> dict:
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "acceptance.py"), str(issue_path), "--json"],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        return json.loads(result.stdout)
+
+    def round_issues(self, frontier: dict, parsed_issues: list[dict]) -> list[dict]:
+        parsed_by_ref = {issue["ref"]: issue for issue in parsed_issues}
+        selected = [ref for round_refs in frontier["rounds"] for ref in round_refs]
+        return [
+            {
+                "ref": parsed_by_ref[ref]["ref"],
+                "path": parsed_by_ref[ref]["path"],
+                "title": parsed_by_ref[ref]["title"],
+                "specPath": parsed_by_ref[ref]["spec_path"],
+            }
+            for ref in selected
+            if ref in parsed_by_ref
+        ]
 
     def run_workflow(self, filename: str, args: dict, research_format: dict | None = None) -> dict:
         source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
@@ -232,6 +295,16 @@ const agent = async (prompt, options) => {{
   if (options.label.startsWith('critique')) return {{ acceptable: true, problems: [], frontierErrors: [] }};
   if (options.label === 'research:format') return JSON.stringify(researchFormat);
   if (options.label.startsWith('research:')) return 'research brief';
+  if (options.label.startsWith('implement:')) return {{
+    worktree: args.repoRoot, branch: args.branch, commits: ['test commit'],
+    summary: 'stubbed rendered workflow', testsAdded: [], gatesResult: 'verdict: pass',
+    decisions: [], blockers: [],
+  }};
+  if (options.label.startsWith('review:')) return {{ blocking: [], nonBlocking: [], summary: 'no findings' }};
+  if (options.label.startsWith('critic:')) return {{
+    complete: true, criteria: [], gatesVerdict: 'pass', gateFailures: [],
+    refutations: [], requiredFixes: [], decisionsForOperator: [],
+  }};
   return null;
 }};
 const parallel = async (tasks) => Promise.all(tasks.map((task) => task()));
