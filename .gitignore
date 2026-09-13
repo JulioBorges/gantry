@@ -46,6 +46,10 @@ lerna-debug.log*
 # Gantry runtime state
 # The machine factory lives at ~/.gantry, but a stray local one must never be committed.
 .gantry/
+# The reference fixture's own tracked repository policy is reusable fixture content,
+# not runtime state, and must be committed.
+!fixture/.gantry/
+!fixture/.gantry/**
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm

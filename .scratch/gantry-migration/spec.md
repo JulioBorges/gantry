@@ -178,6 +178,14 @@ Scenario: The run ends with an offered draft pull request
   `refutation` and `review.finding` Run-log evidence across Issues or attempts into lesson candidates
   validated by `schemas/learner.json`, and the round workflow and final report surface them as operator
   decisions without writing to `AGENTS.md`, `CONTEXT.md`, a template or policy.
+- 2026-09-13 — Added the reusable `fixture/` reference repository (a minimal
+  Python greeting project, a standard-library JSON linter, a declared absolute
+  `pytest` check and RFC 6901-mapped differential `lint` check, and a valid
+  greeting Spec) and its deterministic isolated-copy builder,
+  `fixture/tools/copy_fixture.py`, producing an unplanned no-Issue copy and an
+  approved copy with three `ready-for-agent` legacy-format greeting Issues,
+  each an independent Git repository with a baseline commit and a pack-visible
+  local Gantry-skill installation.
 - 2026-09-13 — Added an explicit, read-only cleanup plan that removes only done Issue branches and worktrees already merged into the Run branch after operator authorization.
 - 2026-09-13 — Added effective-template Spec structural validation before planning, including mapped headings, required-section order, placeholder and Gherkin scenario checks.
 - 2026-09-13 — Added an append-only, shared-worktree Run log with validated lifecycle events, atomic JSONL appends, policy snapshots, and interrupted Issue queries.
