@@ -132,11 +132,11 @@ class CopyFixtureSkillInstallationTests(unittest.TestCase):
 
 
 class CopyFixtureRunnableChecksTests(unittest.TestCase):
-    def test_generated_copy_carries_a_runnable_absolute_and_differential_check(self) -> None:
+    def assert_copy_has_runnable_checks(self, mode: str) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "dest"
             dest.mkdir()
-            self.assertEqual(run_copy_fixture("approved", dest).returncode, 0)
+            self.assertEqual(run_copy_fixture(mode, dest).returncode, 0)
 
             pytest_check = subprocess.run(["pytest", "-q"], cwd=dest, text=True, capture_output=True, check=False)
             self.assertEqual(pytest_check.returncode, 0, pytest_check.stdout + pytest_check.stderr)
@@ -158,6 +158,12 @@ class CopyFixtureRunnableChecksTests(unittest.TestCase):
             self.assertEqual(lint_gate["status"], "pass")
             self.assertEqual(lint_gate["new"], [])
             self.assertEqual(lint_gate["aggravated"], [])
+
+    def test_approved_copy_carries_a_runnable_absolute_and_differential_check(self) -> None:
+        self.assert_copy_has_runnable_checks("approved")
+
+    def test_unplanned_copy_also_carries_a_runnable_absolute_and_differential_check(self) -> None:
+        self.assert_copy_has_runnable_checks("unplanned")
 
 
 class CopyFixtureLeavesSourceUntouchedTests(unittest.TestCase):
