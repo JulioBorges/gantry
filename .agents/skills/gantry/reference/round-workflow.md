@@ -107,6 +107,54 @@ function location(impl) {
   return impl && impl.worktree ? impl.worktree : A.repoRoot
 }
 
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`
+}
+
+function issueWorktreePath(issue) {
+  const [spec, number] = issue.ref.split('#')
+  return `${A.repoRoot}.gantry-${spec}-${String(Number(number)).padStart(2, '0')}`
+}
+
+async function configuredIssueBranch(issue) {
+  let result
+  try {
+    result = await runWorkflowCommand(
+      `python3 "${scripts}/common.py" --cwd ${shellQuote(A.repoRoot)} --issue ${shellQuote(issue.path)} --json`,
+    )
+    const payload = JSON.parse(result.stdout)
+    if (typeof payload.issueBranch !== 'string' || !payload.issueBranch) throw new Error('missing issueBranch')
+    return payload.issueBranch
+  } catch {
+    return null
+  }
+}
+
+async function implementationLocation(issue, previous) {
+  if (!A.isolate) return { worktree: A.repoRoot, branch: A.branch }
+  const branch = await configuredIssueBranch(issue)
+  if (!branch) return null
+  if (previous) {
+    if (previous.branch !== branch) return null
+    const current = await runCommand('git branch --show-current', { cwd: previous.worktree })
+    return current && current.exitCode === 0 && current.stdout.trim() === branch
+      ? { worktree: previous.worktree, branch }
+      : null
+  }
+  const worktree = issueWorktreePath(issue)
+  try {
+    await runWorkflowCommand(
+      `git worktree add --quiet -b ${shellQuote(branch)} ${shellQuote(worktree)} ${shellQuote(A.baseRef)}`,
+    )
+    const current = await runCommand('git branch --show-current', { cwd: worktree })
+    return current && current.exitCode === 0 && current.stdout.trim() === branch
+      ? { worktree, branch }
+      : null
+  } catch {
+    return null
+  }
+}
+
 async function authoritativeCriterionIndexes(issue) {
   let result
   try {
@@ -170,12 +218,8 @@ async function integrationGatePasses() {
   }
 }
 
-function implementPrompt(issue, feedback, previous) {
-  const work = previous
-    ? `Continue in ${previous.worktree} on ${previous.branch}.`
-    : A.isolate
-      ? 'You are in this Issue’s dedicated git worktree and branch. Verify pwd and git branch --show-current.'
-      : `Work in ${A.repoRoot} on ${A.branch}; verify the current branch and never switch it.`
+function implementPrompt(issue, feedback, assigned) {
+  const work = `Work in ${assigned.worktree} on ${assigned.branch}; verify the current branch and never switch it.`
   return `You are the fresh TDD Implementer for ${issue.ref} — "${issue.title}".
 ${work}
 Read ${issue.path}, ${issue.specPath}, ${paths.decisions}, ${paths.context}, and ${paths.adrs} first.
@@ -213,12 +257,13 @@ refutations, gateResult, gateFailures and decisionsForOperator as structured out
 }
 
 async function implement(issue, feedback, previous) {
+  const assigned = await implementationLocation(issue, previous)
+  if (!assigned) return null
   const options = {
-    label: `implement:${issue.ref}`, phase: 'Implement', model: A.models.implement,
+    label: `implement:${issue.ref}`, phase: 'Implement', model: A.models.implement, cwd: assigned.worktree,
   }
-  if (A.isolate && !previous) options.isolation = 'worktree'
-  const result = await requestRole('implementer', implementPrompt(issue, feedback, previous), options)
-  return result || null
+  const result = await requestRole('implementer', implementPrompt(issue, feedback, assigned), options)
+  return result && result.worktree === assigned.worktree && result.branch === assigned.branch ? result : null
 }
 
 const results = await pipeline(
@@ -227,7 +272,7 @@ const results = await pipeline(
   async (impl, issue) => {
     if (!impl) return null
     const review = await requestRole('reviewer', reviewPrompt(issue, impl), {
-      label: `review:${issue.ref}`, phase: 'Review', model: A.models.review,
+      label: `review:${issue.ref}`, phase: 'Review', model: A.models.review, cwd: location(impl),
     })
     if (!review) return { impl, reviewerFailed: true }
     const reviewed = review && review.blocking.length
@@ -257,7 +302,7 @@ const results = await pipeline(
     let accepted = false
     for (let attempt = 1; ; attempt += 1) {
       verdict = await requestRole('critic', criticPrompt(issue, impl, state.review, attempt), {
-        label: `critic:${issue.ref}#${attempt}`, phase: 'Critic', model: A.models.critic,
+        label: `critic:${issue.ref}#${attempt}`, phase: 'Critic', model: A.models.critic, cwd: location(impl),
       })
       if (!verdict) {
         return {

@@ -306,6 +306,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=main.__doc__)
     parser.add_argument("--cwd", default=".", help="repository or worktree to inspect")
     parser.add_argument("--scope-slug", default="sample", help="slug used to render artifact paths")
+    parser.add_argument("--issue", help="Issue reference or path whose configured branch to render")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -316,10 +317,17 @@ def main() -> int:
         "policy": resolve_policy(root),
         "paths": {name: str(path) for name, path in paths.items()},
     }
+    if args.issue:
+        issue = resolve_issue_arg(args.issue, root, load_policy_issues(root, payload["policy"]))
+        if issue is None:
+            raise ValueError(f"could not resolve Issue {args.issue!r}")
+        payload["issueBranch"] = issue_branch(payload["policy"], issue)
     if args.json:
         print(json.dumps(payload, indent=2))
     else:
         print(f"repo_root: {payload['repo_root']}")
+        if "issueBranch" in payload:
+            print(f"issue_branch: {payload['issueBranch']}")
         for name, path in payload["paths"].items():
             print(f"{name}: {path}")
     return 0
