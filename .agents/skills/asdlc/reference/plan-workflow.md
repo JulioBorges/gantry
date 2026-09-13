@@ -9,18 +9,26 @@ needs the operator's approval, so the orchestrator presents the drafts and waits
 
 ```json
 {
-  "target": { "kind": "spec", "slug": "compound-learning", "specPath": ".scratch/compound-learning/spec.md" },
+  "target": { "kind": "spec", "slug": "<spec-slug>", "specPath": "<rendered-spec-path>" },
   "models": { "plan": "opus", "critic": "fable" },
   "skillDir": "/abs/path/to/repo/.agents/skills/asdlc",
   "repoRoot": "/abs/path/to/repo",
-  "exemplarIssue": ".scratch/release-engineering/issues/01-repository-bootstrap.md",
+  "policy": { "artifacts": {}, "templates": {}, "git": {}, "budget": {}, "dashboard": {} },
+  "paths": {
+    "issueDir": "<rendered-issue-directory>",
+    "specPath": "<rendered-spec-path>",
+    "exemplarIssue": "<existing-issue-path>",
+    "decisions": "<repository-decisions-path>",
+    "issueTracker": "<repository-issue-tracker-path>"
+  },
   "date": "2026-09-12"
 }
 ```
 
 `target.kind` is `spec` (slice an existing spec), `issue` (rewrite one issue that lacks criteria;
-add `issuePath`) or `goal` (free text in `goal`; the planner first drafts `.scratch/<slug>/spec.md`
-following an existing spec's section layout, then slices it).
+add `issuePath`) or `goal` (free text in `goal`; the planner first drafts the rendered `paths.specPath`
+following an existing spec's section layout, then slices it). The caller resolves `policy` with
+`common.py` and renders every repository path into `paths` before invoking this workflow.
 
 ## Script
 
@@ -38,6 +46,8 @@ export const meta = {
 const A = args
 const scripts = `${A.skillDir}/scripts`
 const t = A.target
+const policy = A.policy
+const paths = A.paths
 const targetText = t.kind === 'goal' ? `the goal: "${t.goal}" (new slug: ${t.slug})`
   : t.kind === 'issue' ? `the issue at ${t.issuePath} (spec ${t.specPath})`
   : `the spec at ${t.specPath} (slug ${t.slug})`
@@ -71,33 +81,34 @@ phase('Research')
 const research = await parallel([
   () => agent(`Survey the repository at ${A.repoRoot} for ${targetText}: what exists today (package manifest, src/, tests/, CI), conventions in AGENTS.md, CONTEXT.md vocabulary, docs/adr/ decisions that constrain this work. Return a dense factual brief for a planner — paths, facts, constraints, no advice.`,
     { label: 'research:codebase', phase: 'Research', model: A.models.plan, effort: 'medium' }),
-  () => agent(`Read ${t.specPath || 'the PRD sections relevant to ' + t.goal}, .scratch/gantry-v4/slice-index.md, .scratch/gantry-v4/map.md and the relevant PRD.md sections. Return: the contracts this scope owns, the contracts it consumes and who owns them (exact \`slug#NN\` refs), the settled decisions it must not reopen, and the testing seam it must bind to. Facts and refs only.`,
+  () => agent(`Read ${t.specPath || 'the PRD sections relevant to ' + t.goal}, ${paths.decisions} and the relevant repository documents. Return: the contracts this scope owns, the contracts it consumes and who owns them (exact \`slug#NN\` refs), the settled decisions it must not reopen, and the testing seam it must bind to. Facts and refs only.`,
     { label: 'research:spec', phase: 'Research', model: A.models.plan, effort: 'medium' }),
-  () => agent(`Read ${A.exemplarIssue} and two other files in the same directory. Return the exact issue file format as a template: header lines (Type/Status/Slice/Spec/Created), section order, how acceptance criteria are phrased (observable, one behaviour each, runnable where possible), how \`## Blocked by\` cites refs. Also run \`python3 ${scripts}/frontier.py --scope frontier\` and report the current frontier.`,
+  () => agent(`Read ${paths.exemplarIssue} and two other files in the same directory. Return the exact issue file format as a template: header lines (Type/Status/Slice/Spec/Created), section order, how acceptance criteria are phrased (observable, one behaviour each, runnable where possible), how \`## Blocked by\` cites refs. Also run \`python3 ${scripts}/frontier.py --scope frontier\` and report the current frontier.`,
     { label: 'research:format', phase: 'Research', model: A.models.plan, effort: 'low' }),
 ])
 const brief = research.filter(Boolean).join('\n\n---\n\n')
 
 phase('Plan')
 function planPrompt(feedback) {
-  return `You are the planner for ${targetText} in the Gantry repository at ${A.repoRoot}.
+  return `You are the planner for ${targetText} in the repository at ${A.repoRoot}.
 
 Research briefs:
 ${brief}
 
-Write the implementation issues as files under .scratch/${t.slug}/issues/NN-<slug>.md (numbered from 01, one
-file per issue), following docs/agents/issue-tracker.md and the exemplar format exactly. ${t.kind === 'goal' ? `First write .scratch/${t.slug}/spec.md following the section layout of an existing spec.` : ''}${t.kind === 'issue' ? `Rewrite only ${t.issuePath}; keep its number and slug.` : ''}
+Write the implementation issues as files under ${A.paths.issueDir}/NN-<slug>.md (numbered from 01, one
+file per issue), following ${paths.issueTracker} and the exemplar format exactly. ${t.kind === 'goal' ? `First write ${paths.specPath} following the section layout of an existing spec.` : ''}${t.kind === 'issue' ? `Rewrite only ${t.issuePath}; keep its number and slug.` : ''}
+The effective Git policy is target \`${policy.git.target}\` with branch prefix \`${policy.git.prefix}\`.
 
 Rules for each issue:
 - A vertical slice: demonstrable on its own, through the shared testing seam described in the map, sized for
   one agent context. Not a layer, not a file list.
 - \`## Acceptance criteria\`: checkbox items, each one observable behaviour, testable or runnable, no
   "should be fast", no "works correctly". Include the commands or observations that prove them.
-- \`## Blocked by\`: real \`slug#NN\` refs from slice-index.md and existing issues. No cycles. Consume
+- \`## Blocked by\`: real \`slug#NN\` refs from ${paths.decisions} and existing issues. No cycles. Consume
   contracts from their owners; never re-own one.
 - Header: \`Type: issue\`, \`Status: draft\` (NOT ready-for-agent — the operator approves), \`Slice: ${t.slug}#NN\`,
   \`Spec:\`, \`Created: ${A.date}\`.
-- Never edit ROADMAP.md, slice-index.md or any other spec's issues. List the roadmap lines you would add
+- Never edit ROADMAP.md, the decision source or any other spec's issues. List the roadmap lines you would add
   in roadmapAdditions, in the file's exact checkbox format.
 - Record choices you could not settle in openDecisions instead of guessing.
 ${feedback ? `\nA critic refuted the previous draft. Fix every item:\n${feedback.map((p, i) => `${i + 1}. ${p.issue}: ${p.problem} → ${p.fix}`).join('\n')}\n` : ''}
@@ -116,7 +127,7 @@ Check, reading every file:
 1. Each issue is a vertical slice demonstrable alone (not a horizontal layer, not "set up the module").
 2. Every acceptance criterion is observable and testable; flag vague ones verbatim.
 3. Run \`python3 ${scripts}/frontier.py --scope ${t.slug} --include-parked\`: zero errors, no cycles, no dangling refs.
-4. Every consumed contract is owned by the ref cited, per .scratch/gantry-v4/slice-index.md; nothing re-owns an
+4. Every consumed contract is owned by the ref cited, per ${paths.decisions}; nothing re-owns an
    existing contract; no settled decision reopened.
 5. Format matches the exemplar and docs/agents/issue-tracker.md; Status is draft; Created is ${A.date}.
 6. Coverage: every requirement and user story of the spec maps to at least one criterion; nothing invented.
@@ -135,7 +146,7 @@ return { target: t, plan, critique }
 
 1. Show the operator: the issue list, the critique verdict and remaining problems, `roadmapAdditions`,
    `openDecisions`.
-2. Stop. Do not implement from drafts. When the operator approves: set each issue to `ready-for-agent`
+2. Stop for planning approval. Do not implement from drafts. When the operator approves: set each issue to `ready-for-agent`
    with `roadmap.py status <ref> ready-for-agent`, add the roadmap lines exactly as proposed (and bump the
    spec heading's `/total`), run `roadmap.py check`, commit, then re-run `frontier.py` and continue with
    the round loop.
