@@ -10,7 +10,35 @@
     "issues": {
       "type": "array",
       "items": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "criteriaCount": {
+            "type": "integer"
+          },
+          "blockedBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "ref",
+          "path",
+          "title",
+          "criteriaCount",
+          "blockedBy"
+        ],
+        "additionalProperties": false
       }
     },
     "roadmapAdditions": {

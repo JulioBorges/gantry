@@ -145,18 +145,48 @@ phase('Plan')
 let plan = await requestRole('planner', planPrompt(null), {
   label: 'plan', phase: 'Plan', model: A.models.plan,
 })
+if (!plan) {
+  return {
+    target: t, plan: null, critique: null,
+    protocolFailure: { phase: 'Plan', role: 'planner' },
+    awaitingOperatorApproval: false, approved: false,
+  }
+}
 phase('Critique')
-let critique = plan && await requestRole('plan-critic', critiquePrompt(plan), {
+let critique = await requestRole('plan-critic', critiquePrompt(plan), {
   label: 'critique', phase: 'Critique', model: A.models.critic,
 })
-if (plan && critique && !critique.acceptable) {
+if (!critique) {
+  return {
+    target: t, plan, critique: null,
+    protocolFailure: { phase: 'Critique', role: 'plan-critic' },
+    awaitingOperatorApproval: false, approved: false,
+  }
+}
+if (!critique.acceptable) {
   log(`plan refuted: ${critique.problems.length} problem(s) — one revision pass`)
-  plan = await requestRole('planner', planPrompt(critique.problems), {
+  const revisedPlan = await requestRole('planner', planPrompt(critique.problems), {
     label: 'plan:revise', phase: 'Plan', model: A.models.plan,
-  }) || plan
-  critique = await requestRole('plan-critic', critiquePrompt(plan), {
+  })
+  if (!revisedPlan) {
+    return {
+      target: t, plan, critique,
+      protocolFailure: { phase: 'Plan', role: 'planner' },
+      awaitingOperatorApproval: false, approved: false,
+    }
+  }
+  plan = revisedPlan
+  const revisedCritique = await requestRole('plan-critic', critiquePrompt(plan), {
     label: 'critique:2', phase: 'Critique', model: A.models.critic,
-  }) || critique
+  })
+  if (!revisedCritique) {
+    return {
+      target: t, plan, critique: null,
+      protocolFailure: { phase: 'Critique', role: 'plan-critic' },
+      awaitingOperatorApproval: false, approved: false,
+    }
+  }
+  critique = revisedCritique
 }
 
 async function runApprovalCommand(command) {

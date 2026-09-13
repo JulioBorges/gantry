@@ -7,7 +7,20 @@
     "problems": {
       "type": "array",
       "items": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "problem": {
+            "type": "string"
+          },
+          "fix": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "problem",
+          "fix"
+        ],
+        "additionalProperties": false
       }
     },
     "frontierErrors": {

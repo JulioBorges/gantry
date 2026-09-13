@@ -212,10 +212,7 @@ async function implement(issue, feedback, previous) {
   }
   if (A.isolate && !previous) options.isolation = 'worktree'
   const result = await requestRole('implementer', implementPrompt(issue, feedback, previous), options)
-  if (!result) return previous || null
-  if (previous && !result.worktree) result.worktree = previous.worktree
-  if (previous && !result.branch) result.branch = previous.branch
-  return result
+  return result || null
 }
 
 const results = await pipeline(
@@ -230,10 +227,23 @@ const results = await pipeline(
     const reviewed = review && review.blocking.length
       ? await implement(issue, { kind: 'review', items: review.blocking }, impl)
       : impl
+    if (!reviewed) {
+      return { impl: null, implementerFailed: true, failedImpl: impl, review, reviewFix: true }
+    }
     return { impl: reviewed, review, reviewFix: Boolean(review && review.blocking.length) }
   },
   async (state, issue) => {
-    if (!state || !state.impl) return { ref: issue.ref, outcome: 'implementer_failed' }
+    if (!state) return { ref: issue.ref, outcome: 'implementer_failed' }
+    if (state.implementerFailed) {
+      return {
+        ref: issue.ref, outcome: 'implementer_failed',
+        worktree: state.failedImpl.worktree, branch: state.failedImpl.branch,
+        commits: state.failedImpl.commits, corrections: 0, reviewFix: state.reviewFix,
+        review: state.review, verdict: null,
+        decisions: state.failedImpl.decisions || [], blockers: state.failedImpl.blockers || [],
+      }
+    }
+    if (!state.impl) return { ref: issue.ref, outcome: 'implementer_failed' }
     if (state.reviewerFailed) return { ref: issue.ref, outcome: 'reviewer_failed', worktree: state.impl.worktree, branch: state.impl.branch }
     let impl = state.impl
     let verdict = null
@@ -253,9 +263,18 @@ const results = await pipeline(
       }
       accepted = await criticAccepted(verdict, issue)
       if (accepted || corrections >= budget) break
+      const corrected = await implement(issue, { kind: 'critic', items: verdict.requiredFixes }, impl)
+      if (!corrected) {
+        return {
+          ref: issue.ref, issuePath: issue.path, outcome: 'implementer_failed',
+          worktree: impl.worktree, branch: impl.branch, commits: impl.commits,
+          corrections, reviewFix: state.reviewFix, review: state.review, verdict,
+          decisions: [...(impl.decisions || []), ...(verdict.decisionsForOperator || [])],
+          blockers: impl.blockers || [],
+        }
+      }
       corrections += 1
-      impl = await implement(issue, { kind: 'critic', items: verdict.requiredFixes }, impl)
-      if (!impl) break
+      impl = corrected
     }
     return {
       ref: issue.ref,

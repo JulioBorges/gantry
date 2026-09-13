@@ -4,13 +4,39 @@
     "blocking": {
       "type": "array",
       "items": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "finding": {
+            "type": "string"
+          },
+          "fix": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding",
+          "fix"
+        ],
+        "additionalProperties": false
       }
     },
     "nonBlocking": {
       "type": "array",
       "items": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "finding": {
+            "type": "string"
+          },
+          "fix": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding",
+          "fix"
+        ],
+        "additionalProperties": false
       }
     },
     "summary": {

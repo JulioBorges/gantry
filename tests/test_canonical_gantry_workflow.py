@@ -137,7 +137,10 @@ const runCommand = async (command, options = {{}}) => {{
 const agent = async (prompt, options) => {{
   calls.push({{ label: options.label, prompt }});
   if (options.label.startsWith('research:')) return 'factual research';
-  if (options.label === 'plan') {{
+  if (options.label.startsWith('plan')) {{
+    if (args.plannerRawResults && args.plannerRawResults.length) {{
+      return args.plannerRawResults.shift();
+    }}
     if (args.testDraftPath) {{
       mkdirSync(dirname(args.testDraftPath), {{ recursive: true }});
       writeFileSync(args.testDraftPath, args.testDraftText);
@@ -149,14 +152,22 @@ const agent = async (prompt, options) => {{
     }}
     return {{ filesWritten: [], issues: [], roadmapAdditions: [], openDecisions: [] }};
   }}
-  if (options.label.startsWith('critique')) return {{
-    acceptable: true, problems: [], frontierErrors: [],
-  }};
-  if (options.label.startsWith('implement:')) return {{
+  if (options.label.startsWith('critique')) {{
+    if (args.planCriticRawResults && args.planCriticRawResults.length) {{
+      return args.planCriticRawResults.shift();
+    }}
+    return {{ acceptable: true, problems: [], frontierErrors: [] }};
+  }}
+  if (options.label.startsWith('implement:')) {{
+    if (args.implementerRawResults && args.implementerRawResults.length) {{
+      return args.implementerRawResults.shift();
+    }}
+    return {{
     worktree: args.repoRoot, branch: args.issueBranch || args.branch, commits: ['test commit'],
     summary: 'workflow execution', testsAdded: [], gatesResult: 'verdict: pass',
     decisions: [], blockers: [],
-  }};
+    }};
+  }}
   if (options.label.startsWith('review:')) return {{
     blocking: [], nonBlocking: [], summary: 'no findings',
   }};
@@ -262,6 +273,9 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
 
         def validate_schema(schema: object) -> None:
             self.assertIsInstance(schema, dict)
+            if schema.get("type") == "object":
+                self.assertEqual(set(schema["properties"]), set(schema["required"]))
+                self.assertFalse(schema["additionalProperties"])
             for key, value in schema.items():
                 self.assertIn(key, supported)
                 if key == "properties":
@@ -283,6 +297,48 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             ["pass", "fail", "no_gates", "not_run"],
             critic["properties"]["gatesVerdict"]["enum"],
         )
+
+    def test_result_contracts_reject_empty_nested_workflow_objects(self) -> None:
+        invalid_results = {
+            "planner": {
+                "filesWritten": [],
+                "issues": [{}],
+                "roadmapAdditions": [],
+                "openDecisions": [],
+            },
+            "plan-critic": {
+                "acceptable": False,
+                "problems": [{}],
+                "frontierErrors": [],
+            },
+            "reviewer": {
+                "blocking": [{}],
+                "nonBlocking": [],
+                "summary": "review completed",
+            },
+            "critic": {
+                "complete": False,
+                "criteria": [{}],
+                "gatesVerdict": "fail",
+                "gateFailures": [],
+                "refutations": [],
+                "requiredFixes": [],
+                "decisionsForOperator": [],
+            },
+            "learner": {"candidates": [{}]},
+        }
+        for role, payload in invalid_results.items():
+            with self.subTest(role=role):
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPTS / "result.py"), "--role", role, "--json"],
+                    input=json.dumps(payload),
+                    cwd=REPO_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                self.assertIn("missing required field", result.stdout)
 
     def test_skill_frontmatter_and_canonical_script_cli_contracts(self) -> None:
         skill = SKILL_DIR / "SKILL.md"
@@ -534,6 +590,119 @@ Slice: `planned#01`
             self.assertEqual(["critic:protocol#01#1", "critic:protocol#01#1:retry"], [call["label"] for call in critic_calls])
             self.assertFalse(any(call["label"].startswith("implement:protocol#01") for call in run["calls"][1:]))
             self.assertFalse(any('roadmap.py" done' in call["command"] for call in run["commandCalls"]))
+
+    def test_round_stops_on_invalid_correction_implementer_without_spending_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            issue = self.write_issue(root, "implementer-protocol#01", "ready-for-agent")
+            roadmap = self.write_roadmap(root)
+            before_issue = issue.read_bytes()
+            before_roadmap = roadmap.read_bytes()
+
+            run = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{
+                        "ref": "implementer-protocol#01",
+                        "path": str(issue.relative_to(root)),
+                        "title": "Implementer protocol failure",
+                        "specPath": ".scratch/implementer-protocol/spec.md",
+                    }],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/implementer-protocol",
+                    "baseRef": "HEAD",
+                    "isolate": False,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "structuredOutput": False,
+                    "commandMode": "real",
+                    "criticRawResults": [{
+                        "complete": False,
+                        "criteria": self.critic_evidence(root, issue),
+                        "gatesVerdict": "fail",
+                        "gateFailures": ["the gate is red"],
+                        "refutations": ["criterion needs a correction"],
+                        "requiredFixes": ["make the criterion pass"],
+                        "decisionsForOperator": [],
+                    }],
+                    "implementerRawResults": [
+                        {
+                            "worktree": root.as_posix(),
+                            "branch": "gantry/implementer-protocol",
+                            "commits": ["initial implementation"],
+                            "summary": "initial implementation completed",
+                            "testsAdded": [],
+                            "gatesResult": "verdict: pass",
+                            "decisions": [],
+                            "blockers": [],
+                        },
+                        {"worktree": root.as_posix()},
+                        {"worktree": root.as_posix()},
+                    ],
+                },
+            )
+
+            delivery = run["result"]["results"][0]
+            self.assertEqual("implementer_failed", delivery["outcome"])
+            self.assertEqual(0, delivery["corrections"])
+            self.assertEqual(before_issue, issue.read_bytes())
+            self.assertEqual(before_roadmap, roadmap.read_bytes())
+            labels = [call["label"] for call in run["calls"]]
+            self.assertEqual(
+                [
+                    "implement:implementer-protocol#01",
+                    "review:implementer-protocol#01",
+                    "critic:implementer-protocol#01#1",
+                    "implement:implementer-protocol#01",
+                    "implement:implementer-protocol#01:retry",
+                ],
+                labels,
+            )
+            self.assertFalse(any(label.startswith("critic:implementer-protocol#01#2") for label in labels))
+            self.assertFalse(any('roadmap.py" done' in call["command"] for call in run["commandCalls"]))
+
+    def test_plan_reports_protocol_failure_instead_of_awaiting_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repo(root)
+            self.write_roadmap(root)
+            base_args = {
+                "target": {"kind": "spec", "slug": "planned", "specPath": str(root / ".scratch" / "planned" / "spec.md")},
+                "models": {"plan": "plan", "critic": "critic"},
+                "skillDir": str(SKILL_DIR),
+                "repoRoot": str(root),
+                "policy": {"git": {"target": "main", "prefix": "gantry/"}},
+                "paths": {
+                    "issueDir": str(root / ".scratch" / "planned" / "issues"),
+                    "specPath": str(root / ".scratch" / "planned" / "spec.md"),
+                    "exemplarIssue": str(root / "docs" / "agents" / "issue-tracker.md"),
+                    "decisions": str(root / "docs" / "adr"),
+                    "issueTracker": str(root / "docs" / "agents" / "issue-tracker.md"),
+                    "context": str(root / "CONTEXT.md"),
+                    "adrs": str(root / "docs" / "adr"),
+                },
+                "date": "2026-09-13",
+                "structuredOutput": False,
+                "commandMode": "real",
+            }
+            cases = {
+                "planner": {"plannerRawResults": [{}, {}]},
+                "plan-critic": {"planCriticRawResults": [{}, {}]},
+            }
+            for role, raw_results in cases.items():
+                with self.subTest(role=role):
+                    run = self.run_workflow("plan-workflow.md", {**base_args, **raw_results})
+                    result = run["result"]
+                    self.assertFalse(result["awaitingOperatorApproval"])
+                    self.assertFalse(result["approved"])
+                    self.assertEqual(role, result["protocolFailure"]["role"])
+                    self.assertFalse(any("roadmap.py" in call["command"] for call in run["commandCalls"]))
 
     def test_round_stops_without_state_change_when_integration_gate_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
