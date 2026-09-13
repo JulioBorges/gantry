@@ -44,34 +44,62 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 Numbers are the `Map:` line of each `spec.md` (`(spec NN)`), so the generated tables sort the same way.
 
-| # | Spec | Status | Depends on | Delivers |
-|---|---|---|---|---|
-| 01 | `gantry-migration` | **approved — slicing pending** | — | `asdlc` becomes the three skills; repository policy; `spec.py`, `budget.py`, `result.py`, `runlog.py`, `guard.py`, `cleanup.py`, `dashboard.py`; differential `gates.py`; Requirement Critic and Learner phases; draft run PR; capability files; `fixture/`; reference tier proven on Claude Code |
-| 02 | `opencode-tier` | planned next | 01 | supported tier: OpenCode plugin wiring for `guard.py`, per-role agents, `result.py` on the critical path, sequential or parallel rounds, fixture run recorded |
-| 03 | `guard-hooks-2` | idea | 01 | second wave of guard invariants: test-skip patterns in the diff at `Stop`, scope guard (edits outside the issue's declared paths → ask), compaction-per-phase signal fed back into the budget default |
-| 04 | `gate-presets` | idea | 01 | example policy snippets (not adapters) for eslint, ruff, dependency-cruiser and import-linter; a second fixture in TypeScript |
-| 05 | `lessons-lifecycle` | idea | 01, 03 | an accepted lesson carries a reference (`file:symbol` or command) and is retired when it stops resolving; a counter of refutations it prevented |
-| 06 | `installation` | idea | 02 | copy or symlink installer for repository and user scope, version pinning, pack version in the run log, outdated-pack notice in the run report |
-| 07 | `first-adoption` | idea | 02, 04 | `gantry-setup` on a real external repository, heading map for `to-spec`-style specs, every friction captured as a lesson candidate about setup itself |
-| 08 | `codex-tier` | idea, waiting on Codex | 01 | compatible tier: `hooks.json`, hand-driven chain, detection of per-role model support — starts when Codex's subagent model selection is stable again |
-| 09 | `run-history` | idea | 01 | read-only per-run page in the dashboard (phase timeline, corrections, refutations) and comparison of runs over the same scope |
-| 10 | `windows-validation` | idea, waiting on a machine | 01, 06 | fixture run on Windows (paths, symlinks, hooks); support declared only after the run is recorded |
+Two different things are recorded per spec, and the roadmap keeps them apart: **Blocked by** is structural — the
+spec cannot be sliced or implemented before those are done, because it builds on files they create. **Ordered
+after** is a preference — the spec is more valuable, or its shape is clearer, once those have run. Only *Blocked
+by* constrains the frontier; *Ordered after* is what the intended order below is built from.
 
-Dependencies, as a graph (left must be done before right):
+| # | Spec | Status | Blocked by | Ordered after | Touches | Delivers |
+|---|---|---|---|---|---|---|
+| 01 | `gantry-migration` | **approved — slicing pending** | — | — | everything | `asdlc` becomes the three skills; repository policy; `spec.py`, `budget.py`, `result.py`, `runlog.py`, `guard.py`, `cleanup.py`, `dashboard.py`; differential `gates.py`; Requirement Critic and Learner phases; draft run PR; capability files; `fixture/`; reference tier proven on Claude Code |
+| 02 | `opencode-tier` | planned next | 01 | — | `hooks/opencode.*`, `capabilities/opencode.json`, `gantry-setup` (harness detection), `SKILL.md` harness notes, `fixture/README.md` | supported tier: OpenCode plugin wiring for `guard.py`, per-role agents, `result.py` on the critical path, sequential or parallel rounds, fixture run recorded |
+| 03 | `guard-hooks-2` | idea | 01 | 02 (one more harness to wire the new rules into) | `scripts/guard.py`, `scripts/budget.py`, `hooks/*`, round-workflow prompts | second wave of guard invariants: test-skip patterns in the diff at `Stop`, scope guard (edits outside the issue's declared paths → ask), compaction-per-phase signal fed back into the budget default |
+| 04 | `gate-presets` | idea | 01 | — | `templates/policy-examples/`, `gates.py` mapping edge cases, a second fixture (`fixture-ts/`) | example policy snippets (not adapters) for eslint, ruff, dependency-cruiser and import-linter; a second fixture in TypeScript |
+| 05 | `lessons-lifecycle` | idea | 01 | 02, 03, 04 (needs real run logs from a few runs) | round-workflow Learner prompt, `scripts/runlog.py` queries, `gantry-setup` (accepting a lesson) | an accepted lesson carries a reference (`file:symbol` or command) and is retired when it stops resolving; a counter of refutations it prevented |
+| 06 | `installation` | idea | 01 | 02 (installer wires two harnesses, not one) | new `install.sh` or `gantry-install`, `scripts/runlog.py` (pack version), run report | copy or symlink installer for repository and user scope, version pinning, pack version in the run log, outdated-pack notice in the run report |
+| 07 | `first-adoption` | idea | 01 | 04, 06 (real linters and a real install) | `gantry-setup`, `templates/headingMap` presets, `spec.py` | `gantry-setup` on a real external repository, heading map for `to-spec`-style specs, every friction captured as a lesson candidate about setup itself |
+| 08 | `codex-tier` | idea, waiting on Codex | 01 | external: Codex subagent model selection stable | `hooks/codex.hooks.json`, `capabilities/codex.json`, `SKILL.md` harness notes | compatible tier: `hooks.json`, hand-driven chain, detection of per-role model support |
+| 09 | `run-history` | idea | 01 | 02 (more than one run to compare) | `scripts/dashboard.py`, dashboard static assets, `scripts/runlog.py` queries | read-only per-run page in the dashboard (phase timeline, corrections, refutations) and comparison of runs over the same scope |
+| 10 | `windows-validation` | idea, waiting on a machine | 06 | external: a Windows machine | `install.sh`, `guard.py` path handling, `fixture/README.md` | fixture run on Windows (paths, symlinks, hooks); support declared only after the run is recorded |
 
-```
-01 gantry-migration ──┬── 02 opencode-tier ──┬── 06 installation ── 10 windows-validation
-                      │                      └── 07 first-adoption ◄── 04 gate-presets
-                      ├── 03 guard-hooks-2 ── 05 lessons-lifecycle
-                      ├── 04 gate-presets
-                      ├── 08 codex-tier
-                      └── 09 run-history
-```
+### Spec waves (structural)
 
-02, 03, 04, 08 and 09 are independent of each other once 01 is done. The intended order is 02 → 03 → 04 →
-05 → 06 → 07, with 08, 09 and 10 slotted in when their external condition holds. Specs 02–10 are ideas until
-their `spec.md` exists; the migration will change the shape of at least 03 and 05, so they are written after
-a few real run logs exist, not before.
+Computed from *Blocked by* only, the same way issue waves are computed from `## Blocked by`:
+
+| Wave | Specs | Meaning |
+|---|---|---|
+| A | 01 | everything else builds on the migration |
+| B | 02, 03, 04, 05, 06, 07, 08, 09 | unblocked the moment 01 is done; the order among them is preference, not dependency |
+| C | 10 | needs the installer from 06 (and a machine) |
+
+### Intended order (one spec at a time)
+
+The operator plans and executes one spec at a time. This is the order, with the reason each one sits where it does:
+
+1. **01 `gantry-migration`** — the pack itself. Nothing else can start.
+2. **02 `opencode-tier`** — proves harness neutrality with the second harness the operator actually uses; every later spec that touches hooks or setup then has two harnesses to satisfy instead of one.
+3. **04 `gate-presets`** — cheap, independent of 02, and it makes the differential gate usable on real stacks before an external repository is touched.
+4. **03 `guard-hooks-2`** — written after the first real run logs exist (from 01, 02 and 04), because the compaction signal and the scope guard are calibrated from them, not guessed.
+5. **06 `installation`** — with two harnesses and presets in place, installing into another repository is worth automating.
+6. **07 `first-adoption`** — the first external repository; the test no fixture replaces. Uses 04 (real linters) and 06 (real install).
+7. **05 `lessons-lifecycle`** — after 07, because the first external adoption is where lesson candidates start to accumulate and the retirement rule can be judged against real ones.
+8. **09 `run-history`** — once there are enough runs across two repositories for a history page to be worth reading.
+9. **08 `codex-tier`** — slotted in as soon as Codex's per-role model selection is stable again; it can jump ahead of 05–09 if that happens early.
+10. **10 `windows-validation`** — when a Windows machine exists; never announced before the fixture run is recorded.
+
+### Parallel candidates
+
+If two specs are ever run at once (two worktrees, two runs), these pairs touch disjoint files and integrate
+without conflict: **02 ∥ 04**, **02 ∥ 09**, **04 ∥ 09**, **04 ∥ 06**. These pairs conflict and are run one after
+the other: 02 and 03 (both edit `guard.py` wiring), 03 and 05 (both edit round-workflow prompts), 06 and 10 (10
+verifies what 06 builds). 08 conflicts with 02 and 03 on `SKILL.md` harness notes.
+
+### Status transitions of a spec
+
+*idea* (a row here, no file) → *planned* (`spec.md` exists and passes the structural check) → *approved* (the
+operator approved its slicing; issues are `ready-for-agent`) → *done* (every issue done; `roadmap.py check`
+clean). Specs 02–10 are ideas until their `spec.md` exists; the migration will change the shape of at least 03
+and 05, so they are written after a few real run logs exist, not before.
 
 ## Where work can start
 
