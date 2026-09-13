@@ -66,6 +66,13 @@ trust Issue fields carried in its input. Then, and only then, the orchestrator c
 and commits the resulting authoritative projection. Refuted, failed, parked and externally blocked Issues
 remain unticked.
 
+When the correction ceiling is spent without acceptance, the workflow records `issue.blocked` in the Run
+log and preserves the worktree, but it never writes to the Issue file: the Issue keeps its authoritative
+`Status: ready-for-agent` so `frontier.py` still reports it as workable and a fresh Run (with or without
+continuation) can pick it up. "Blocked" here names a Run-log fact about this attempt, not an Issue-file
+projection — status authority stays in Issue files, per this Issue's contract, and only `roadmap.py done`
+(after Critic acceptance) ever changes an Issue's `Status:` line.
+
 ## Executable Claude Code Workflow
 
 This Workflow script is the executable chain. It creates one Implementer chain per Issue; `pipeline`

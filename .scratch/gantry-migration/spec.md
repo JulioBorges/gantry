@@ -166,6 +166,13 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Documented the explicit derivation of a resumed Run's `correctionsSpent` (count of prior
+  `refutation` events for the matching Issue in its own Run log; `runlog.py inflight` never reports it) and
+  clarified that a resumed `branch` is optional because `round-workflow.md` derives and verifies it itself;
+  documented that a ceiling-spent, refuted Issue keeps its authoritative `Status: ready-for-agent` and is
+  only recorded as blocked in the Run log, so `frontier.py` still offers it; added lifecycle tests for the
+  derived-resume path, the no-hooks protected-rules-in-prompts contract, and the still-workable refuted
+  Issue.
 - 2026-09-13 — Wired the canonical `SKILL.md` preflight and `round-workflow.md` execution to the Run log: `run.started`/`run.resumed` open a recorded Run, every phase, subagent start/stop, review finding, refutation, Issue outcome, policy change and completion or cancellation appends its event, a rerun offers continuation of an in-flight Issue in its preserved worktree with spent correction attempts retained, and Issue `Status:` and `roadmap.py` remain the only authority for readiness and completion.
 - 2026-09-13 — Added an explicit, read-only cleanup plan that removes only done Issue branches and worktrees already merged into the Run branch after operator authorization.
 - 2026-09-13 — Added effective-template Spec structural validation before planning, including mapped headings, required-section order, placeholder and Gherkin scenario checks.

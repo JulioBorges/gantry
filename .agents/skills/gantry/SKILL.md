@@ -39,14 +39,23 @@ Every script provides `--help`, and data-producing paths support `--json`.
   Preflight also resolves `unitId` (`runlog.py unit-id --cwd <repoRoot> --json`) and a fresh `runId`, then
   queries `runlog.py inflight <unitId> --json`. Every match names an Issue still `ready-for-agent`, its
   phase and its preserved worktree; preflight offers the operator continuation there before doing anything
-  else. Only explicit acceptance carries that match forward as `args.priorRun` (`run`, `worktree`, `branch`,
-  `issue`, `correctionsSpent`, `policyHash` from `runlog.py inflight`) into `reference/round-workflow.md`,
-  which appends `run.resumed` naming the prior Run and worktree instead of starting a fresh worktree, and
-  resumes the spent correction count instead of resetting it. When the prior Run's `policyHash` differs
-  from the effective policy resolved for this Run, `reference/round-workflow.md` appends `policy.changed`
-  with the new hash so the drift is recorded before any Issue work resumes. The Run log is read only to
-  offer that continuation; it never decides readiness or completion — `frontier.py`, Issue `Status:`
-  lines and `roadmap.py` do.
+  else. `runlog.py inflight` reports only `run`, `issue`, `phase`, `worktree`, `repositoryRoot`,
+  `policyHash`, `tier` and `staleAfterSeconds` — it does not report `correctionsSpent` or `branch`, so
+  preflight derives them before building `args.priorRun`: read the match's own Run log
+  (`~/.gantry/state/<unitId>/runs/<match.run>.jsonl`, or `--state-root` when overridden) and set
+  `correctionsSpent` to the count of `refutation` events whose `issue` equals `match.issue` (or, when the
+  latest event for that Issue is a `phase.started` for a correction attempt, `data.attempt - 1`).
+  `branch` is optional: when omitted, `reference/round-workflow.md` derives it itself from
+  `common.issue_branch` and verifies it with `git branch --show-current` in the preserved worktree
+  (see `implementationLocation`). Only explicit acceptance carries the derived match forward as
+  `args.priorRun` (`run`, `worktree`, `issue`, `correctionsSpent`, `policyHash`, and `branch` when known)
+  into `reference/round-workflow.md`, which appends `run.resumed` naming the prior Run and worktree
+  instead of starting a fresh worktree, and resumes the spent correction count instead of resetting it.
+  When the prior Run's `policyHash` differs from the effective policy resolved for this Run,
+  `reference/round-workflow.md` appends `policy.changed` with the new hash so the drift is recorded
+  before any Issue work resumes. The Run log is read only to offer that continuation and to derive
+  `correctionsSpent`; it never decides readiness or completion — `frontier.py`, Issue `Status:` lines
+  and `roadmap.py` do.
 - `reference/round-workflow.md` appends every recorded-Run lifecycle event through `runlog.py append
   <unitId> <runId>` when the caller supplies both: `run.started` opens the Run (with the repository root,
   a policy hash, the harness tier and the effective `staleAfterSeconds` in `data`), then `round.started`,
@@ -55,9 +64,11 @@ Every script provides `--help`, and data-producing paths support `--json`.
   `review.finding` after the Reviewer returns, `refutation` on every non-accepted Critic verdict,
   `issue.blocked` when the correction ceiling is spent without acceptance, `issue.done` on successful
   integration, `policy.changed` when a resumed Run's policy hash differs from the prior Run's, `run.cancelled`
-  on the first red post-merge gate and `round.finished` / `run.finished` at the end. Omitting `runId` or
-  `unitId` disables recording entirely and leaves the round behaviorally identical, so a harness with no
-  resolved Run log keeps working.
+  on the first red post-merge gate and `round.finished` / `run.finished` at the end. `issue.blocked` records
+  only a Run-log fact: the Issue's `Status:` line stays `ready-for-agent` so `frontier.py` keeps offering it,
+  and only `roadmap.py done` after Critic acceptance ever changes an Issue's authoritative status. Omitting
+  `runId` or `unitId` disables recording entirely and leaves the round behaviorally identical, so a harness
+  with no resolved Run log keeps working.
 - Use `frontier.py --scope <scope> --json` as the only authority for dependency rounds. Exit 1 for a
   cyclic or dangling blocker graph. Parked `draft`, `blocked`, and `needs-operator` Issues are reported
   and skipped.
