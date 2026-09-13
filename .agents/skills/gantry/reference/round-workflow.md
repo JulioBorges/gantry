@@ -7,6 +7,24 @@ rendered `args.paths`.
 The host supplies its command runner as `runCommand(command, { cwd })`; integration cannot proceed
 without it.
 
+## Recorded Run lifecycle
+
+When the caller also supplies `args.runId` and `args.unitId` (the value of
+`runlog.py unit-id --cwd <repoRoot>`), this workflow appends every lifecycle event through
+`runlog.py append <unitId> <runId>`: `run.started` (or `run.resumed` when `args.priorRun` names the
+Run and worktree being continued) opens the recorded Run, then `round.started`, one `phase.started` /
+`phase.finished` pair per Implement, Review and Critic phase, one `subagent.started` / `subagent.stopped`
+pair per fresh agent carrying the validated role result, `review.finding` after the Reviewer returns,
+`refutation` on every non-accepted Critic verdict, `issue.blocked` when the correction ceiling is spent
+without acceptance, `issue.done` on successful integration, `run.cancelled` on the first red post-merge
+gate and `round.finished` / `run.finished` at the end. Preflight resolves `args.runId` and `args.unitId`
+once per Run and never rereads the log to decide readiness or completion — only `frontier.py`, Issue
+`Status:` lines and `roadmap.py` decide that. When `args.priorRun` names the Issue being continued
+(`args.priorRun.issue`), its preserved worktree, branch and `correctionsSpent` are reused instead of
+creating a new worktree or resetting the correction count, and the Issue keeps its authoritative Status
+until the Critic accepts it. Omitting `args.runId` or `args.unitId` disables all of the above and leaves
+the round behaviorally identical, so a harness without a resolved Run log keeps working.
+
 ```
 implement (TDD) → review (standards + Spec) → one review fix pass
 → adversarial Critic → correction implementer ⇄ Critic (at most two correction attempts)
@@ -71,6 +89,69 @@ const budget = Number.isInteger(requestedBudget) && requestedBudget >= 0
   ? Math.min(requestedBudget, 2)
   : 2
 
+const runLogEnabled = Boolean(A.runId && A.unitId)
+const stateRootFlag = A.stateRoot ? ` --state-root '${String(A.stateRoot).replaceAll("'", "'\\''")}'` : ''
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical)
+  if (value && typeof value === 'object') {
+    return Object.keys(value).sort().reduce((acc, key) => {
+      acc[key] = canonical(value[key])
+      return acc
+    }, {})
+  }
+  return value
+}
+
+function stableHash(value) {
+  const json = JSON.stringify(canonical(value))
+  let hash = 5381
+  for (let index = 0; index < json.length; index += 1) {
+    hash = ((hash * 33) ^ json.charCodeAt(index)) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0')
+}
+
+async function appendRunEvent(event, issueRef, phaseName, data) {
+  if (!runLogEnabled) return
+  const payload = {
+    ts: new Date().toISOString(),
+    run: A.runId,
+    event,
+    ...(issueRef ? { issue: issueRef } : {}),
+    ...(phaseName ? { phase: phaseName } : {}),
+    ...(data !== undefined ? { data } : {}),
+  }
+  await runCommand(
+    `python3 "${scripts}/runlog.py" append '${A.unitId}' '${A.runId}'${stateRootFlag}`,
+    { cwd: A.repoRoot, input: JSON.stringify(payload) },
+  )
+}
+
+function priorAssignment(issue) {
+  return A.priorRun && A.priorRun.issue === issue.ref ? A.priorRun : null
+}
+
+if (runLogEnabled) {
+  const runStartedData = {
+    repositoryRoot: A.repoRoot,
+    policyHash: stableHash(policy),
+    tier: A.tier || 'unknown',
+    staleAfterSeconds: (policy.dashboard && policy.dashboard.staleAfterSeconds) || 900,
+  }
+  await appendRunEvent('run.started', undefined, undefined, runStartedData)
+  if (A.priorRun && A.priorRun.run) {
+    await appendRunEvent('run.resumed', undefined, undefined, {
+      priorRun: A.priorRun.run,
+      worktree: A.priorRun.worktree,
+    })
+  }
+  if (A.priorPolicyHash && A.priorPolicyHash !== runStartedData.policyHash) {
+    await appendRunEvent('policy.changed', undefined, undefined, { policyHash: runStartedData.policyHash })
+  }
+  await appendRunEvent('round.started', undefined, undefined, { round: A.round })
+}
+
 async function roleSchema(role) {
   const result = await runWorkflowCommand(
     `python3 "${scripts}/result.py" --role "${role}" --schema`,
@@ -132,6 +213,15 @@ async function configuredIssueBranch(issue) {
 
 async function implementationLocation(issue, previous) {
   if (!A.isolate) return { worktree: A.repoRoot, branch: A.branch }
+  const prior = priorAssignment(issue)
+  if (!previous && prior && prior.worktree) {
+    const branch = prior.branch || await configuredIssueBranch(issue)
+    if (!branch) return null
+    const current = await runCommand('git branch --show-current', { cwd: prior.worktree })
+    return current && current.exitCode === 0 && current.stdout.trim() === branch
+      ? { worktree: prior.worktree, branch }
+      : null
+  }
   const branch = await configuredIssueBranch(issue)
   if (!branch) return null
   if (previous) {
@@ -262,7 +352,11 @@ async function implement(issue, feedback, previous) {
   const options = {
     label: `implement:${issue.ref}`, phase: 'Implement', model: A.models.implement, cwd: assigned.worktree,
   }
+  await appendRunEvent('phase.started', issue.ref, 'Implement', { worktree: assigned.worktree })
+  await appendRunEvent('subagent.started', issue.ref, 'Implement', { role: 'implementer' })
   const result = await requestRole('implementer', implementPrompt(issue, feedback, assigned), options)
+  await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', result })
+  await appendRunEvent('phase.finished', issue.ref, 'Implement', { worktree: assigned.worktree })
   return result && result.worktree === assigned.worktree && result.branch === assigned.branch ? result : null
 }
 
@@ -271,9 +365,18 @@ const results = await pipeline(
   issue => implement(issue, null, null),
   async (impl, issue) => {
     if (!impl) return null
+    await appendRunEvent('phase.started', issue.ref, 'Review', {})
+    await appendRunEvent('subagent.started', issue.ref, 'Review', { role: 'reviewer' })
     const review = await requestRole('reviewer', reviewPrompt(issue, impl), {
       label: `review:${issue.ref}`, phase: 'Review', model: A.models.review, cwd: location(impl),
     })
+    await appendRunEvent('subagent.stopped', issue.ref, 'Review', { role: 'reviewer', result: review })
+    await appendRunEvent('phase.finished', issue.ref, 'Review', {})
+    if (review) {
+      await appendRunEvent('review.finding', issue.ref, 'Review', {
+        blocking: review.blocking.length, nonBlocking: review.nonBlocking.length,
+      })
+    }
     if (!review) return { impl, reviewerFailed: true }
     const reviewed = review && review.blocking.length
       ? await implement(issue, { kind: 'review', items: review.blocking }, impl)
@@ -298,12 +401,17 @@ const results = await pipeline(
     if (state.reviewerFailed) return { ref: issue.ref, outcome: 'reviewer_failed', worktree: state.impl.worktree, branch: state.impl.branch }
     let impl = state.impl
     let verdict = null
-    let corrections = 0
+    const prior = priorAssignment(issue)
+    let corrections = prior && Number.isInteger(prior.correctionsSpent) ? prior.correctionsSpent : 0
     let accepted = false
     for (let attempt = 1; ; attempt += 1) {
+      await appendRunEvent('phase.started', issue.ref, 'Critic', { attempt })
+      await appendRunEvent('subagent.started', issue.ref, 'Critic', { role: 'critic', attempt })
       verdict = await requestRole('critic', criticPrompt(issue, impl, state.review, attempt), {
         label: `critic:${issue.ref}#${attempt}`, phase: 'Critic', model: A.models.critic, cwd: location(impl),
       })
+      await appendRunEvent('subagent.stopped', issue.ref, 'Critic', { role: 'critic', attempt, result: verdict })
+      await appendRunEvent('phase.finished', issue.ref, 'Critic', { attempt })
       if (!verdict) {
         return {
           ref: issue.ref, issuePath: issue.path, outcome: 'critic_failed',
@@ -313,6 +421,11 @@ const results = await pipeline(
         }
       }
       accepted = await criticAccepted(verdict, issue)
+      if (!accepted) {
+        await appendRunEvent('refutation', issue.ref, 'Critic', {
+          attempt, refutations: verdict.refutations || [],
+        })
+      }
       if (accepted || corrections >= budget) break
       const corrected = await implement(issue, { kind: 'critic', items: verdict.requiredFixes }, impl)
       if (!corrected) {
@@ -326,6 +439,11 @@ const results = await pipeline(
       }
       corrections += 1
       impl = corrected
+    }
+    if (!accepted) {
+      await appendRunEvent('issue.blocked', issue.ref, 'Critic', {
+        worktree: impl && impl.worktree, corrections,
+      })
     }
     return {
       ref: issue.ref,
@@ -341,6 +459,7 @@ const results = await pipeline(
 
 const deliveries = results.filter(Boolean)
 let integrationStopped = false
+let cancelReason = null
 for (const delivery of deliveries) {
   if (delivery.outcome !== 'accepted') continue
   if (integrationStopped) {
@@ -351,6 +470,7 @@ for (const delivery of deliveries) {
     if (!delivery.branch) {
       delivery.outcome = 'integration_failed'
       integrationStopped = true
+      cancelReason = { issue: delivery.ref, reason: 'integration_branch_missing' }
       continue
     }
     try {
@@ -358,12 +478,14 @@ for (const delivery of deliveries) {
     } catch {
       delivery.outcome = 'integration_failed'
       integrationStopped = true
+      cancelReason = { issue: delivery.ref, reason: 'integration_merge_failed' }
       continue
     }
   }
   if (!await integrationGatePasses()) {
     delivery.outcome = 'integration_failed'
     integrationStopped = true
+    cancelReason = { issue: delivery.ref, reason: 'integration_gate_failed' }
     continue
   }
   try {
@@ -371,10 +493,20 @@ for (const delivery of deliveries) {
     await runWorkflowCommand(`git add -- ROADMAP.md "${delivery.issuePath}"`)
     await runWorkflowCommand(`git commit -m "gantry: complete ${delivery.ref}"`)
     delivery.outcome = 'done'
+    await appendRunEvent('issue.done', delivery.ref, undefined, { worktree: delivery.worktree })
   } catch {
     delivery.outcome = 'integration_failed'
     integrationStopped = true
+    cancelReason = { issue: delivery.ref, reason: 'integration_commit_failed' }
   }
+}
+await appendRunEvent('round.finished', undefined, undefined, { round: A.round })
+if (integrationStopped) {
+  await appendRunEvent('run.cancelled', cancelReason && cancelReason.issue, undefined, {
+    round: A.round, reason: cancelReason && cancelReason.reason,
+  })
+} else {
+  await appendRunEvent('run.finished', undefined, undefined, { round: A.round })
 }
 return { round: A.round, date: A.date, results: deliveries }
 ```

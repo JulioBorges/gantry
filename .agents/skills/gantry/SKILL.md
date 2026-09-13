@@ -36,6 +36,24 @@ Every script provides `--help`, and data-producing paths support `--json`.
 
 - Preflight refuses a dirty worktree, offers a dedicated Run worktree before creating anything, resolves
   the effective policy, checks `roadmap.py check`, and asks models for Plan, Implement, Review and Critic.
+  Preflight also resolves `unitId` (`runlog.py unit-id --cwd <repoRoot> --json`) and a fresh `runId`, then
+  queries `runlog.py inflight <unitId> --json`. Every match names an Issue still `ready-for-agent`, its
+  phase and its preserved worktree; preflight offers the operator continuation there before doing anything
+  else. Only explicit acceptance carries that match forward as `args.priorRun` (`run`, `worktree`, `branch`,
+  `issue`, `correctionsSpent`) into `reference/round-workflow.md`, which appends `run.resumed` naming the
+  prior Run and worktree instead of starting a fresh worktree, and resumes the spent correction count
+  instead of resetting it. The Run log is read only to offer that continuation; it never decides readiness
+  or completion — `frontier.py`, Issue `Status:` lines and `roadmap.py` do.
+- `reference/round-workflow.md` appends every recorded-Run lifecycle event through `runlog.py append
+  <unitId> <runId>` when the caller supplies both: `run.started` opens the Run (with the repository root,
+  a policy hash, the harness tier and the effective `staleAfterSeconds` in `data`), then `round.started`,
+  one `phase.started` / `phase.finished` pair per Implement, Review and Critic phase, one
+  `subagent.started` / `subagent.stopped` pair per fresh agent carrying its validated role result,
+  `review.finding` after the Reviewer returns, `refutation` on every non-accepted Critic verdict,
+  `issue.blocked` when the correction ceiling is spent without acceptance, `issue.done` on successful
+  integration, `run.cancelled` on the first red post-merge gate and `round.finished` / `run.finished` at
+  the end. Omitting `runId` or `unitId` disables recording entirely and leaves the round behaviorally
+  identical, so a harness with no resolved Run log keeps working.
 - Use `frontier.py --scope <scope> --json` as the only authority for dependency rounds. Exit 1 for a
   cyclic or dangling blocker graph. Parked `draft`, `blocked`, and `needs-operator` Issues are reported
   and skipped.
