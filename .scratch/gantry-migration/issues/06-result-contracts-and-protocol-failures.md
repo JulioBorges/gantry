@@ -1,7 +1,7 @@
 # Result contracts and protocol failures
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-migration#06`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -16,10 +16,10 @@ Add the six role schemas under `.agents/skills/gantry/schemas/` and `.agents/ski
 
 ## Acceptance criteria
 
-- [ ] `printf '%s' '{"complete":false}' | python3 .agents/skills/gantry/scripts/result.py --role critic --json` exits 1 and reports `criteria` as missing, while a valid critic result exits 0; `--help` works and a 200 KB result validates in under one second.
-- [ ] The planner, plan-critic, implementer, reviewer, critic, and learner schema files each use only the supported subset and enforce the workflow result fields their roles consume, including exact critic gate verdicts.
-- [ ] A workflow test proves an invalid critic result is re-requested once, then records `critic_failed`, leaves the Issue status and checkboxes unchanged, and does not consume or raise the correction budget.
-- [ ] The Spec Changelog receives an English entry in the same merge, and `result.py` passes the standard-library-only import test and its runnable test command.
+- [x] `printf '%s' '{"complete":false}' | python3 .agents/skills/gantry/scripts/result.py --role critic --json` exits 1 and reports `criteria` as missing, while a valid critic result exits 0; `--help` works and a 200 KB result validates in under one second.
+- [x] The planner, plan-critic, implementer, reviewer, critic, and learner schema files each use only the supported subset and enforce the workflow result fields their roles consume, including exact critic gate verdicts.
+- [x] A workflow test proves an invalid critic result is re-requested once, then records `critic_failed`, leaves the Issue status and checkboxes unchanged, and does not consume or raise the correction budget.
+- [x] The Spec Changelog receives an English entry in the same merge, and `result.py` passes the standard-library-only import test and its runnable test command.
 
 ## Blocked by
 
