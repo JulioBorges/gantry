@@ -367,7 +367,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
             issue = self.write_issue(root, "sample#01", "ready-for-agent")
             self.write_roadmap(root)
 
-            for script in ("common.py", "frontier.py", "acceptance.py", "budget.py", "gates.py", "roadmap.py", "result.py"):
+            for script in ("common.py", "frontier.py", "acceptance.py", "budget.py", "cleanup.py", "gates.py", "roadmap.py", "result.py"):
                 result = self.run_script(root, script, "--help")
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertIn("usage:", result.stdout.lower())
@@ -1288,7 +1288,7 @@ Slice: `legacy#07`
             "typing",
         }
         self.assertEqual(
-            {"acceptance.py", "budget.py", "common.py", "frontier.py", "gates.py", "result.py", "roadmap.py"},
+            {"acceptance.py", "budget.py", "cleanup.py", "common.py", "frontier.py", "gates.py", "result.py", "roadmap.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         for script in sorted(SCRIPTS.glob("*.py")):

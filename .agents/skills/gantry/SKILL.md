@@ -28,9 +28,9 @@ Before a Run, resolve these values once and pass them as `args` to every referen
 4. `paths` comes from `common.resolve_workflow_paths(repoRoot, scopeSlug)`. Prompts receive paths, not
    repository-specific literals.
 
-Run the five standard-library scripts as `python3 <skillDir>/scripts/<script>.py`. `common.py` provides
+Run the standard-library workflow scripts as `python3 <skillDir>/scripts/<script>.py`. `common.py` provides
 the shared Markdown parser and policy resolution; its `--json` path prints the resolved portable runtime.
-All five scripts provide `--help`, and their data-producing paths support `--json`.
+Every script provides `--help`, and data-producing paths support `--json`.
 
 ## Workflow rules
 
@@ -49,6 +49,9 @@ All five scripts provide `--help`, and their data-producing paths support `--jso
   serially, run gates after every merge, and stop on a failed integration gate.
 - Only after Critic acceptance, green gates and a clean worktree may the orchestrator run
   `roadmap.py done <ref>`. Never hand-edit Issue status, criteria checkboxes or the roadmap.
+- At the end of a Run, print `python3 <skillDir>/scripts/cleanup.py --plan --json` in the report. It is
+  a read-only plan for the operator. Execute `cleanup.py --yes` only after explicit Cleanup Authorization;
+  the workflow never executes `cleanup.py --yes` automatically.
 
 ## Harness-neutral execution
 
