@@ -11,8 +11,9 @@ log. Any payload shape it does not recognise degrades to "record what is safely
 recordable, grant no authority" -- it never denies without both a rule and a refused
 path, and it never manufactures a false completion. Empty, undecodable or non-object
 stdin is recorded as a `hook.degraded` event with `data.missing == ["payload"]`
-whenever a Run ID is resolvable from `--run-id` or `$GANTRY_RUN_ID` (never from the
-payload, since there is none to read); with no Run ID at all, nothing is recorded.
+whenever a Run ID is resolvable from `--run-id`, `$GANTRY_RUN_ID` or this worktree's
+current-Run marker (never from the payload, since there is none to read); with no Run ID
+at all, nothing is recorded.
 
 Per `docs/adr/0005-git-hooks-enforce-git-rules.md`, no-force-push and no-test-skip-commit
 are enforced by the repository's own `pre-push`/`pre-commit` git hooks
@@ -295,12 +296,25 @@ def decide(payload: dict, cwd: Path) -> Decision:
     return Decision(True)
 
 
-def resolve_run_id(payload: dict, override: str | None) -> str | None:
+def resolve_run(payload: dict, override: str | None, state_root_override: str | None, cwd: Path) -> tuple[str | None, str | None]:
+    """Resolve (Run ID, state root) for recording: explicit override, environment, payload, marker.
+
+    The marker -- `runlog.read_marker`, kept in the worktree's own git directory by the round
+    workflow -- is the same fallback the git hooks use, so a denial inside a Run is recorded
+    even when the harness passes no `--run-id`, exports no `GANTRY_RUN_ID` and sends a payload
+    with no session ID.
+    """
+    root = state_root_override or os.environ.get("GANTRY_STATE_ROOT") or None
     candidate = override or os.environ.get("GANTRY_RUN_ID") or _first(payload, ("session_id", "sessionID", "sessionId"))
-    if not candidate:
-        return None
-    candidate = str(candidate)
-    return candidate if runlog.RUN_ID_RE.fullmatch(candidate) else None
+    if candidate and runlog.RUN_ID_RE.fullmatch(str(candidate)):
+        return str(candidate), root
+    marker = runlog.read_marker(cwd)
+    if not marker:
+        return None, root
+    marked_root = marker.get("stateRoot")
+    return marker["run"], root or (marked_root if isinstance(marked_root, str) else None)
+
+
 
 
 def record(cwd: Path, state_root: str | None, run_id: str, event: dict) -> None:
@@ -360,12 +374,12 @@ def degradation_fields(event: str, payload: dict) -> list[str]:
 
 
 def record_degradation(cwd: Path, args: argparse.Namespace, payload: dict, event: str, missing: list[str]) -> None:
-    run_id = resolve_run_id(payload, args.run_id)
+    run_id, root = resolve_run(payload, args.run_id, args.state_root, cwd)
     if not run_id:
         return
     record(
         cwd,
-        args.state_root,
+        root,
         run_id,
         {
             "ts": now_iso(),
@@ -384,11 +398,11 @@ def handle_decision_event(payload: dict, args: argparse.Namespace) -> Decision:
     decide_cwd = resolve_effective_cwd(payload, cwd)
     decision = decide(payload, decide_cwd)
     if not decision.allow:
-        run_id = resolve_run_id(payload, args.run_id)
+        run_id, root = resolve_run(payload, args.run_id, args.state_root, cwd)
         if run_id:
             record(
                 cwd,
-                args.state_root,
+                root,
                 run_id,
                 {
                     "ts": now_iso(),
@@ -402,7 +416,7 @@ def handle_decision_event(payload: dict, args: argparse.Namespace) -> Decision:
 
 def handle_subagent_event(payload: dict, args: argparse.Namespace, event: str) -> None:
     cwd = Path(args.cwd).resolve()
-    run_id = resolve_run_id(payload if isinstance(payload, dict) else {}, args.run_id)
+    run_id, root = resolve_run(payload if isinstance(payload, dict) else {}, args.run_id, args.state_root, cwd)
     if not run_id:
         return
     role = None
@@ -410,7 +424,7 @@ def handle_subagent_event(payload: dict, args: argparse.Namespace, event: str) -
         role = _first(payload, ("role", "subagent_type", "agent_type", "subagentType", "agentType", "description"))
     record(
         cwd,
-        args.state_root,
+        root,
         run_id,
         {
             "ts": now_iso(),
@@ -423,7 +437,7 @@ def handle_subagent_event(payload: dict, args: argparse.Namespace, event: str) -
 
 def handle_compaction_event(payload: dict, args: argparse.Namespace) -> None:
     cwd = Path(args.cwd).resolve()
-    run_id = resolve_run_id(payload if isinstance(payload, dict) else {}, args.run_id)
+    run_id, root = resolve_run(payload if isinstance(payload, dict) else {}, args.run_id, args.state_root, cwd)
     if not run_id:
         return
     source = None
@@ -431,7 +445,7 @@ def handle_compaction_event(payload: dict, args: argparse.Namespace) -> None:
         source = _first(payload, ("trigger", "reason", "source"))
     record(
         cwd,
-        args.state_root,
+        root,
         run_id,
         {
             "ts": now_iso(),
@@ -478,13 +492,11 @@ def main() -> int:
         return 0
 
     if payload is None:
-        # Empty, undecodable, or non-object stdin. A Run ID resolvable from --run-id or
-        # $GANTRY_RUN_ID (never from the payload, since there is none) still gets a
-        # hook.degraded event naming the missing payload; with no Run ID at all, nothing
-        # is recorded.
-        run_id = args.run_id or os.environ.get("GANTRY_RUN_ID")
-        if run_id:
-            record_degradation(cwd, args, {}, args.event, ["payload"])
+        # Empty, undecodable, or non-object stdin. A Run ID resolvable from --run-id,
+        # $GANTRY_RUN_ID or this worktree's current-Run marker (never from the payload,
+        # since there is none) still gets a hook.degraded event naming the missing payload;
+        # with no Run ID at all, nothing is recorded.
+        record_degradation(cwd, args, {}, args.event, ["payload"])
         return allow()
 
     missing = degradation_fields(args.event, payload)

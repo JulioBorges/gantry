@@ -866,6 +866,35 @@ class GuardHookTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
 
+    def test_denial_is_recorded_from_the_worktree_marker_without_a_run_id_or_session(self) -> None:
+        """The same guarantee the git hooks have: a marked worktree records its denials."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+            marked = self.run_runlog(root, "mark", run, "--cwd", str(root), "--state-root", str(state))
+            self.assertEqual(0, marked.returncode, marked.stderr)
+
+            environment = {key: value for key, value in os.environ.items() if not key.startswith("GANTRY_")}
+            denied = subprocess.run(
+                [sys.executable, str(GUARD), "PreToolUse"],
+                cwd=root,
+                input=json.dumps({"tool_name": "Edit", "tool_input": {"file_path": "ROADMAP.md", "old_string": "a", "new_string": "b"}}),
+                text=True,
+                capture_output=True,
+                check=False,
+                env=environment,
+            )
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("roadmap-protected", denied.stdout)
+
+            unit = self.unit_id(root)
+            events = [json.loads(line) for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()]
+            denials = [event for event in events if event["event"] == "hook.denied"]
+            self.assertEqual(1, len(denials))
+            self.assertEqual("roadmap-protected", denials[0]["data"]["rule"])
+
     # -- unknown / non-decision events never grant authority ----------------------------------
 
     def test_unknown_event_and_precompact_degrade_without_granting_authority(self) -> None:
