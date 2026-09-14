@@ -94,6 +94,45 @@ class GuardHookTests(unittest.TestCase):
             self.assertEqual(0, allowed.returncode)
             self.assertEqual("allow", allowed.stdout.strip())
 
+    def test_denies_editing_roadmap_case_insensitively(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            for variant in ("roadmap.md", "Roadmap.md"):
+                with self.subTest(variant=variant):
+                    edit_payload = {
+                        "session_id": "sess-1",
+                        "tool_name": "Edit",
+                        "tool_input": {
+                            "file_path": variant,
+                            "old_string": "- gantry-migration#09",
+                            "new_string": "- [x] gantry-migration#09",
+                        },
+                    }
+                    denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=edit_payload)
+                    self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+                    lines = [line for line in denied.stdout.splitlines() if line]
+                    self.assertEqual(1, len(lines))
+                    self.assertIn("roadmap-protected", lines[0])
+                    self.assertIn(variant, lines[0])
+
+                    write_payload = {
+                        "session_id": "sess-1",
+                        "tool_name": "Write",
+                        "tool_input": {"file_path": variant, "content": "# Roadmap\n"},
+                    }
+                    denied_write = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=write_payload)
+                    self.assertEqual(2, denied_write.returncode, denied_write.stdout + denied_write.stderr)
+                    self.assertIn("roadmap-protected", denied_write.stdout)
+
+            unit = self.unit_id(root)
+            events = [json.loads(line) for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()]
+            denials = [event for event in events if event["event"] == "hook.denied" and event["data"]["rule"] == "roadmap-protected"]
+            self.assertEqual(4, len(denials))
+
     def test_denies_editing_an_issue_status_line(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -795,6 +834,45 @@ class GuardHookTests(unittest.TestCase):
             result = self.run_guard(root, "PreToolUse", payload=payload)
             elapsed = time.monotonic() - start
             self.assertEqual(0, result.returncode)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
+    def test_answers_a_heredoc_shaped_one_megabyte_commit_in_under_200ms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            heredoc_body = "x" * (1024 * 1024)
+            command = f"git commit -F - <<'EOF'\n{heredoc_body}\nEOF"
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
+    def test_answers_a_one_megabyte_single_token_commit_message_in_under_200ms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            huge_token = "x" * (1024 * 1024)
+            command = f'git commit -m "{huge_token}"'
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
+    def test_answers_a_one_megabyte_git_add_command_in_under_200ms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            huge_token = "x" * (1024 * 1024)
+            command = f'git add . && git commit -m "{huge_token}"'
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
 
     # -- unknown / non-decision events never grant authority ----------------------------------

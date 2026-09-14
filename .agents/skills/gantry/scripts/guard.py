@@ -81,8 +81,32 @@ PUSH_RE = re.compile(r"\bgit\b[^&|;]*\bpush\b")
 FORCE_FLAG_RE = re.compile(r"(--force(-with-lease)?\b|(?:^|\s)-f\b)")
 FORCE_REFSPEC_RE = re.compile(r"(?:^|\s)\+\S")
 COMMIT_RE = re.compile(r"\bgit\b[^&|;]*\bcommit\b")
-COMMIT_SEGMENT_RE = re.compile(r"\bgit\b[^&|;]*\bcommit\b[^&|;]*")
-GIT_ADD_SEGMENT_RE = re.compile(r"\bgit\b[^&|;]*\badd\b[^&|;]*")
+# Segment matches exclude newlines so a heredoc body following `git commit -F - <<EOF`
+# is never pulled into the segment tokenised below -- a multi-megabyte heredoc payload
+# stays off the shlex.split() path entirely.
+COMMIT_SEGMENT_RE = re.compile(r"\bgit\b[^&|;\n]*\bcommit\b[^&|;\n]*")
+GIT_ADD_SEGMENT_RE = re.compile(r"\bgit\b[^&|;\n]*\badd\b[^&|;\n]*")
+# `-a`/`-A`/`--all` and `add`'s target/flag tokens always appear immediately around the
+# `commit`/`add` keyword, well before any (possibly huge) commit-message or heredoc-body
+# argument. Bounding what we hand to shlex.split() keeps tokenising O(1) regardless of
+# how large the surrounding command string is, without changing which flags are detected.
+SEGMENT_SCAN_LIMIT = 4096
+
+
+def _bounded_tokens(segment: str) -> list[str]:
+    """Tokenise the first `SEGMENT_SCAN_LIMIT` characters of `segment`.
+
+    Bounding the input to shlex.split() keeps this O(1) even when `segment` itself is
+    megabytes long (e.g. a single unbroken commit-message token), which a raw
+    shlex.split() over the full string would not be.
+    """
+    bounded = segment[:SEGMENT_SCAN_LIMIT]
+    try:
+        return shlex.split(bounded)
+    except ValueError:
+        return bounded.split()
+
+
 TEST_SKIP_PATTERNS = [
     re.compile(pattern)
     for pattern in (
@@ -301,10 +325,7 @@ def extract_git_add_targets(command: str) -> tuple[list[str], bool] | None:
     match = GIT_ADD_SEGMENT_RE.search(command)
     if not match:
         return None
-    try:
-        tokens = shlex.split(match.group(0))
-    except ValueError:
-        tokens = match.group(0).split()
+    tokens = _bounded_tokens(match.group(0))
     if "add" not in tokens:
         return None
     rest = tokens[tokens.index("add") + 1 :]
@@ -326,10 +347,7 @@ def commit_uses_all_flag(command: str) -> bool:
     match = COMMIT_SEGMENT_RE.search(command)
     if not match:
         return False
-    try:
-        tokens = shlex.split(match.group(0))
-    except ValueError:
-        tokens = match.group(0).split()
+    tokens = _bounded_tokens(match.group(0))
     for token in tokens:
         if token in ("-a", "-A", "--all"):
             return True
@@ -400,7 +418,7 @@ def decide(payload: dict, cwd: Path) -> Decision:
         if not path:
             return Decision(True)
         basename = Path(path).name
-        if basename == "ROADMAP.md":
+        if basename.lower() == "roadmap.md":
             return Decision(False, "roadmap-protected", path)
         if ISSUE_FILE_RE.match(basename):
             target = Path(path)
