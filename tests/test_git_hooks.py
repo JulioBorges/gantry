@@ -5,6 +5,7 @@ record hook.denied -- per docs/adr/0005-git-hooks-enforce-git-rules.md."""
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -79,6 +80,22 @@ class GitHookFixtureMixin:
         for substring in expected:
             self.assertIn(substring, stderr_lines[0])
 
+    def mark_run(self, root: Path, state: Path, run: str) -> None:
+        """Mark this worktree as executing `run`, the way the round workflow does before any agent works in it."""
+        result = subprocess.run(
+            [sys.executable, str(RUNLOG), "mark", run, "--cwd", str(root), "--state-root", str(state)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def env_without_gantry_variables(self) -> dict[str, str]:
+        """A child environment carrying no Run ID and no state root -- what a real `git` subprocess inherits."""
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GANTRY_")}
+        return env
+
     def denied_events(self, root: Path, state: Path, run: str) -> list[dict]:
         unit = self.unit_id(root)
         log_path = state / unit / "runs" / f"{run}.jsonl"
@@ -98,8 +115,6 @@ class PrePushHookTests(GitHookFixtureMixin, unittest.TestCase):
         return remote, local
 
     def push(self, local: Path, *args: str, env: dict[str, str] | None = None, check: bool = False) -> subprocess.CompletedProcess[str]:
-        import os
-
         full_env = dict(os.environ)
         if env:
             full_env.update(env)
@@ -184,6 +199,38 @@ class PrePushHookTests(GitHookFixtureMixin, unittest.TestCase):
             self.assertEqual("no-force-push", events[0]["data"]["rule"])
             self.assertIn("main", events[0]["data"]["path"])
 
+    def test_denial_is_recorded_without_the_caller_exporting_a_run_id(self) -> None:
+        """Recording is guaranteed, not best-effort: the hook resolves the Run from the worktree's marker."""
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            remote, local = self.make_remote_and_local(temp_path)
+            state = temp_path / "state"
+            run = self.seed_run(local, state)
+            self.mark_run(local, state, run)
+            env = self.env_without_gantry_variables()
+
+            self.commit(local, "a.txt", "base\n")
+            first = self.push(local, "origin", "HEAD:refs/heads/main", env=env)
+            self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+
+            (local / "a.txt").write_text("base\ndiverged\n", encoding="utf-8")
+            git("add", "a.txt", cwd=local)
+            git("commit", "--quiet", "--amend", "-m", "diverged", cwd=local)
+            denied = subprocess.run(
+                ["git", "push", "--force", "origin", "HEAD:refs/heads/main"],
+                cwd=local,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            self.assertNotEqual(0, denied.returncode, denied.stdout + denied.stderr)
+            self.assert_single_denial_line(denied, "no-force-push")
+
+            events = self.denied_events(local, state, run)
+            self.assertEqual(1, len(events))
+            self.assertEqual("no-force-push", events[0]["data"]["rule"])
+
 
 class PreCommitHookTests(GitHookFixtureMixin, unittest.TestCase):
     CLEAN_TEST = "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n"
@@ -262,13 +309,35 @@ class PreCommitHookTests(GitHookFixtureMixin, unittest.TestCase):
             self.commit(root, "app_test.py", self.CLEAN_TEST)
             (root / "app_test.py").write_text(self.SKIPPED_TEST, encoding="utf-8")
             git("add", "app_test.py", cwd=root)
-            import os
-
             env = dict(os.environ)
             env["GANTRY_RUN_ID"] = run
             env["GANTRY_STATE_ROOT"] = str(state)
             result = git("commit", "-m", "skip", cwd=root, check=False, env=env)
             self.assertNotEqual(0, result.returncode)
+
+            events = self.denied_events(root, state, run)
+            self.assertEqual(1, len(events))
+            self.assertEqual("no-test-skip-commit", events[0]["data"]["rule"])
+            self.assertEqual("app_test.py", events[0]["data"]["path"])
+
+    def test_denial_is_recorded_without_the_caller_exporting_a_run_id(self) -> None:
+        """Recording is guaranteed, not best-effort: the hook resolves the Run from the worktree's marker."""
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            root = temp_path / "repo"
+            root.mkdir()
+            self.init_repository(root)
+            state = temp_path / "state"
+            run = self.seed_run(root, state)
+            self.mark_run(root, state, run)
+            env = self.env_without_gantry_variables()
+
+            self.commit(root, "app_test.py", self.CLEAN_TEST)
+            (root / "app_test.py").write_text(self.SKIPPED_TEST, encoding="utf-8")
+            git("add", "app_test.py", cwd=root, env=env)
+            result = git("commit", "-m", "skip", cwd=root, check=False, env=env)
+            self.assertNotEqual(0, result.returncode)
+            self.assert_single_denial_line(result, "no-test-skip-commit", "app_test.py")
 
             events = self.denied_events(root, state, run)
             self.assertEqual(1, len(events))

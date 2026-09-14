@@ -22,7 +22,6 @@ temporary repositories where a test sets `core.hooksPath` directly.
 from __future__ import annotations
 
 import datetime
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -51,12 +50,18 @@ def is_fast_forward(remote_sha: str, local_sha: str) -> bool:
 
 
 def record_denied(cwd: Path, ref: str) -> None:
-    """Best-effort append of a `hook.denied` event; never changes the hook's decision."""
-    run_id = os.environ.get("GANTRY_RUN_ID")
-    if not run_id or not runlog.RUN_ID_RE.fullmatch(run_id):
+    """Append the `hook.denied` event for this denial; a logging failure never changes the decision.
+
+    The Run is resolved by `runlog.resolve_hook_run`: `GANTRY_RUN_ID` when the caller
+    exported it, otherwise this worktree's own current-Run marker, which the round workflow
+    writes before any agent works there. A denial inside a Run is therefore recorded whether
+    or not the shell that invoked `git` carried any Gantry environment.
+    """
+    run_id, state_root_value = runlog.resolve_hook_run(cwd)
+    if not run_id:
         return
     try:
-        root = runlog.state_root(os.environ.get("GANTRY_STATE_ROOT"))
+        root = runlog.state_root(state_root_value)
         unit = runlog.unit_id(cwd)
         log_path = runlog.run_log_path(root, unit, run_id)
         if not log_path.exists():
