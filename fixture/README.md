@@ -34,3 +34,31 @@ python3 fixture/tools/copy_fixture.py --mode approved  --skill-dir <canonical-ga
 Each destination is its own independent Git repository with one baseline commit,
 and a local Gantry-skill installation copied from `--skill-dir` and made
 pack-visible at `.claude/skills`, matching this repository's own convention.
+
+## Reference-Tier Proof
+
+The canonical pack was proven in Claude Code’s reference tier via isolated copies.
+
+**Unplanned Copy (Planning Approval Stop)**
+```
+python3 fixture/tools/copy_fixture.py --mode unplanned --skill-dir .agents/skills/gantry --dest /tmp/gantry-plan
+cd /tmp/gantry-plan && claude -p "gantry greeting"
+```
+*Observation*: Reached the planning-approval stop. Wrote Issue files with `Status: draft` and left `ROADMAP.md` unchanged. No Run-log was created since it stopped before rounds started (state isolated/empty).
+*Tier*: `reference`
+
+**Approved Copy (Round Execution to PR Offer)**
+```
+python3 fixture/tools/copy_fixture.py --mode approved --skill-dir .agents/skills/gantry --dest /tmp/gantry-rounds
+cd /tmp/gantry-rounds && claude -p "gantry greeting"
+```
+*Observation*: Completed rounds explicitly mutating roadmap through `roadmap.py` after Critic acceptance. Offered a draft pull request.
+*Run-log path*: `~/.gantry/state/bc054eb612dc/runs/run-20260914T214531Z-19a5fb.jsonl`
+*Tier*: `reference`
+
+**Draft Pull Request Offer Body**
+- **greeting#01 Greet a valid name**: `greet()` already existed at baseline. The Implementer added one trimming test. Critic proved both criteria by execution and mutation testing, accepted on attempt 1.
+- **greeting#02 Greeting CLI**: `cli.py` already existed. The Implementer added subprocess tests in `tests/test_cli.py` covering one, zero and many arguments. Critic accepted on attempt 1.
+- **greeting#03 Greeting regression tests**: the criterion already held. The Implementer added empty-string and trailing-exclamation guardrail tests. Critic accepted on attempt 1.
+
+No engine, database, MCP service, automatic cleanup, automatic merge, or automatic lesson injection was used.
