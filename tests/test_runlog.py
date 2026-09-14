@@ -545,5 +545,78 @@ class RunLogTests(unittest.TestCase):
             self.assertIn("issue", bad_issue.stderr.lower())
 
 
+class CurrentRunMarkerTests(unittest.TestCase):
+    """The per-worktree current-Run marker: how a hook that inherits no environment finds its Run."""
+
+    def run_script(self, root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(RUNLOG), *args],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def init_repository(self, root: Path) -> None:
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.email", "runlog@example.test"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "Run Log Test"], cwd=root, check=True)
+        (root / "tracked.txt").write_text("base\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+
+    def test_mark_records_the_run_inside_the_worktrees_own_git_directory_and_unmark_clears_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+
+            absent = self.run_script(root, "current", "--cwd", str(root))
+            self.assertEqual(2, absent.returncode, absent.stdout + absent.stderr)
+
+            marked = self.run_script(root, "mark", "run-01", "--cwd", str(root), "--state-root", str(state))
+            self.assertEqual(0, marked.returncode, marked.stderr)
+            marker = root / ".git" / "gantry" / "current-run.json"
+            self.assertTrue(marker.is_file(), "the marker belongs to the worktree's own git directory")
+
+            current = self.run_script(root, "current", "--cwd", str(root), "--json")
+            self.assertEqual(0, current.returncode, current.stderr)
+            payload = json.loads(current.stdout)
+            self.assertEqual("run-01", payload["run"])
+            self.assertEqual(str(state.resolve()), payload["stateRoot"])
+
+            plain = self.run_script(root, "current", "--cwd", str(root))
+            self.assertEqual("run-01", plain.stdout.strip())
+
+            cleared = self.run_script(root, "unmark", "--cwd", str(root))
+            self.assertEqual(0, cleared.returncode, cleared.stderr)
+            self.assertFalse(marker.exists())
+            self.assertEqual(2, self.run_script(root, "current", "--cwd", str(root)).returncode)
+
+    def test_two_worktrees_of_one_clone_carry_independent_markers(self) -> None:
+        """Concurrent worktrees of one execution unit must never inherit each other's Run."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "main"
+            root.mkdir()
+            self.init_repository(root)
+            second = Path(temp) / "second"
+            subprocess.run(
+                ["git", "worktree", "add", "--quiet", "-b", "second", str(second)],
+                cwd=root,
+                check=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(0, self.run_script(root, "mark", "run-main", "--cwd", str(root)).returncode)
+            self.assertEqual(0, self.run_script(second, "mark", "run-second", "--cwd", str(second)).returncode)
+
+            self.assertEqual("run-main", self.run_script(root, "current", "--cwd", str(root)).stdout.strip())
+            self.assertEqual("run-second", self.run_script(second, "current", "--cwd", str(second)).stdout.strip())
+
+            self.assertEqual(0, self.run_script(second, "unmark", "--cwd", str(second)).returncode)
+            self.assertEqual("run-main", self.run_script(root, "current", "--cwd", str(root)).stdout.strip())
+            self.assertEqual(2, self.run_script(second, "current", "--cwd", str(second)).returncode)
+
+
 if __name__ == "__main__":
     unittest.main()
