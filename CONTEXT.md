@@ -33,7 +33,7 @@ A deterministic, dependency-free script that is the sole authority on a workflow
 _Avoid_: Helper, suggestion, LLM judgement
 
 **Guard Hook**:
-A harness event handler shipped by Gantry that blocks shortcuts around the workflow rules and records events for observation. It never decides whether work is ready or done; that authority stays with the workflow scripts. Available only where the harness supports hooks.
+A harness event handler shipped by Gantry that blocks shortcuts around the workflow rules and records events for observation. It never decides whether work is ready or done; that authority stays with the workflow scripts. Available only where the harness supports hooks. Two rules live one layer lower instead, in the repository's own tracked `pre-push`/`pre-commit` git hooks (`docs/adr/0005`): no force-push and no test-skip commit are enforced there, where the actual ref update or staged diff is visible, because no Bash-command parsing can reliably recognise them.
 _Avoid_: Gate, orchestrator, source of truth
 
 **Context Watermark**:
