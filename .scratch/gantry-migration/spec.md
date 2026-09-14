@@ -38,7 +38,7 @@ This spec is the migration: `asdlc` becomes the three skills of the pack (`gantr
 - `dashboard.py` binds `127.0.0.1` only, serves the kanban from files in the pack with zero external assets, and reflects a new run-log event within two seconds.
 - `budget.py` estimates tokens as UTF-8 bytes divided by four, reads the assumed window from the capabilities file for the chosen model, and applies the `contextShare` from the policy, 0.15 by default.
 - The differential mode of `gates.py` runs the same declared command on the round's base and on the delivery, in separate worktrees of the same clone, and matches findings by the tuple (rule, file, message). Every differential mapping resolves its RFC 6901 pointers to one findings array and scalar fields for every finding; file paths are normalized repository-relative paths, and duplicate identities in either output result in `verdict: fail`, exit 1 and an `invalid` entry naming the source and identity. Every differential mapping resolves `severity` to exactly one of `info`, `warning` or `error`; their ordering is `info < warning < error`. A matching delivery finding with a higher severity is `aggravated`; a missing or invalid severity is a failed gate configuration. An identity present only on the base is reported as `resolved`.
-- A hook denial names its rule and the path it refused in one line; the same denial is always written to the run log as `hook.denied` when it happens inside a Run. The hook resolves that Run from `GANTRY_RUN_ID` when the caller exports it and otherwise from the current-Run marker the round workflow writes into the worktree's own git directory before any agent works there, so a denial is never lost to the environment a git subprocess happened to inherit.
+- A hook denial names its rule and the path it refused in one line; the same denial is always written to the run log as `hook.denied` when it happens inside a Run. Both the git hooks and `guard.py` resolve that Run in one order: an explicit `--run-id`, then `GANTRY_RUN_ID` when the caller exports it, then the marker, and a harness session ID only when nothing else names a Run and its Run log already exists — a session ID is a session, not a Run, so it never outranks the current-Run marker the round workflow writes into the worktree's own git directory before any agent works there, and a denial is never lost to the environment a git subprocess happened to inherit. A mark lives for the whole Run, never one round: the Run's end enumerates `git worktree list --porcelain` and clears every marker naming that Run, so a worktree marked by an earlier round is never left behind.
 - Every artifact the pack writes — issues, comments, reports, lesson candidates, pull request bodies — is English.
 
 ## Contract
@@ -166,6 +166,25 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-14 — Corrected the Run resolution order a hook records through, and the Run-end unmark.
+  `guard.py` resolved a payload's session ID ahead of the worktree's current-Run marker, and a
+  harness session ID is not a Gantry Run ID: Claude Code sends a UUID `session_id` and OpenCode a
+  `sessionID`, so no Run log is ever keyed by one. The guaranteed recording the entry below
+  established was therefore empty for the configuration the pack actually ships — a real Claude Code
+  `PreToolUse` payload carries no `--run-id` and no `GANTRY_*` variable, so every `hook.denied` in a
+  marked worktree was resolved to a Run with no log and silently dropped. The order is now an
+  explicit `--run-id`, then `GANTRY_RUN_ID` when the caller exports it, then the marker, and a
+  harness session ID only when nothing else names a Run and its Run log already exists, matching
+  `runlog.resolve_hook_run` at the git layer; `tests/test_guard.py` proves it with a real Claude Code
+  payload (UUID `session_id`, `cwd`, `transcript_path`, `tool_name`, `tool_input`) and
+  `tests/test_guard_hook_wiring.py` with the OpenCode equivalent forwarded through
+  `hooks/opencode.plugin.js`. Separately, `reference/round-workflow.md` cleared only the worktrees
+  the *current invocation* had marked, and each round is a separate invocation: an Issue finished in
+  an earlier round is absent from the last one, so its worktree kept a marker naming a Run that was
+  already over and the next denial there would record into a finished Run. The Run's end now
+  enumerates `git worktree list --porcelain` from the repository root and unmarks every worktree
+  whose `runlog.py current` equals this Run, proven by a `tests/test_canonical_gantry_workflow.py`
+  case where an isolated Issue is worked in round 1 and absent from round 2.
 - 2026-09-14 — Widened the guard's hook-disabling substring rule from `--no-verify` to `--no-veri`,
   the shortest abbreviation git itself accepts for that flag on both `commit` and `push`
   (`--no-ver` is refused as ambiguous with `--no-verbose`). git accepts any unambiguous

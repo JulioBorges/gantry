@@ -100,10 +100,14 @@ Every script provides `--help`, and data-producing paths support `--json`.
 - Before any agent works in a worktree, the round workflow marks it with the Run — `runlog.py mark
   <runId> --cwd <worktree>`, stored in that worktree's own git directory — and clears it with
   `runlog.py unmark` when the Run ends, never between rounds. The tracked git hooks
-  (`hooks/git/pre-commit`, `hooks/git/pre-push`) read that marker when the environment they inherit
-  carries no `GANTRY_RUN_ID`, which is what makes a denial inside a Run always recorded as
-  `hook.denied`; git keeps one git directory per worktree, so concurrent worktrees of one execution
-  unit never attribute a denial to each other's Run.
+  (`hooks/git/pre-commit`, `hooks/git/pre-push`) and `guard.py` resolve the Run in one order:
+  `GANTRY_RUN_ID` when the caller exports it, then the marker, and a harness session ID only when
+  nothing else names a Run and its Run log already exists — a Claude Code or OpenCode session ID is
+  a session, not a Run, and no Run log is ever keyed by it. That is what makes a denial inside a Run
+  always recorded as `hook.denied`; git keeps one git directory per worktree, so concurrent
+  worktrees of one execution unit never attribute a denial to each other's Run. Because each round
+  is a separate invocation, the Run's end enumerates `git worktree list --porcelain` and clears
+  every marker naming that Run, so a worktree marked by an earlier round is never left behind.
 - Use `frontier.py --scope <scope> --json` as the only authority for dependency rounds. Exit 1 for a
   cyclic or dangling blocker graph. Parked `draft`, `blocked`, and `needs-operator` Issues are reported
   and skipped.

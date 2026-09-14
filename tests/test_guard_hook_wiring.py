@@ -253,6 +253,32 @@ class SpecChangelogTests(unittest.TestCase):
         self.assertIn("Recording is guaranteed, not best-effort", adr)
         self.assertNotIn("Recording is therefore best-effort", adr)
 
+    def test_documents_state_the_marker_resolution_order_and_the_worktree_enumerated_unmark(self) -> None:
+        """The shipped resolution order and the Run-end unmark must be the documented ones."""
+        spec = (REPO_ROOT / ".scratch" / "gantry-migration" / "spec.md").read_text(encoding="utf-8")
+        adr = (REPO_ROOT / "docs" / "adr" / "0005-git-hooks-enforce-git-rules.md").read_text(encoding="utf-8")
+        skill = (REPO_ROOT / ".agents" / "skills" / "gantry" / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (REPO_ROOT / ".agents" / "skills" / "gantry" / "reference" / "round-workflow.md").read_text(encoding="utf-8")
+        order = (
+            "`GANTRY_RUN_ID` when the caller exports it, then the marker, and a harness session ID "
+            "only when nothing else names a Run and its Run log already exists"
+        )
+        unmark = (
+            "the Run's end enumerates `git worktree list --porcelain` and clears every marker naming "
+            "that Run, so a worktree marked by an earlier round is never left behind"
+        )
+        for document, name in ((spec, "spec.md"), (adr, "ADR-0005"), (skill, "SKILL.md"), (workflow, "round-workflow.md")):
+            # Prose in these files is hard-wrapped at different widths, so the sentence is asserted
+            # against the document with its line wrapping collapsed -- exact wording, any wrapping.
+            unwrapped = " ".join(document.split())
+            self.assertIn(order, unwrapped, f"{name} must state the resolution order")
+            self.assertIn(unmark, unwrapped, f"{name} must state the worktree-enumerated unmark")
+        self.assertIn(
+            "2026-09-14 — Corrected the Run resolution order a hook records through, and the Run-end unmark.",
+            " ".join(spec.split()),
+            "the Spec Changelog records this behaviour change in the same merge",
+        )
+
     def test_spec_and_adr_name_the_no_verify_abbreviation_the_guard_actually_matches(self) -> None:
         """The documented rule must be the implemented one: `--no-veri`, not `--no-verify`."""
         spec = (REPO_ROOT / ".scratch" / "gantry-migration" / "spec.md").read_text(encoding="utf-8")

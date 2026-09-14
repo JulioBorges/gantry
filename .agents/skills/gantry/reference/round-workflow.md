@@ -51,10 +51,15 @@ Before any agent works in a worktree, the workflow marks that worktree with the 
 repository root at the start of every round, and each Issue worktree as it is assigned. A git hook
 inherits whatever environment shelled out to `git`, so `GANTRY_RUN_ID` cannot be relied on to reach
 `pre-commit`/`pre-push`; the marker is how they resolve the Run instead, which is what makes their
-`hook.denied` recording a guarantee rather than a best effort. Marks are cleared (`runlog.py unmark`)
-only when the Run itself ends — the last round, or a cancelled one — never between rounds of the same
-Run, and never across worktrees: git keeps one git directory per worktree, so two worktrees of the
-same execution unit running different Runs cannot attribute a denial to each other.
+`hook.denied` recording a guarantee rather than a best effort. The hooks and `guard.py` share one
+resolution order: `GANTRY_RUN_ID` when the caller exports it, then the marker, and a harness session
+ID only when nothing else names a Run and its Run log already exists. Marks are cleared
+(`runlog.py unmark`) only when the Run itself ends — the last round, or a cancelled one — never
+between rounds of the same Run, and never across worktrees: git keeps one git directory per worktree,
+so two worktrees of the same execution unit running different Runs cannot attribute a denial to each
+other. Because each round is a separate invocation that only remembers what it marked itself, the
+Run's end enumerates `git worktree list --porcelain` and clears every marker naming that Run, so a
+worktree marked by an earlier round is never left behind.
 Preflight resolves `args.runId` and `args.unitId` once per Run and never rereads the log to decide
 readiness or completion — only `frontier.py`, Issue `Status:` lines and `roadmap.py` decide that. When
 `args.priorRun` names the Issue being continued (`args.priorRun.issue`), its preserved worktree, branch
