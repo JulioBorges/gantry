@@ -1,7 +1,7 @@
 # Reference fixture isolation foundation
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-migration#16`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -16,11 +16,11 @@ Created: 2026-09-13
 
 ## Acceptance criteria
 
-- [ ] `python3 fixture/tools/copy_fixture.py --mode unplanned --skill-dir <canonical-gantry-skill-dir> --dest <empty-dir>` creates an isolated Git repository with a baseline commit, a pack-visible local Gantry-skill installation, no files under `.scratch/greeting/issues/`, a valid greeting Spec, and no inherited source Git or Run-log state.
-- [ ] `python3 fixture/tools/copy_fixture.py --mode approved --skill-dir <canonical-gantry-skill-dir> --dest <empty-dir>` creates an independent Git repository with a baseline commit, the same local Gantry-skill installation, and exactly three legacy-format greeting Issues at `ready-for-agent`, each preserving `Status:`, `Slice:`, `## Acceptance criteria`, and `## Blocked by`.
-- [ ] Both generated copies contain a runnable absolute pytest check and RFC 6901-mapped standard-library linter configuration, and copy-builder tests prove repository-relative paths, independent Git common directories and Run-log unit ids, installed skill visibility, and no source fixture files are modified.
-- [ ] The fixture foundation’s tests and documentation are English, do not invoke a harness workflow, and do not create an engine, database, MCP service, automatic cleanup, automatic merge, or lesson injection.
-- [ ] The Spec Changelog receives an English entry in the same merge, with the copy-builder test runnable from the repository.
+- [x] `python3 fixture/tools/copy_fixture.py --mode unplanned --skill-dir <canonical-gantry-skill-dir> --dest <empty-dir>` creates an isolated Git repository with a baseline commit, a pack-visible local Gantry-skill installation, no files under `.scratch/greeting/issues/`, a valid greeting Spec, and no inherited source Git or Run-log state.
+- [x] `python3 fixture/tools/copy_fixture.py --mode approved --skill-dir <canonical-gantry-skill-dir> --dest <empty-dir>` creates an independent Git repository with a baseline commit, the same local Gantry-skill installation, and exactly three legacy-format greeting Issues at `ready-for-agent`, each preserving `Status:`, `Slice:`, `## Acceptance criteria`, and `## Blocked by`.
+- [x] Both generated copies contain a runnable absolute pytest check and RFC 6901-mapped standard-library linter configuration, and copy-builder tests prove repository-relative paths, independent Git common directories and Run-log unit ids, installed skill visibility, and no source fixture files are modified.
+- [x] The fixture foundation’s tests and documentation are English, do not invoke a harness workflow, and do not create an engine, database, MCP service, automatic cleanup, automatic merge, or lesson injection.
+- [x] The Spec Changelog receives an English entry in the same merge, with the copy-builder test runnable from the repository.
 
 ## Blocked by
 

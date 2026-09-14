@@ -45,7 +45,7 @@ The planning limit, 15% of the chosen model's window by default, for an issue's 
 _Avoid_: Source-file count, measured runtime usage, agent self-estimate
 
 **Result Contract**:
-The versioned JSON Schema, shipped in the pack per role (planner, plan critic, implementer, reviewer, critic, learner), that every agent result must satisfy. Harnesses that can enforce structured output load it directly; everywhere else the orchestrator validates the result with the workflow script before accepting it.
+The versioned JSON Schema, shipped in the pack per role (requirement critic, planner, plan critic, implementer, reviewer, critic, learner), that every agent result must satisfy. Harnesses that can enforce structured output load it directly; everywhere else the orchestrator validates the result with the workflow script before accepting it.
 _Avoid_: Inline schema, task envelope, free-text report
 
 **Protocol Failure**:

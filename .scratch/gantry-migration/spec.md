@@ -172,6 +172,26 @@ Scenario: The run ends with an offered draft pull request
 - 2026-09-13 — Fixed the guard hook handler's draft-Issue exemption to apply only to *creating* a new Issue file: an existing Issue's Status/checkbox fields now always fall through to protection even when the new content looks draft-safe on its own, and `decide()` now prefers the payload's own `cwd`/`directory` field over `--cwd` when locating an Issue path or the staged diff to check for test-skip commits.
 - 2026-09-13 — Hardened the guard hook handler: capability-incomplete payloads (per the harness's declared `payload_fields`) now record a `hook.degraded` Run log event instead of a false completion or a denial, draft Issue creation is exempt from the Status/checkbox protection, test-skip patterns are anchored so they no longer match their own literals in guard's sources, and a force-pushing `+refspec` is denied alongside `--force`.
 - 2026-09-13 — Added the guard hook handler and its Claude Code, OpenCode and Codex wiring, protecting the roadmap and Issue Status/checkbox fields, force-pushes and test-skip commits, and recording hook and subagent events into the Run log.
+- 2026-09-13 — Routed the Requirement Critic result through the same `requestRole` validation as every
+  other role, added its Result Contract schema and registered role, and stopped the run with a Protocol
+  Failure instead of silently proceeding when the result is missing or invalid.
+- 2026-09-13 — Added a read-only Requirement Critic phase after Spec structural validation and before
+  research or Issue slicing; a blocking finding quotes the Spec and stops the run for the operator to
+  amend the Spec, and structural validation and Requirement Review are documented as not approving
+  planning by themselves.
+- 2026-09-13 — Added the read-only, loopback-only multi-Run kanban dashboard (`dashboard.py` and the `gantry-dashboard` skill): swimlanes per Run, Ready/Plan/Implement/Review/Critic/Integrate/Done/Blocked columns, per-Issue badges, and staleness computed only from each Run's own `run.started` `staleAfterSeconds` snapshot.
+- 2026-09-13 — Added the optional Learner phase: a deterministic `learner.py` groups recurring
+  `refutation` and `review.finding` Run-log evidence across Issues or attempts into lesson candidates
+  validated by `schemas/learner.json`, and the round workflow and final report surface them as operator
+  decisions without writing to `AGENTS.md`, `CONTEXT.md`, a template or policy.
+- 2026-09-13 — Added the reusable `fixture/` reference repository (a minimal
+  Python greeting project, a standard-library JSON linter, a declared absolute
+  `pytest` check and RFC 6901-mapped differential `lint` check, and a valid
+  greeting Spec) and its deterministic isolated-copy builder,
+  `fixture/tools/copy_fixture.py`, producing an unplanned no-Issue copy and an
+  approved copy with three `ready-for-agent` legacy-format greeting Issues,
+  each an independent Git repository with a baseline commit and a pack-visible
+  local Gantry-skill installation.
 - 2026-09-13 — Added an explicit, read-only cleanup plan that removes only done Issue branches and worktrees already merged into the Run branch after operator authorization.
 - 2026-09-13 — Added effective-template Spec structural validation before planning, including mapped headings, required-section order, placeholder and Gherkin scenario checks.
 - 2026-09-13 — Added an append-only, shared-worktree Run log with validated lifecycle events, atomic JSONL appends, policy snapshots, and interrupted Issue queries.
