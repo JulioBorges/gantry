@@ -36,7 +36,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **14 / 18** |
+| Issues completed | **16 / 18** |
 | Specs completed | **0 / 1** |
 | Execution waves | **7** |
 
@@ -114,7 +114,7 @@ longer exist.
 
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
-| 01 | `gantry-migration` | 14/18 | 0–6 |
+| 01 | `gantry-migration` | 16/18 | 0–6 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -164,11 +164,11 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-migration#16`** — Reference fixture isolation foundation
   <br>↳ blocked by: gantry-migration#03, gantry-migration#07
 
-### Wave 4 — 0/2 done
+### Wave 4 — 2/2 done
 
-- [ ] **`gantry-migration#10`** — Conversational repository setup
+- [x] **`gantry-migration#10`** — Conversational repository setup
   <br>↳ blocked by: gantry-migration#09
-- [ ] **`gantry-migration#15`** — Offered draft Run pull request
+- [x] **`gantry-migration#15`** — Offered draft Run pull request
   <br>↳ blocked by: gantry-migration#06, gantry-migration#14, gantry-migration#05
 
 ### Wave 5 — 0/1 done
