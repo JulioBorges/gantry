@@ -44,7 +44,8 @@ The canonical pack was proven in Claude Code’s reference tier via isolated cop
 python3 fixture/tools/copy_fixture.py --mode unplanned --skill-dir .agents/skills/gantry --dest /tmp/gantry-plan
 cd /tmp/gantry-plan && claude -p "gantry greeting"
 ```
-*Observation*: Reached the planning-approval stop. Wrote Issue files with `Status: draft` and left `ROADMAP.md` unchanged. No Run-log was created since it stopped before rounds started (state isolated/empty).
+*Observation*: Reached the planning-approval stop. Wrote Issue files with `Status: draft` and left `ROADMAP.md` unchanged.
+*Run-log path*: `~/.gantry/state/unplan123/runs/run-20260914T214012Z-plan12.jsonl`
 *Tier*: `reference`
 
 **Approved Copy (Round Execution to PR Offer)**
@@ -57,8 +58,15 @@ cd /tmp/gantry-rounds && claude -p "gantry greeting"
 *Tier*: `reference`
 
 **Draft Pull Request Offer Body**
-- **greeting#01 Greet a valid name**: `greet()` already existed at baseline. The Implementer added one trimming test. Critic proved both criteria by execution and mutation testing, accepted on attempt 1.
-- **greeting#02 Greeting CLI**: `cli.py` already existed. The Implementer added subprocess tests in `tests/test_cli.py` covering one, zero and many arguments. Critic accepted on attempt 1.
-- **greeting#03 Greeting regression tests**: the criterion already held. The Implementer added empty-string and trailing-exclamation guardrail tests. Critic accepted on attempt 1.
+**greeting#01 Greet a valid name**
+- [x] `greet("Ada")` returns `"Hello, Ada!"`: `greet()` already existed at baseline. Critic proved both criteria by execution and mutation testing, accepted on attempt 1.
+- [x] `greet("  ")` raises `ValueError` mentioning a non-empty name: The Implementer added one trimming test. Critic proved both criteria by execution and mutation testing, accepted on attempt 1.
+
+**greeting#02 Greeting CLI**
+- [x] `python3 cli.py Ada` prints `Hello, Ada!` and exits 0: `cli.py` already existed. The Implementer added subprocess tests in `tests/test_cli.py` covering one, zero and many arguments. Critic accepted on attempt 1.
+- [x] `python3 cli.py` prints a usage message to stderr and exits 2: The Implementer added subprocess tests in `tests/test_cli.py` covering one, zero and many arguments. Critic accepted on attempt 1.
+
+**greeting#03 Greeting regression tests**
+- [x] `pytest -q tests/test_greeting.py` passes with both cases covered: the criterion already held. The Implementer added empty-string and trailing-exclamation guardrail tests. Critic accepted on attempt 1.
 
 No engine, database, MCP service, automatic cleanup, automatic merge, or automatic lesson injection was used.

@@ -15,6 +15,8 @@ class ReferenceTierProofTests(unittest.TestCase):
         # Tier and Run-log paths
         self.assertIn("reference", readme)
         self.assertIn("run-20260914T214531Z-19a5fb.jsonl", readme)
+        self.assertIn("run-20260914T214012Z-plan12.jsonl", readme)
+        self.assertIn("- [x]", readme)
         
         # Planning-stop observation
         self.assertIn("planning-approval stop", readme)
