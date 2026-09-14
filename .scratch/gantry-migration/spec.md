@@ -156,7 +156,6 @@ Scenario: The run ends with an offered draft pull request
 
 ## Out of Scope
 
-- 2026-09-14 — Added `gantry-setup` skill and `setup.py` script. The skill acts as the conversational writer of repository policy, guiding the operator through artifact, template, check, Git, and hook decisions. The `setup.py` script renders the full proposed `.gantry/config.json` before writing, supports merge, overwrite, and abort for an existing policy, handles idempotent merging of the Claude Code hook fragment into `.claude/settings.json`, and adds or replaces only the marked Gantry section in `AGENTS.md`.
 - A machine-level installer — copying or symlinking the three skill directories is enough for v1; a script would add a surface to test before the loop itself is proven.
 - Merging into the target branch — the draft pull request is the boundary chosen in `PRD.md` §3; merging belongs to the repository's own protection rules.
 - Tool-specific gate adapters — the generic `mapping` in the policy covers any linter with JSON output; adapters would be premature before real repositories show which tools matter.
@@ -167,6 +166,7 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-14 — Added `gantry-setup` skill and `setup.py` script. The skill acts as the conversational writer of repository policy, guiding the operator through artifact, template, check, Git, and hook decisions. The `setup.py` script renders the full proposed `.gantry/config.json` before writing, supports merge, overwrite, and abort for an existing policy, handles idempotent merging of the Claude Code hook fragment into `.claude/settings.json`, and adds or replaces only the marked Gantry section in `AGENTS.md`.
 - 2026-09-14 — Corrected the Run resolution order a hook records through, and the Run-end unmark.
   `guard.py` resolved a payload's session ID ahead of the worktree's current-Run marker, and a
   harness session ID is not a Gantry Run ID: Claude Code sends a UUID `session_id` and OpenCode a

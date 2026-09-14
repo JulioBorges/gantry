@@ -77,6 +77,23 @@ class GantrySetupTests(unittest.TestCase):
             p2.communicate(input="o\n")
             written2 = json.loads(config_path.read_text(encoding="utf-8"))
             self.assertEqual({"overwrite": "yes"}, written2)
+            # Test Abort
+            config_json3 = {"abort": "yes"}
+            p3 = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--config", json.dumps(config_json3)],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            stdout3, _ = p3.communicate(input="a\n")
+            self.assertIn("Config exists. [M]erge, [O]verwrite, or [A]bort?", stdout3)
+            self.assertEqual(p3.returncode, 1, "Expected setup.py to exit with 1 on abort")
+            
+            written3 = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual({"overwrite": "yes"}, written3, "File should remain unchanged on abort")
+
 
     def test_running_accepted_setup_twice_produces_byte_identical_claude_settings(self) -> None:
         """Running accepted setup twice produces byte-identical .claude/settings.json, preserves unrelated keys."""
