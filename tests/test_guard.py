@@ -697,6 +697,40 @@ class GuardHookTests(unittest.TestCase):
             denials = [event for event in events if event["event"] == "hook.denied" and event["data"]["rule"] == "hook-bypass-protected"]
             self.assertEqual(4, len(denials))
 
+    def test_denies_the_documented_case_and_env_spellings_of_disabling_the_git_hook_layer(self) -> None:
+        """git config keys are case-insensitive, and GIT_CONFIG_* env vars set them without `-c`."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            for command in (
+                "git -c core.hookspath=/dev/null commit -m x",
+                "git -c CORE.HOOKSPATH=/dev/null commit -m x",
+                "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hookspath GIT_CONFIG_VALUE_0=/dev/null git commit -m x",
+                "GIT_CONFIG_PARAMETERS=\"'core.hooksPath=/dev/null'\" git commit -m x",
+                "GIT_CONFIG=/tmp/other.config git commit -m x",
+            ):
+                with self.subTest(command=command):
+                    payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+                    denied = self.run_guard(root, "PreToolUse", payload=payload)
+                    self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+                    self.assertIn("hook-bypass-protected", denied.stdout)
+
+    def test_still_allows_commands_that_merely_look_like_the_disabling_spellings(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            for command in (
+                "git config --list",
+                "echo GIT_CONFIGURATION",
+                "grep -rn 'hooks path' docs/",
+                "head -n 20 README.md",
+            ):
+                with self.subTest(command=command):
+                    payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+                    allowed = self.run_guard(root, "PreToolUse", payload=payload)
+                    self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+                    self.assertEqual("allow", allowed.stdout.strip())
+
     # -- performance --------------------------------------------------------------------------
 
     def test_answers_a_one_megabyte_bash_command_in_under_200ms(self) -> None:

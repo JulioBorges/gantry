@@ -14,6 +14,12 @@ a `+refspec`, `--mirror`, `--force-with-lease`, or any other way the command cou
 have been typed. A brand-new or deleted ref (either SHA all zero) trivially passes:
 there is no prior tip to rewrite. Denying one ref update aborts the whole push.
 
+A fast-forward update is then scanned for the content `pre-commit` refuses: `git commit
+-n` is git's own short `--no-verify` and skips `pre-commit` altogether, so the push is
+the next point at which git shows the content itself instead of a command string. Only
+what the push adds is compared -- the remote's tip, or the parent of the oldest commit
+this push introduces -- so history the remote already carries is never re-judged.
+
 Activated by `core.hooksPath` pointing at this directory
 (`.agents/skills/gantry/hooks/git/`); `gantry-setup` writes that config into the
 operator's repository (`gantry-migration#10`) -- this hook only proves itself in
@@ -26,9 +32,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
 
 import runlog  # noqa: E402
+import skipscan  # noqa: E402
 
 ZERO_SHA = {"0" * 40, "0" * 64}
 
@@ -49,7 +57,7 @@ def is_fast_forward(remote_sha: str, local_sha: str) -> bool:
     return result.returncode == 0
 
 
-def record_denied(cwd: Path, ref: str) -> None:
+def record_denied(cwd: Path, ref: str, rule: str = "no-force-push") -> None:
     """Append the `hook.denied` event for this denial; a logging failure never changes the decision.
 
     The Run is resolved by `runlog.resolve_hook_run`: `GANTRY_RUN_ID` when the caller
@@ -71,7 +79,7 @@ def record_denied(cwd: Path, ref: str) -> None:
                 "ts": now_iso(),
                 "run": run_id,
                 "event": "hook.denied",
-                "data": {"rule": "no-force-push", "path": ref},
+                "data": {"rule": rule, "path": ref},
             }
         )
         runlog.append_event(log_path, event)
@@ -81,18 +89,33 @@ def record_denied(cwd: Path, ref: str) -> None:
 
 def main() -> int:
     cwd = Path.cwd()
+    remote_name = sys.argv[1] if len(sys.argv) > 1 else "origin"
     denied = False
     for line in sys.stdin:
         parts = line.strip().split()
         if len(parts) != 4:
             continue
         _local_ref, local_sha, remote_ref, remote_sha = parts
-        if is_fast_forward(remote_sha, local_sha):
+        if not is_fast_forward(remote_sha, local_sha):
+            message = f"deny: no-force-push {remote_ref}"
+            print(message, file=sys.stderr)
+            record_denied(cwd, remote_ref)
+            denied = True
             continue
-        message = f"deny: no-force-push {remote_ref}"
-        print(message, file=sys.stderr)
-        record_denied(cwd, remote_ref)
-        denied = True
+        if local_sha in ZERO_SHA:
+            continue
+        # `git commit -n` (git's own short `--no-verify`) skips `pre-commit` entirely, so a
+        # test-skip pattern can reach a local commit; the push is the next point where git
+        # shows the content itself rather than a command string. Only what this push adds is
+        # scanned -- the remote's own tip, or the parent of the oldest commit the push
+        # introduces -- so history the remote already carries is never re-judged.
+        base = skipscan.push_base(local_sha, remote_sha, remote_name, ZERO_SHA)
+        matched_file = skipscan.range_skip_match(base, local_sha) if base else None
+        if matched_file:
+            message = f"deny: no-test-skip-commit {matched_file}"
+            print(message, file=sys.stderr)
+            record_denied(cwd, matched_file, "no-test-skip-commit")
+            denied = True
     return 1 if denied else 0
 
 

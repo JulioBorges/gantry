@@ -92,7 +92,12 @@ CHECKED_CHECKBOX_RE = re.compile(r"(?m)^[ \t]*-\s\[[xX]\]")
 # 1 MB command is answered in a few milliseconds, and it allows every other Bash
 # command -- git decides no-force-push and no-test-skip-commit itself, at the
 # pre-push/pre-commit layer.
-HOOK_DISABLING_SUBSTRINGS = ("--no-verify", "core.hooksPath", "--git-dir", "GIT_DIR=")
+HOOK_DISABLING_SUBSTRINGS = ("--no-verify", "--git-dir", "GIT_DIR=", "GIT_CONFIG=", "GIT_CONFIG_")
+# Matched against the lowercased command: git configuration keys are case-insensitive, so
+# `-c core.hookspath=/dev/null` and `-c CORE.HOOKSPATH=...` disable the hooks exactly as
+# `core.hooksPath` does. Environment-variable names are not case-insensitive, so the
+# `GIT_*` spellings above stay case-sensitive.
+HOOK_DISABLING_SUBSTRINGS_CASE_INSENSITIVE = ("core.hookspath",)
 
 
 class Decision:
@@ -290,6 +295,10 @@ def decide(payload: dict, cwd: Path) -> Decision:
         # a command that would disable that layer.
         for token in HOOK_DISABLING_SUBSTRINGS:
             if token in command:
+                return Decision(False, "hook-bypass-protected", command.strip()[:200])
+        lowered = command.lower()
+        for token in HOOK_DISABLING_SUBSTRINGS_CASE_INSENSITIVE:
+            if token in lowered:
                 return Decision(False, "hook-bypass-protected", command.strip()[:200])
         return Decision(True)
 

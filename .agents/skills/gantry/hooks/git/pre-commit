@@ -19,54 +19,18 @@ temporary repositories where a test sets `core.hooksPath` directly.
 from __future__ import annotations
 
 import datetime
-import re
-import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
 
 import runlog  # noqa: E402
-
-TEST_SKIP_PATTERNS = [
-    re.compile(pattern)
-    for pattern in (
-        r"^\s*@unittest\.skip",
-        r"^\s*@pytest\.mark\.(skip|xfail)",
-        r"^\s*@Disabled",
-        r"^\s*(xit|xdescribe)\(",
-        r"\b(it|describe|test)\.skip\(",
-        r"\bt\.Skip\(",
-    )
-]
+import skipscan  # noqa: E402
 
 
 def now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def staged_skip_match() -> str | None:
-    """Return the first staged file whose added lines introduce a test-skip pattern."""
-    result = subprocess.run(
-        ["git", "diff", "--cached", "--unified=0"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        return None
-    current_file: str | None = None
-    for line in result.stdout.splitlines():
-        if line.startswith("+++ "):
-            current_file = line[6:] if line.startswith("+++ b/") else line[4:]
-            continue
-        if line.startswith("+++"):
-            continue
-        if line.startswith("+"):
-            added = line[1:]
-            if any(pattern.search(added) for pattern in TEST_SKIP_PATTERNS):
-                return current_file
-    return None
 
 
 def record_denied(cwd: Path, path: str) -> None:
@@ -100,7 +64,7 @@ def record_denied(cwd: Path, path: str) -> None:
 
 
 def main() -> int:
-    matched_file = staged_skip_match()
+    matched_file = skipscan.staged_skip_match()
     if not matched_file:
         return 0
     message = f"deny: no-test-skip-commit {matched_file}"

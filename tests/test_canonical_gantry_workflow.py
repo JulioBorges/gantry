@@ -2963,6 +2963,7 @@ Slice: `legacy#07`
             "runlog",
             "shlex",
             "shutil",
+            "skipscan",
             "subprocess",
             "sys",
             "tempfile",
@@ -2974,7 +2975,8 @@ Slice: `legacy#07`
             {"acceptance.py", "budget.py", "cleanup.py", "common.py", "dashboard.py", "frontier.py", "gates.py", "guard.py", "learner.py", "result.py", "roadmap.py", "runlog.py", "spec.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
-        for script in sorted(SCRIPTS.glob("*.py")):
+        git_hooks = SKILL_DIR / "hooks" / "git"
+        for script in sorted([*SCRIPTS.glob("*.py"), git_hooks / "pre-commit", git_hooks / "pre-push", git_hooks / "skipscan.py"]):
             tree = ast.parse(script.read_text(encoding="utf-8"), filename=str(script))
             imported = {
                 alias.name.split(".", 1)[0]

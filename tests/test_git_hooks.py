@@ -199,6 +199,46 @@ class PrePushHookTests(GitHookFixtureMixin, unittest.TestCase):
             self.assertEqual("no-force-push", events[0]["data"]["rule"])
             self.assertIn("main", events[0]["data"]["path"])
 
+    def test_rejects_a_push_carrying_a_skip_committed_with_no_verify(self) -> None:
+        """`git commit -n` skips pre-commit, so the push is where that content is caught."""
+        skipped = "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n"
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            remote, local = self.make_remote_and_local(temp_path)
+            state = temp_path / "state"
+            run = self.seed_run(local, state)
+            self.mark_run(local, state, run)
+
+            self.commit(local, "app_test.py", "import unittest\n")
+            first = self.push(local, "origin", "HEAD:refs/heads/main")
+            self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+
+            (local / "app_test.py").write_text(skipped, encoding="utf-8")
+            git("add", "app_test.py", cwd=local)
+            git("commit", "--quiet", "-n", "-m", "skip past pre-commit", cwd=local)
+
+            denied = self.push(local, "origin", "HEAD:refs/heads/main")
+            self.assertNotEqual(0, denied.returncode, denied.stdout + denied.stderr)
+            self.assert_single_denial_line(denied, "no-test-skip-commit", "app_test.py")
+
+            events = self.denied_events(local, state, run)
+            self.assertEqual(1, len(events))
+            self.assertEqual("no-test-skip-commit", events[0]["data"]["rule"])
+            self.assertEqual("app_test.py", events[0]["data"]["path"])
+
+    def test_accepts_a_clean_first_push_of_a_new_branch(self) -> None:
+        """A brand-new ref has no remote tip: only the commits it actually adds are scanned."""
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            remote, local = self.make_remote_and_local(temp_path)
+            self.commit(local, "a.txt", "base\n")
+            self.assertEqual(0, self.push(local, "origin", "HEAD:refs/heads/main").returncode)
+
+            git("checkout", "--quiet", "-b", "feature", cwd=local)
+            self.commit(local, "b.txt", "feature\n", "feature work")
+            created = self.push(local, "origin", "HEAD:refs/heads/feature")
+            self.assertEqual(0, created.returncode, created.stdout + created.stderr)
+
     def test_denial_is_recorded_without_the_caller_exporting_a_run_id(self) -> None:
         """Recording is guaranteed, not best-effort: the hook resolves the Run from the worktree's marker."""
         with tempfile.TemporaryDirectory() as temp:
