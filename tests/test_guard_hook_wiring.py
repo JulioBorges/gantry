@@ -148,8 +148,9 @@ class NoHooksFallbackTests(unittest.TestCase):
     def test_implementer_prompt_states_every_protected_rule(self) -> None:
         self.assertIn(
             "Never edit ROADMAP.md, Status, or criteria checkboxes. Never force-push, and never skip, disable\n"
-            "or weaken a test. Never bypass the repository git hooks: no \\`--no-verify\\` or \\`-n\\`, no\n"
-            "\\`core.hooksPath\\` override in any spelling, no \\`--git-dir\\`/\\`GIT_DIR=\\`, no \\`GIT_CONFIG_*\\`.",
+            "or weaken a test. Never bypass the repository git hooks: no \\`--no-verify\\` in any abbreviation\n"
+            "(e.g. \\`--no-veri\\`) or \\`-n\\`, no \\`core.hooksPath\\` override in any spelling, no\n"
+            "\\`--git-dir\\`/\\`GIT_DIR=\\`, no \\`GIT_CONFIG_*\\`.",
             self.round_workflow,
         )
 
@@ -158,9 +159,9 @@ class NoHooksFallbackTests(unittest.TestCase):
         self.assertIn("skipped,\ndisabled or mock-replaced tests", self.round_workflow)
         self.assertIn("forced rewrite", self.round_workflow)
         self.assertIn(
-            "So is any commit or push made with \\`--no-verify\\`/\\`-n\\` or under a\n"
-            "\\`core.hooksPath\\`/\\`--git-dir\\`/\\`GIT_DIR=\\`/\\`GIT_CONFIG_*\\` override, and any test-skip pattern\n"
-            "that reached HEAD despite the hooks.",
+            "So is any commit or push made with \\`--no-verify\\` in any abbreviation (e.g.\n"
+            "\\`--no-veri\\`) or \\`-n\\`, or under a \\`core.hooksPath\\`/\\`--git-dir\\`/\\`GIT_DIR=\\`/\\`GIT_CONFIG_*\\`\n"
+            "override, and any test-skip pattern that reached HEAD despite the hooks.",
             self.round_workflow,
         )
 
@@ -185,6 +186,19 @@ class SpecChangelogTests(unittest.TestCase):
         self.assertIn("Made `hook.denied` recording a guarantee", spec)
         self.assertIn("Recording is guaranteed, not best-effort", adr)
         self.assertNotIn("Recording is therefore best-effort", adr)
+
+    def test_spec_and_adr_name_the_no_verify_abbreviation_the_guard_actually_matches(self) -> None:
+        """The documented rule must be the implemented one: `--no-veri`, not `--no-verify`."""
+        spec = (REPO_ROOT / ".scratch" / "gantry-migration" / "spec.md").read_text(encoding="utf-8")
+        adr = (REPO_ROOT / "docs" / "adr" / "0005-git-hooks-enforce-git-rules.md").read_text(encoding="utf-8")
+        hook_wiring = next(line for line in spec.splitlines() if line.startswith("- **Hook wiring:**"))
+        self.assertIn("`--no-veri` (any `--no-verify` abbreviation)", hook_wiring)
+        self.assertIn("`--no-veri` (any `--no-verify` abbreviation)", adr)
+        self.assertIn(
+            "2026-09-14 — Widened the guard's hook-disabling substring rule from `--no-verify` to "
+            "`--no-veri`",
+            spec,
+        )
 
 
 if __name__ == "__main__":
