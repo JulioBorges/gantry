@@ -715,6 +715,37 @@ class GuardHookTests(unittest.TestCase):
                     self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
                     self.assertIn("hook-bypass-protected", denied.stdout)
 
+    def test_denies_every_abbreviation_git_accepts_for_no_verify(self) -> None:
+        """`--no-veri` is the shortest prefix git accepts for `--no-verify` on both `commit` and
+        `push` (`--no-ver` is refused as ambiguous with `--no-verbose`), and git accepts every
+        longer prefix too. The substring rule is written at that shortest accepted prefix, so no
+        spelling of the flag reaches the git layer -- see tests/test_git_hooks.py's
+        test_a_no_verify_abbreviation_really_bypasses_the_git_hooks."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            for command in (
+                "git commit --no-veri -m x",
+                "git commit --no-verif -m x",
+                "git push --no-veri --force origin HEAD:refs/heads/main",
+            ):
+                with self.subTest(command=command):
+                    payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+                    denied = self.run_guard(root, "PreToolUse", payload=payload)
+                    self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+                    lines = [line for line in denied.stdout.splitlines() if line]
+                    self.assertEqual(1, len(lines))
+                    self.assertIn("hook-bypass-protected", lines[0])
+
+            # `--no-verbose` and its own abbreviations are a different flag entirely: git keeps
+            # running its hooks for them, so denying them would refuse ordinary commands.
+            for command in ("git commit --no-verbose -m x", "echo --no-verb"):
+                with self.subTest(command=command):
+                    payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+                    allowed = self.run_guard(root, "PreToolUse", payload=payload)
+                    self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+                    self.assertEqual("allow", allowed.stdout.strip())
+
     def test_still_allows_commands_that_merely_look_like_the_disabling_spellings(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

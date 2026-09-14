@@ -92,7 +92,12 @@ CHECKED_CHECKBOX_RE = re.compile(r"(?m)^[ \t]*-\s\[[xX]\]")
 # 1 MB command is answered in a few milliseconds, and it allows every other Bash
 # command -- git decides no-force-push and no-test-skip-commit itself, at the
 # pre-push/pre-commit layer.
-HOOK_DISABLING_SUBSTRINGS = ("--no-verify", "--git-dir", "GIT_DIR=", "GIT_CONFIG=", "GIT_CONFIG_")
+# `--no-veri`, not `--no-verify`: git accepts any unambiguous abbreviation of a long option, and
+# `--no-veri` is the shortest one it accepts for `--no-verify` on both `commit` and `push`
+# (`--no-ver` is refused as ambiguous with `--no-verbose`). As a plain substring it therefore
+# catches `--no-veri`, `--no-verif` and `--no-verify` alike, while `--no-verb`/`--no-verbose` --
+# a different flag, which does not disable a hook -- stays allowed.
+HOOK_DISABLING_SUBSTRINGS = ("--no-veri", "--git-dir", "GIT_DIR=", "GIT_CONFIG=", "GIT_CONFIG_")
 # Matched against the lowercased command: git configuration keys are case-insensitive, so
 # `-c core.hookspath=/dev/null` and `-c CORE.HOOKSPATH=...` disable the hooks exactly as
 # `core.hooksPath` does. Environment-variable names are not case-insensitive, so the
