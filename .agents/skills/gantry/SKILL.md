@@ -75,11 +75,20 @@ Every script provides `--help`, and data-producing paths support `--json`.
   three events are never appended again — a Run log accepts only one `run.started` and rejects a
   duplicate. Every round, first or not, then appends `round.started`, one `phase.started` /
   `phase.finished` pair per Implement, Review and Critic phase, one
-  `subagent.started` / `subagent.stopped` pair per fresh agent carrying its validated role result,
+  `subagent.started` / `subagent.stopped` pair per fresh agent carrying its role result,
   `review.finding` after the Reviewer returns, `refutation` on every non-accepted Critic verdict,
   `issue.blocked` when the correction ceiling is spent without acceptance, `issue.done` on successful
   integration, `run.cancelled` on the first red post-merge gate, and `round.finished`. Only the last round
   of a Run (`args.isLastRound = true`) appends `run.finished`, once, after that round's `round.finished`.
+  The Critic's `subagent.stopped` carries a projection of its verdict, never the verdict unchanged: its
+  `gateResult` is a real `gates.py --json` payload, and `runlog.py append` fails loudly on any
+  `command`/`output`-tokenized field at any depth (its own rule), which a real `gates[].command` and
+  `gates[].output_tail` are. `reference/round-workflow.md`'s `projectCriticResult` keeps `complete`,
+  `criteria`, `gatesVerdict`, `gateFailures`, `refutations`, `requiredFixes` and `decisionsForOperator`
+  as returned, and narrows `gateResult` to only its `verdict` and `requirements` — dropping `gates`
+  entirely — so a genuine gates run never fails the append and the Run log still records only the
+  Critic's role result and reasoning, never command output. Every other role's `subagent.stopped` still
+  carries its result unprojected, and `runlog.py` still rejects it if it ever carries prohibited data.
   `issue.blocked` records only a Run-log fact: the Issue's `Status:` line stays `ready-for-agent` so
   `frontier.py` keeps offering it, and only `roadmap.py done` after Critic acceptance ever changes an
   Issue's authoritative status. Omitting `runId` or `unitId` disables recording entirely and leaves the

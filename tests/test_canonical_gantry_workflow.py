@@ -1397,6 +1397,101 @@ Scenario: greet a user
             self.assertEqual(["test commit"], implement_result["commits"])
             self.assertEqual("workflow execution", implement_result["summary"])
 
+    def test_round_workflow_projects_a_real_gates_json_critic_verdict_before_recording_it(self) -> None:
+        # A real Critic runs `gates.py --run --diff-base <baseRef> --json` and returns that payload
+        # unchanged in `gateResult`, per its own prompt contract. `gates.py --json`'s real shape carries
+        # `gates[{name, source, command, exit_code, output_tail, status}]` — command and output data the
+        # Run log must never store (spec.md line 25; `runlog.py`'s own `command`/`output` rejection).
+        # Recording that payload unprojected would make `runlog.py append` fail loudly on every genuinely
+        # gate-green Critic pass, not only on disallowed data. This proves the round still completes.
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "realgate#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True,
+            ).stdout.strip()
+
+            real_gates_json = self.run_script(root, "gates.py", "--run", "--diff-base", base_ref, "--cwd", str(root), "--json")
+            self.assertEqual(0, real_gates_json.returncode, real_gates_json.stderr)
+            real_gate_result = json.loads(real_gates_json.stdout)
+            self.assertEqual("pass", real_gate_result["verdict"])
+            self.assertTrue(real_gate_result["gates"])
+            self.assertIn("command", real_gate_result["gates"][0])
+            self.assertIn("output_tail", real_gate_result["gates"][0])
+
+            state_root = Path(state_dir)
+            unit_id = "cdcdcdcdcdcd"
+            run_id = "run-realgate-1"
+
+            run = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{"ref": "realgate#01", "path": str(issue.relative_to(root)), "title": "Real gate", "specPath": ".scratch/realgate/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/realgate",
+                    "baseRef": base_ref,
+                    "isolate": False,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "commandMode": "real",
+                    "runId": run_id,
+                    "unitId": unit_id,
+                    "stateRoot": str(state_root),
+                    "tier": "reference",
+                    "isLastRound": True,
+                    "criticResult": {
+                        "criteria": self.critic_evidence(root, issue),
+                        "gatesVerdict": real_gate_result["verdict"],
+                        "gateResult": real_gate_result,
+                    },
+                },
+            )
+
+            self.assertIsNone(run["error"], run["error"])
+            self.assertEqual("done", run["result"]["results"][0]["outcome"])
+
+            events = self.read_run_log_events(state_root, unit_id, run_id)
+            critic_stopped = [
+                event for event in events
+                if event["event"] == "subagent.stopped" and event["phase"] == "Critic"
+            ]
+            self.assertEqual(1, len(critic_stopped))
+            recorded_gate_result = critic_stopped[0]["data"]["result"]["gateResult"]
+            self.assertEqual({"verdict", "requirements"}, set(recorded_gate_result.keys()))
+            self.assertEqual("pass", recorded_gate_result["verdict"])
+            self.assertEqual(real_gate_result["requirements"], recorded_gate_result["requirements"])
+
+            raw_lines = (state_root / unit_id / "runs" / f"{run_id}.jsonl").read_text(encoding="utf-8").splitlines()
+            self.assertTrue(raw_lines)
+            for line in raw_lines:
+                keys = set()
+
+                def collect_keys(value: object) -> None:
+                    if isinstance(value, dict):
+                        keys.update(value.keys())
+                        for nested in value.values():
+                            collect_keys(nested)
+                    elif isinstance(value, list):
+                        for nested in value:
+                            collect_keys(nested)
+
+                collect_keys(json.loads(line))
+                self.assertNotIn("command", keys, line)
+                self.assertNotIn("output", keys, line)
+                self.assertNotIn("output_tail", keys, line)
+
     def test_round_workflow_emits_run_started_and_run_finished_exactly_once_across_two_rounds(self) -> None:
         # A Run spans multiple rounds of the same round-workflow.md invocation sharing one runId/unitId.
         # `run.started` must open the Run exactly once (on the first round) and `run.finished` must close
@@ -2006,10 +2101,13 @@ Scenario: greet a user
 
     def test_append_run_event_fails_loudly_when_runlog_rejects_a_prohibited_key(self) -> None:
         # Covers feedback item 2: `appendRunEvent` must check the exit code of `runlog.py append` and
-        # fail loudly instead of silently discarding a rejected event. `gateResult` permits additional
-        # properties in the Critic result schema, so a `gateResult.diff` field passes role-result
-        # validation but is rejected by `runlog.py`'s own prohibited-key check — this proves the failure
-        # surfaces as a thrown error, not a silently missing line in the Run log.
+        # fail loudly instead of silently discarding a rejected event. `projectCriticResult` narrows a
+        # recorded Critic verdict's `gateResult` to only `verdict` and `requirements`, deliberately
+        # dropping any other `gateResult` field (such as a real gates.py run's `gates[]` or a stray
+        # `diff`) so a genuine gate-green Critic pass can still be recorded. `requirements` itself passes
+        # through unchanged, so a prohibited key nested inside it (not a sibling `gateResult` field, which
+        # the projection now strips before it ever reaches `runlog.py`) still reaches `runlog.py`'s own
+        # prohibited-key check and must still surface as a thrown error, not a silently missing line.
         with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
             root = Path(temp)
             self.init_repo(root)
@@ -2048,10 +2146,12 @@ Scenario: greet a user
                     "tier": "reference",
                     "criticResult": {
                         "criteria": self.critic_evidence(root, issue),
-                        # `gateResult` permits additionalProperties, so this passes result.py's schema,
-                        # but `diff` is a prohibited key at every nesting level in `runlog.py`'s own Run
-                        # log validation.
-                        "gateResult": {"verdict": "pass", "diff": "leaked diff content"},
+                        # `gateResult` permits additionalProperties, so this passes result.py's schema.
+                        # `projectCriticResult` keeps `requirements` unchanged, so a prohibited key nested
+                        # inside one of its entries still reaches `runlog.py`'s own prohibited-key check
+                        # at every nesting level, even though a sibling `gateResult` field (like a bare
+                        # `diff`) would now be dropped by the projection before ever reaching `runlog.py`.
+                        "gateResult": {"verdict": "pass", "requirements": [{"command": "leaked command"}]},
                     },
                 },
             )

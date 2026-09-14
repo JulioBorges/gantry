@@ -24,11 +24,22 @@ and worktree being continued; a later round of the same Run passes `args.isFirst
 `run.started`, `run.resumed` and `policy.changed` are never appended again — a Run log accepts only one
 `run.started` and rejects a duplicate. Every round, first or not, appends `round.started`, one `phase.started` /
 `phase.finished` pair per Implement, Review and Critic phase, one `subagent.started` / `subagent.stopped`
-pair per fresh agent carrying the validated role result, `review.finding` after the Reviewer returns,
+pair per fresh agent carrying the role result, `review.finding` after the Reviewer returns,
 `refutation` on every non-accepted Critic verdict, `issue.blocked` when the correction ceiling is spent
 without acceptance, `issue.done` on successful integration, `policy.changed` when `args.priorRun.policyHash`
 (the policy hash recorded on the prior Run) differs from the current effective policy hash,
-`run.cancelled` on the first red post-merge gate and `round.finished` / `run.finished` at the end.
+`run.cancelled` on the first red post-merge gate and `round.finished` / `run.finished` at the end. The
+Critic's `subagent.stopped` never carries its verdict unchanged: `runlog.py append` rejects any
+`command`, `output` (and similarly-tokenized) field at any nesting level per its own rule, and the
+Critic's `gateResult` is a real `gates.py --json` payload whose `gates[]` entries carry exactly those
+fields (`command`, `output_tail`) alongside a real command's execution details. The workflow instead
+records `projectCriticResult(verdict)`: `complete`, `criteria`, `gatesVerdict`, `gateFailures`,
+`refutations`, `requiredFixes` and `decisionsForOperator` unchanged, plus `gateResult` narrowed to only
+its `verdict` and `requirements` (both free of command/output data) — never `gateResult.gates`. This
+keeps the Run log a record of the Critic's role result and reasoning, never of command output, while the
+full verdict (including the untouched `gateResult`) still drives `criticAccepted` and the workflow's own
+structured output. Every other role's result reaches `subagent.stopped` unprojected, and `runlog.py`
+still fails loudly if any of them carries prohibited data.
 Preflight resolves `args.runId` and `args.unitId` once per Run and never rereads the log to decide
 readiness or completion — only `frontier.py`, Issue `Status:` lines and `roadmap.py` decide that. When
 `args.priorRun` names the Issue being continued (`args.priorRun.issue`), its preserved worktree, branch
@@ -146,6 +157,23 @@ function stableHash(value) {
     hash = ((hash * 33) ^ json.charCodeAt(index)) >>> 0
   }
   return hash.toString(16).padStart(8, '0')
+}
+
+function projectCriticResult(verdict) {
+  if (!verdict || typeof verdict !== 'object') return verdict
+  const projected = {
+    complete: verdict.complete,
+    criteria: verdict.criteria,
+    gatesVerdict: verdict.gatesVerdict,
+    gateFailures: verdict.gateFailures,
+    refutations: verdict.refutations,
+    requiredFixes: verdict.requiredFixes,
+    decisionsForOperator: verdict.decisionsForOperator,
+  }
+  if (verdict.gateResult && typeof verdict.gateResult === 'object') {
+    projected.gateResult = { verdict: verdict.gateResult.verdict, requirements: verdict.gateResult.requirements }
+  }
+  return projected
 }
 
 async function appendRunEvent(event, issueRef, phaseName, data) {
@@ -451,7 +479,7 @@ const results = await pipeline(
       verdict = await requestRole('critic', criticPrompt(issue, impl, state.review, attempt), {
         label: `critic:${issue.ref}#${attempt}`, phase: 'Critic', model: A.models.critic, cwd: location(impl),
       })
-      await appendRunEvent('subagent.stopped', issue.ref, 'Critic', { role: 'critic', attempt, result: verdict })
+      await appendRunEvent('subagent.stopped', issue.ref, 'Critic', { role: 'critic', attempt, result: projectCriticResult(verdict) })
       await appendRunEvent('phase.finished', issue.ref, 'Critic', { attempt })
       if (!verdict) {
         return {

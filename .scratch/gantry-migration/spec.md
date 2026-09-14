@@ -166,6 +166,28 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-14 — Addressed a fourth retry round of adversarial-critic feedback: the Critic's `subagent.stopped`
+  no longer carries its verdict unchanged into the Run log. A Critic proving completion runs a real
+  `gates.py --run --diff-base <baseRef> --json` and returns that parsed payload unchanged in
+  `gateResult` (the spec's own contract), so `gateResult.gates[]` carries real `command` and
+  `output_tail` fields for every gate it ran — and `runlog.py append` rejects any `command`- or
+  `output`-tokenized key at any nesting depth by its own rule (spec line 25: the Run log records
+  references and role results, never command output). Recording the raw verdict would therefore throw
+  on every genuinely gate-green Critic pass, breaking the Run log for real work rather than only for
+  disallowed data. `round-workflow.md` now records `projectCriticResult(verdict)` instead: `complete`,
+  `criteria`, `gatesVerdict`, `gateFailures`, `refutations`, `requiredFixes` and `decisionsForOperator`
+  pass through unchanged, and `gateResult` is narrowed to only its `verdict` and `requirements` strings
+  — dropping `gates` (and therefore every `command`/`output_tail`) entirely. This keeps the Run log a
+  record of the Critic's role result and reasoning about the gates, never of the gate commands' output,
+  while `criticAccepted` and the workflow's own structured output still see the full, untouched verdict.
+  `runlog.py` keeps failing loudly on prohibited data from any other role. `SKILL.md` and
+  `round-workflow.md`'s 'Recorded Run lifecycle' prose now describe this projection, and a new workflow
+  integration test in `tests/test_canonical_gantry_workflow.py` runs the canonical workflow with a Critic
+  double that returns a `gateResult` shaped exactly like real `gates.py --json` output (`gates[{name,
+  source, command, exit_code, output_tail, status}]`, `requirements`, `git`, `verdict: 'pass'`) under
+  `commandMode: 'real'` with `runId`/`unitId` set, asserting the round reaches `'done'`, a Critic
+  `subagent.stopped` event is present, and no line of the recorded Run log contains a `command` or
+  `output` key.
 - 2026-09-13 — Addressed a third retry round of adversarial-critic feedback on multi-round Runs:
   `round-workflow.md` now takes an explicit `args.isFirstRound` (default `true`) alongside
   `args.isLastRound`, so `run.started`, `run.resumed` and `policy.changed` are appended only on the
