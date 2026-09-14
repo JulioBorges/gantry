@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Git pre-push hook: reject any non-fast-forward ref update, however it is spelled.
+
+Per `docs/adr/0005-git-hooks-enforce-git-rules.md`, force-push detection lives here
+instead of in `guard.py`'s Bash-command parsing: a blocklist over free-form shell
+text never converges (three ASDLC rounds each closed one spelling of `--force` and
+opened another), but the *ref update itself* has no spelling to hide behind. Git
+feeds this hook, on stdin, one line per ref update: `<local ref> <local sha1>
+<remote ref> <remote sha1>`. An update is non-fast-forward exactly when the remote
+SHA is not an ancestor of the local SHA -- `git merge-base --is-ancestor <remote-sha>
+<local-sha>` failing is the definition, checked directly against the actual SHAs
+git is about to push, never inferred from `--force`, `-f`, a combined short flag,
+a `+refspec`, `--mirror`, `--force-with-lease`, or any other way the command could
+have been typed. A brand-new or deleted ref (either SHA all zero) trivially passes:
+there is no prior tip to rewrite. Denying one ref update aborts the whole push.
+
+Activated by `core.hooksPath` pointing at this directory
+(`.agents/skills/gantry/hooks/git/`); `gantry-setup` writes that config into the
+operator's repository (`gantry-migration#10`) -- this hook only proves itself in
+temporary repositories where a test sets `core.hooksPath` directly.
+"""
+from __future__ import annotations
+
+import datetime
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
+
+import runlog  # noqa: E402
+
+ZERO_SHA = {"0" * 40, "0" * 64}
+
+
+def now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def is_fast_forward(remote_sha: str, local_sha: str) -> bool:
+    """True when `remote_sha` is an ancestor of `local_sha`, or the ref is being created or deleted."""
+    if remote_sha in ZERO_SHA or local_sha in ZERO_SHA:
+        return True
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", remote_sha, local_sha],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def record_denied(cwd: Path, ref: str) -> None:
+    """Best-effort append of a `hook.denied` event; never changes the hook's decision."""
+    run_id = os.environ.get("GANTRY_RUN_ID")
+    if not run_id or not runlog.RUN_ID_RE.fullmatch(run_id):
+        return
+    try:
+        root = runlog.state_root(os.environ.get("GANTRY_STATE_ROOT"))
+        unit = runlog.unit_id(cwd)
+        log_path = runlog.run_log_path(root, unit, run_id)
+        if not log_path.exists():
+            return
+        event = runlog.validate_event(
+            {
+                "ts": now_iso(),
+                "run": run_id,
+                "event": "hook.denied",
+                "data": {"rule": "no-force-push", "path": ref},
+            }
+        )
+        runlog.append_event(log_path, event)
+    except (runlog.EventError, OSError, ValueError):
+        return
+
+
+def main() -> int:
+    cwd = Path.cwd()
+    denied = False
+    for line in sys.stdin:
+        parts = line.strip().split()
+        if len(parts) != 4:
+            continue
+        _local_ref, local_sha, remote_ref, remote_sha = parts
+        if is_fast_forward(remote_sha, local_sha):
+            continue
+        message = f"deny: no-force-push {remote_ref}"
+        print(message)
+        print(message, file=sys.stderr)
+        record_denied(cwd, remote_ref)
+        denied = True
+    return 1 if denied else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -5,14 +5,20 @@
 argument and the harness's JSON payload on standard input. Per ADR-0003, it never
 decides whether work is ready or done -- that authority stays with `roadmap.py` and
 the other workflow scripts. It only blocks specific shortcuts (editing the roadmap or
-an Issue's Status/checkbox fields outside `roadmap.py`, force-pushing, committing a
-test-skip pattern) and records hook and subagent events into the Run log. Any payload
-shape it does not recognise degrades to "record what is safely recordable, grant no
-authority" -- it never denies without both a rule and a refused path, and it never
-manufactures a false completion. Empty, undecodable or non-object stdin is recorded as
-a `hook.degraded` event with `data.missing == ["payload"]` whenever a Run ID is
-resolvable from `--run-id` or `$GANTRY_RUN_ID` (never from the payload, since there is
-none to read); with no Run ID at all, nothing is recorded.
+an Issue's Status/checkbox fields outside `roadmap.py`, and a Bash command that would
+disable the git-level guard hooks) and records hook and subagent events into the Run
+log. Any payload shape it does not recognise degrades to "record what is safely
+recordable, grant no authority" -- it never denies without both a rule and a refused
+path, and it never manufactures a false completion. Empty, undecodable or non-object
+stdin is recorded as a `hook.degraded` event with `data.missing == ["payload"]`
+whenever a Run ID is resolvable from `--run-id` or `$GANTRY_RUN_ID` (never from the
+payload, since there is none to read); with no Run ID at all, nothing is recorded.
+
+Per `docs/adr/0005-git-hooks-enforce-git-rules.md`, no-force-push and no-test-skip-commit
+are enforced by the repository's own `pre-push`/`pre-commit` git hooks
+(`.agents/skills/gantry/hooks/git/`), which see the actual ref update or staged diff
+rather than a Bash command string. `guard.py`'s only remaining Bash rule is a linear
+substring check refusing a command that would disable that git layer.
 """
 from __future__ import annotations
 
@@ -21,8 +27,6 @@ import datetime
 import json
 import os
 import re
-import shlex
-import subprocess
 import sys
 from pathlib import Path
 
@@ -82,87 +86,12 @@ STATUS_LINE_RE = re.compile(r"(?m)^Status:\s*(\S+)")
 CHECKBOX_LINE_RE = re.compile(r"(?m)^[ \t]*-\s\[[ xX]\]")
 CHECKBOX_FULL_LINE_RE = re.compile(r"(?m)^[ \t]*-\s\[[ xX]\].*$")
 CHECKED_CHECKBOX_RE = re.compile(r"(?m)^[ \t]*-\s\[[xX]\]")
-FORCE_FLAG_RE = re.compile(r"(--force(-with-lease)?\b|(?:^|\s)-f\b)")
-FORCE_REFSPEC_RE = re.compile(r"(?:^|\s)\+\S")
-# `\bgit\b[^&|;]*\bpush\b` (and the equivalent `commit` pattern) look linear but are not:
-# for a command with many `git` tokens and no `push`/`commit` anywhere, `re.search` retries
-# the whole `[^&|;]*\bpush\b` backtrack from every `git` match it finds, which is O(n) per
-# attempt and O(k) attempts -- O(n*k) overall. `_command_has_git_then_token` instead
-# whitespace-tokenises each `[&|;\n]`-delimited segment exactly once and walks it left to
-# right, so the whole command is scanned in a single O(n) pass regardless of how many `git`
-# tokens it contains.
-COMMAND_SEGMENT_SPLIT_RE = re.compile(r"[&|;\n]+")
-# Segment matches exclude newlines so a heredoc body following `git commit -F - <<EOF`
-# is never pulled into the segment tokenised below -- a multi-megabyte heredoc payload
-# stays off the shlex.split() path entirely.
-COMMIT_SEGMENT_RE = re.compile(r"\bgit\b[^&|;\n]*\bcommit\b[^&|;\n]*")
-GIT_ADD_SEGMENT_RE = re.compile(r"\bgit\b[^&|;\n]*\badd\b[^&|;\n]*")
-# shlex.split() correctly honours quoting, but is not linear-time on adversarial input, so it
-# is only used below the length at which it is measured to stay fast; a `-a`/`-A`/`--all` or
-# `add` target that arrives after a long commit-message or after hundreds of prior targets must
-# never be dropped just because the segment is long -- every token in the full segment is
-# always inspected, never truncated.
-SEGMENT_SCAN_LIMIT = 4096
-
-
-def _bounded_tokens(segment: str) -> list[str]:
-    """Tokenise the whole of `segment`, never dropping trailing tokens.
-
-    `shlex.split()` is used for segments up to `SEGMENT_SCAN_LIMIT` characters, where it stays
-    fast and honours quoting. Beyond that, a plain whitespace `str.split()` over the *entire*
-    segment is used instead -- O(len(segment)) with no quote-awareness, but it still sees every
-    token, including a trailing `-a`/`-A`/`--all` after a multi-kilobyte commit message or a
-    `git add` target far past the first few hundred files.
-    """
-    if len(segment) <= SEGMENT_SCAN_LIMIT:
-        try:
-            return shlex.split(segment)
-        except ValueError:
-            return segment.split()
-    return segment.split()
-
-
-def _segment_has_git_then_token(segment: str, target: str) -> bool:
-    """Whitespace-tokenise `segment` once and report whether a `git` token is
-    followed later in the same segment by a `target` token.
-
-    This is the O(len(segment)) replacement for `\\bgit\\b[^&|;]*\\bTARGET\\b`
-    -- a single left-to-right walk instead of a regex backtrack retried from
-    every `git` occurrence.
-    """
-    seen_git = False
-    for token in segment.split():
-        if token == "git":
-            seen_git = True
-        elif seen_git and token == target:
-            return True
-    return False
-
-
-def _command_has_git_then_token(command: str, target: str) -> bool:
-    """Split `command` on shell separators and check each segment independently.
-
-    Splitting on `[&|;\\n]` first keeps a `git ... ; ... TARGET` command (where the
-    `TARGET` is unrelated to `git`) from producing a false positive, matching the
-    `[^&|;]*` exclusion the previous regex-based check enforced.
-    """
-    return any(
-        _segment_has_git_then_token(segment, target)
-        for segment in COMMAND_SEGMENT_SPLIT_RE.split(command)
-    )
-
-
-TEST_SKIP_PATTERNS = [
-    re.compile(pattern)
-    for pattern in (
-        r"^\s*@unittest\.skip",
-        r"^\s*@pytest\.mark\.(skip|xfail)",
-        r"^\s*@Disabled",
-        r"^\s*(xit|xdescribe)\(",
-        r"\b(it|describe|test)\.skip\(",
-        r"\bt\.Skip\(",
-    )
-]
+# The only remaining Bash rule (docs/adr/0005): a linear substring check refusing a
+# command that would disable the git-level guard hooks. It tokenises nothing, so a
+# 1 MB command is answered in a few milliseconds, and it allows every other Bash
+# command -- git decides no-force-push and no-test-skip-commit itself, at the
+# pre-push/pre-commit layer.
+HOOK_DISABLING_SUBSTRINGS = ("--no-verify", "core.hooksPath", "--git-dir", "GIT_DIR=")
 
 
 class Decision:
@@ -269,156 +198,6 @@ def resolve_effective_cwd(payload: dict, fallback: Path) -> Path:
     return fallback
 
 
-def staged_diff_skip_match(cwd: Path) -> str | None:
-    """Return the first staged file whose added lines introduce a test-skip pattern."""
-    try:
-        result = subprocess.run(
-            ["git", "diff", "--cached", "--unified=0"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
-        return None
-    current_file: str | None = None
-    for line in result.stdout.splitlines():
-        if line.startswith("+++ "):
-            current_file = line[6:] if line.startswith("+++ b/") else line[4:]
-            continue
-        if line.startswith("+++"):
-            continue
-        if line.startswith("+"):
-            added = line[1:]
-            if any(pattern.search(added) for pattern in TEST_SKIP_PATTERNS):
-                return current_file
-    return None
-
-
-def tracked_worktree_skip_match(cwd: Path) -> str | None:
-    """First tracked file (staged or unstaged) whose diff against HEAD adds a test-skip pattern.
-
-    Used only when a commit invocation may bypass a plain `--cached` check -- a
-    `git add`-then-commit shape or `-a`/`--all`/`-A` on the commit itself -- since
-    `git diff HEAD` folds in unstaged changes that `git diff --cached` alone would miss.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "diff", "HEAD", "--unified=0"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
-        return None
-    current_file: str | None = None
-    for line in result.stdout.splitlines():
-        if line.startswith("+++ "):
-            current_file = line[6:] if line.startswith("+++ b/") else line[4:]
-            continue
-        if line.startswith("+++"):
-            continue
-        if line.startswith("+"):
-            added = line[1:]
-            if any(pattern.search(added) for pattern in TEST_SKIP_PATTERNS):
-                return current_file
-    return None
-
-
-def list_untracked_files(cwd: Path) -> list[str]:
-    """Every untracked path, best-effort; an empty list on any git failure."""
-    try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain", "--untracked-files=all"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    if result.returncode != 0:
-        return []
-    files: list[str] = []
-    for line in result.stdout.splitlines():
-        if line.startswith("?? "):
-            files.append(line[3:].strip().strip('"'))
-    return files
-
-
-def file_has_skip_pattern(path: Path) -> bool:
-    try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return False
-    return any(pattern.search(line) for line in text.splitlines() for pattern in TEST_SKIP_PATTERNS)
-
-
-def extract_git_add_targets(command: str) -> tuple[list[str], bool] | None:
-    """The files named by the first `git add` segment in `command`, and whether it adds everything.
-
-    Returns `None` when the command has no `git add` segment at all.
-    """
-    match = GIT_ADD_SEGMENT_RE.search(command)
-    if not match:
-        return None
-    tokens = _bounded_tokens(match.group(0))
-    if "add" not in tokens:
-        return None
-    rest = tokens[tokens.index("add") + 1 :]
-    add_all = False
-    targets: list[str] = []
-    for token in rest:
-        if token in (".", "-A", "--all"):
-            add_all = True
-            continue
-        if token.startswith("-"):
-            continue
-        targets.append(token)
-    return targets, add_all
-
-
-def commit_uses_all_flag(command: str) -> bool:
-    """True when the `git commit` segment of `command` passes `-a`, `-A`, `--all`, or a combined
-    short flag containing one of those letters (e.g. `-am`)."""
-    match = COMMIT_SEGMENT_RE.search(command)
-    if not match:
-        return False
-    tokens = _bounded_tokens(match.group(0))
-    for token in tokens:
-        if token in ("-a", "-A", "--all"):
-            return True
-        if token.startswith("-") and not token.startswith("--") and len(token) > 1 and ("a" in token[1:] or "A" in token[1:]):
-            return True
-    return False
-
-
-def untracked_skip_match(cwd: Path, targets: list[str], add_all: bool) -> str | None:
-    """First untracked file named by `targets` (or any untracked file, when `add_all`) with a skip pattern."""
-    untracked = list_untracked_files(cwd)
-    if add_all:
-        candidates = untracked
-    else:
-        target_set = set(targets)
-        candidates = [
-            relpath
-            for relpath in untracked
-            if relpath in target_set or any(relpath.startswith(target.rstrip("/") + "/") for target in targets)
-        ]
-    for relpath in candidates:
-        if file_has_skip_pattern(cwd / relpath):
-            return relpath
-    return None
-
-
 def apply_edits(original: str, arguments: dict) -> str | None:
     """Apply Edit/MultiEdit-style `old_string` -> `new_string` edits to `original`, in order.
 
@@ -504,26 +283,13 @@ def decide(payload: dict, cwd: Path) -> Decision:
         command = extract_command(arguments)
         if not command:
             return Decision(True)
-        # A shell backslash-newline is a line continuation, not a separator: `git commit \\\n
-        # -a -m x` is one logical command line, `git commit -a -m x`. Normalising it before any
-        # segmenting/tokenising keeps COMMAND_SEGMENT_SPLIT_RE, COMMIT_SEGMENT_RE and
-        # GIT_ADD_SEGMENT_RE from being fooled into treating a continued flag as absent.
-        command = re.sub(r"\\\n", " ", command)
-        if _command_has_git_then_token(command, "push") and (
-            FORCE_FLAG_RE.search(command) or FORCE_REFSPEC_RE.search(command)
-        ):
-            return Decision(False, "no-force-push", command.strip()[:200])
-        if _command_has_git_then_token(command, "commit"):
-            matched_file = staged_diff_skip_match(cwd)
-            if not matched_file:
-                add_targets = extract_git_add_targets(command)
-                if add_targets is not None or commit_uses_all_flag(command):
-                    matched_file = tracked_worktree_skip_match(cwd)
-                if not matched_file and add_targets is not None:
-                    targets, add_all = add_targets
-                    matched_file = untracked_skip_match(cwd, targets, add_all)
-            if matched_file:
-                return Decision(False, "no-test-skip-commit", matched_file)
+        # The only remaining Bash rule (docs/adr/0005): a linear substring scan, never
+        # tokenised, so it stays fast on an arbitrarily large command. no-force-push and
+        # no-test-skip-commit are enforced by the git hooks themselves; this only refuses
+        # a command that would disable that layer.
+        for token in HOOK_DISABLING_SUBSTRINGS:
+            if token in command:
+                return Decision(False, "hook-bypass-protected", command.strip()[:200])
         return Decision(True)
 
     return Decision(True)

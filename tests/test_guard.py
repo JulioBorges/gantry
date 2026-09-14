@@ -651,338 +651,55 @@ class GuardHookTests(unittest.TestCase):
             self.assertEqual("PreToolUse", degraded[0]["data"]["source"])
             self.assertIn("tool_input", degraded[0]["data"]["missing"])
 
-    # -- force push and test-skip commit -----------------------------------------------------
+    # -- Bash: only rule is the hook-disabling substring check --------------------------------
 
-    def test_denies_force_push_and_test_skip_commit(self) -> None:
+    def test_allows_ordinary_bash_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            for command in (
+                "git status",
+                "git push --force origin main",
+                "git commit -am 'skip the world'",
+                "npm test",
+                "python3 -m pytest",
+                "ls -la && echo done",
+            ):
+                with self.subTest(command=command):
+                    payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+                    allowed = self.run_guard(root, "PreToolUse", payload=payload)
+                    self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+                    self.assertEqual("allow", allowed.stdout.strip())
+
+    def test_denies_bash_commands_that_would_disable_the_git_hooks_layer(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self.init_repository(root)
             state = root / "state"
             run = self.seed_run(root, state)
 
-            push_payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git push --force origin main"}}
-            denied_push = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=push_payload)
-            self.assertEqual(2, denied_push.returncode)
-            self.assertIn("no-force-push", denied_push.stdout)
+            for command in (
+                "git commit --no-verify -m x",
+                "git config core.hooksPath /tmp/evil && git push",
+                "git --git-dir=/tmp/other.git push",
+                "GIT_DIR=/tmp/other.git git push",
+            ):
+                with self.subTest(command=command):
+                    payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+                    denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+                    self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+                    lines = [line for line in denied.stdout.splitlines() if line]
+                    self.assertEqual(1, len(lines))
+                    self.assertIn("hook-bypass-protected", lines[0])
 
-            safe_push = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git push origin main"}}
-            allowed_push = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=safe_push)
-            self.assertEqual(0, allowed_push.returncode)
-
-            (root / "app_test.py").write_text("import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n", encoding="utf-8")
-            subprocess.run(["git", "add", "app_test.py"], cwd=root, check=True)
-            commit_payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git commit -m 'add test'"}}
-            denied_commit = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=commit_payload)
-            self.assertEqual(2, denied_commit.returncode)
-            self.assertIn("no-test-skip-commit", denied_commit.stdout)
-            self.assertIn("app_test.py", denied_commit.stdout)
-
-            subprocess.run(["git", "reset"], cwd=root, check=True)
-            (root / "app_test.py").write_text("import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n", encoding="utf-8")
-            subprocess.run(["git", "add", "app_test.py"], cwd=root, check=True)
-            allowed_commit = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=commit_payload)
-            self.assertEqual(0, allowed_commit.returncode)
-
-    def test_denies_git_add_then_commit_of_an_unstaged_skip_file(self) -> None:
-        """'git add <file> && git commit' must be checked against the working tree, not just the index."""
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            (root / "app_test.py").write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            # Deliberately never actually run `git add`: guard.py must not trust the index alone.
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git add app_test.py && git commit -m x"}}
-            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
-            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
-            self.assertIn("no-test-skip-commit", denied.stdout)
-            self.assertIn("app_test.py", denied.stdout)
-
-    def test_allows_git_add_then_commit_of_a_clean_unstaged_file(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            (root / "app_test.py").write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git add app_test.py && git commit -m x"}}
-            allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
-            self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
-
-    def test_denies_commit_dash_a_of_a_tracked_but_unstaged_skip_edit(self) -> None:
-        """'git commit -am' must be checked against unstaged tracked changes too, not just --cached."""
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            test_file = root / "app_test.py"
-            test_file.write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            subprocess.run(["git", "add", "app_test.py"], cwd=root, check=True)
-            subprocess.run(["git", "commit", "--quiet", "-m", "add test"], cwd=root, check=True)
-
-            # Now modify the tracked file without staging the change.
-            test_file.write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git commit -am x"}}
-            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
-            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
-            self.assertIn("no-test-skip-commit", denied.stdout)
-            self.assertIn("app_test.py", denied.stdout)
-
-    def test_allows_commit_dash_a_of_a_clean_tracked_unstaged_edit(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            test_file = root / "app_test.py"
-            test_file.write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            subprocess.run(["git", "add", "app_test.py"], cwd=root, check=True)
-            subprocess.run(["git", "commit", "--quiet", "-m", "add test"], cwd=root, check=True)
-
-            test_file.write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n    def test_y(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git commit -am x"}}
-            allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
-            self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
-
-    def test_denies_commit_dash_a_after_a_five_thousand_character_message(self) -> None:
-        """A trailing -a beyond the bounded-token scan window must still be seen."""
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            test_file = root / "app_test.py"
-            test_file.write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            subprocess.run(["git", "add", "app_test.py"], cwd=root, check=True)
-            subprocess.run(["git", "commit", "--quiet", "-m", "add test"], cwd=root, check=True)
-
-            # Modify the tracked file without staging the change.
-            test_file.write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            long_message = "x" * 5000
-            command = f"git commit -m '{long_message}' -a"
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
-            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
-            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
-            self.assertIn("no-test-skip-commit", denied.stdout)
-            self.assertIn("app_test.py", denied.stdout)
-
-    def test_denies_git_add_naming_an_untracked_skip_file_after_many_other_targets(self) -> None:
-        """A `git add` target past the bounded-token scan window must still be seen."""
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            (root / "skip_test.py").write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            other_targets = " ".join(f"other_{i}.txt" for i in range(700))
-            command = f"git add {other_targets} skip_test.py && git commit -m x"
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
-            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
-            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
-            self.assertIn("no-test-skip-commit", denied.stdout)
-            self.assertIn("skip_test.py", denied.stdout)
-
-    def test_allows_committing_guards_own_source_despite_skip_pattern_literals(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            (root / "guard.py").write_bytes(GUARD.read_bytes())
-            (root / "test_guard.py").write_bytes((REPO_ROOT / "tests" / "test_guard.py").read_bytes())
-            subprocess.run(["git", "add", "guard.py", "test_guard.py"], cwd=root, check=True)
-
-            commit_payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git commit -m 'copy guard sources'"}}
-            allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=commit_payload)
-            self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
-
-    def test_denies_commit_dash_a_split_across_a_backslash_newline_continuation(self) -> None:
-        """A shell line-continuation must not hide `-a` from the tokeniser."""
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            test_file = root / "app_test.py"
-            test_file.write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            subprocess.run(["git", "add", "app_test.py"], cwd=root, check=True)
-            subprocess.run(["git", "commit", "--quiet", "-m", "add test"], cwd=root, check=True)
-
-            test_file.write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            command = "git commit \\\n  -a -m x"
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
-            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
-            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
-            self.assertIn("no-test-skip-commit", denied.stdout)
-            self.assertIn("app_test.py", denied.stdout)
-
-    def test_denies_git_add_split_across_a_backslash_newline_continuation(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            (root / "skip_test.py").write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            command = "git add \\\n skip_test.py && git commit -m x"
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
-            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
-            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
-            self.assertIn("no-test-skip-commit", denied.stdout)
-            self.assertIn("skip_test.py", denied.stdout)
-
-    def test_denies_force_push_split_across_a_backslash_newline_continuation(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            command = "git \\\n push --force"
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
-            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
-            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
-            self.assertIn("no-force-push", denied.stdout)
-
-    def test_denies_push_with_a_leading_plus_refspec(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            plus_refspec_payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git push origin +main"}}
-            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=plus_refspec_payload)
-            self.assertEqual(2, denied.returncode)
-            self.assertIn("no-force-push", denied.stdout)
-
-    def test_uses_payload_cwd_over_dash_dash_cwd_to_find_a_staged_test_skip_pattern(self) -> None:
-        """A payload naming its own cwd (a worktree) must be checked there, not at --cwd."""
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp) / "harness-cwd"
-            root.mkdir()
-            self.init_repository(root)
-            state = root / "state"
-            run = self.seed_run(root, state)
-
-            worktree = Path(temp) / "payload-worktree"
-            worktree.mkdir()
-            self.init_repository(worktree)
-            (worktree / "app_test.py").write_text(
-                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
-                encoding="utf-8",
-            )
-            subprocess.run(["git", "add", "app_test.py"], cwd=worktree, check=True)
-
-            commit_payload = {
-                "session_id": "sess-1",
-                "cwd": str(worktree),
-                "tool_name": "Bash",
-                "tool_input": {"command": "git commit -m 'add test'"},
-            }
-            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=commit_payload)
-            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
-            self.assertIn("no-test-skip-commit", denied.stdout)
-            self.assertIn("app_test.py", denied.stdout)
+            unit = self.unit_id(root)
+            events = [json.loads(line) for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()]
+            denials = [event for event in events if event["event"] == "hook.denied" and event["data"]["rule"] == "hook-bypass-protected"]
+            self.assertEqual(4, len(denials))
 
     # -- performance --------------------------------------------------------------------------
 
-    def test_answers_a_one_megabyte_payload_in_under_200ms(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            payload = {"session_id": "sess-1", "tool_name": "Read", "tool_input": {"file_path": "big.txt", "content": "x" * (1024 * 1024)}}
-            start = time.monotonic()
-            result = self.run_guard(root, "PreToolUse", payload=payload)
-            elapsed = time.monotonic() - start
-            self.assertEqual(0, result.returncode)
-            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
-
-    def test_answers_a_heredoc_shaped_one_megabyte_commit_in_under_200ms(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            heredoc_body = "x" * (1024 * 1024)
-            command = f"git commit -F - <<'EOF'\n{heredoc_body}\nEOF"
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
-            start = time.monotonic()
-            result = self.run_guard(root, "PreToolUse", payload=payload)
-            elapsed = time.monotonic() - start
-            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
-
-    def test_answers_a_one_megabyte_single_token_commit_message_in_under_200ms(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            huge_token = "x" * (1024 * 1024)
-            command = f'git commit -m "{huge_token}"'
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
-            start = time.monotonic()
-            result = self.run_guard(root, "PreToolUse", payload=payload)
-            elapsed = time.monotonic() - start
-            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
-
-    def test_answers_a_one_megabyte_git_add_command_in_under_200ms(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            huge_token = "x" * (1024 * 1024)
-            command = f'git add . && git commit -m "{huge_token}"'
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
-            start = time.monotonic()
-            result = self.run_guard(root, "PreToolUse", payload=payload)
-            elapsed = time.monotonic() - start
-            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
-
-    def test_answers_a_one_megabyte_all_git_tokens_command_in_under_200ms(self) -> None:
+    def test_answers_a_one_megabyte_bash_command_in_under_200ms(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self.init_repository(root)
@@ -994,41 +711,17 @@ class GuardHookTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
 
-    def test_answers_a_one_megabyte_repeated_git_push_command_in_under_200ms(self) -> None:
+    def test_answers_a_one_megabyte_bash_command_carrying_a_disabling_token_in_under_200ms(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self.init_repository(root)
-            command = "git push " * (1024 * 1024 // 9)
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
-            start = time.monotonic()
-            result = self.run_guard(root, "PreToolUse", payload=payload)
-            elapsed = time.monotonic() - start
-            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
-
-    def test_answers_a_one_megabyte_git_x_tokens_command_in_under_200ms(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            command = "git x " * (1024 * 1024 // 6)
-            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
-            start = time.monotonic()
-            result = self.run_guard(root, "PreToolUse", payload=payload)
-            elapsed = time.monotonic() - start
-            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
-
-    def test_denies_a_one_megabyte_leading_git_tokens_command_ending_in_force_push(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            self.init_repository(root)
-            command = "git " * (1024 * 1024 // 4) + "git push --force"
+            command = ("x" * (1024 * 1024)) + " --no-verify"
             payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
             start = time.monotonic()
             result = self.run_guard(root, "PreToolUse", payload=payload)
             elapsed = time.monotonic() - start
             self.assertEqual(2, result.returncode, result.stdout + result.stderr)
-            self.assertIn("no-force-push", result.stdout)
+            self.assertIn("hook-bypass-protected", result.stdout)
             self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
 
     def test_answers_editing_an_existing_issue_with_a_half_megabyte_whitespace_new_string_in_under_200ms(self) -> None:
