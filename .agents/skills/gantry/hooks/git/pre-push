@@ -85,7 +85,6 @@ def main() -> int:
         if is_fast_forward(remote_sha, local_sha):
             continue
         message = f"deny: no-force-push {remote_ref}"
-        print(message)
         print(message, file=sys.stderr)
         record_denied(cwd, remote_ref)
         denied = True

@@ -99,7 +99,6 @@ def main() -> int:
     if not matched_file:
         return 0
     message = f"deny: no-test-skip-commit {matched_file}"
-    print(message)
     print(message, file=sys.stderr)
     record_denied(Path.cwd(), matched_file)
     return 1

@@ -70,6 +70,15 @@ class GitHookFixtureMixin:
         self.assertEqual(0, result.returncode, result.stderr)
         return run
 
+    def assert_single_denial_line(self, result: subprocess.CompletedProcess[str], *expected: str) -> None:
+        """The hook prints its denial exactly once, on stderr only -- never duplicated onto stdout."""
+        stdout_lines = [line for line in result.stdout.splitlines() if line.startswith("deny:")]
+        stderr_lines = [line for line in result.stderr.splitlines() if line.startswith("deny:")]
+        self.assertEqual(0, len(stdout_lines), result.stdout)
+        self.assertEqual(1, len(stderr_lines), result.stderr)
+        for substring in expected:
+            self.assertIn(substring, stderr_lines[0])
+
     def denied_events(self, root: Path, state: Path, run: str) -> list[dict]:
         unit = self.unit_id(root)
         log_path = state / unit / "runs" / f"{run}.jsonl"
@@ -137,7 +146,7 @@ class PrePushHookTests(GitHookFixtureMixin, unittest.TestCase):
                     else:
                         result = self.push(local, *flags, "origin", "HEAD:refs/heads/main")
                     self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
-                    self.assertIn("no-force-push", result.stdout + result.stderr)
+                    self.assert_single_denial_line(result, "no-force-push")
                     # Reset local history back to what the remote actually has, so the
                     # next spelling in the matrix starts from a clean fast-forward point.
                     git("reset", "--quiet", "--hard", "origin/main", cwd=local, check=False)
@@ -145,7 +154,7 @@ class PrePushHookTests(GitHookFixtureMixin, unittest.TestCase):
             self.diverge(local, "mirror")
             mirror = self.push(local, "--mirror", "origin")
             self.assertNotEqual(0, mirror.returncode, mirror.stdout + mirror.stderr)
-            self.assertIn("no-force-push", mirror.stdout + mirror.stderr)
+            self.assert_single_denial_line(mirror, "no-force-push")
 
     def test_denial_appends_hook_denied_naming_rule_and_ref(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -197,8 +206,7 @@ class PreCommitHookTests(GitHookFixtureMixin, unittest.TestCase):
             (root / "app_test.py").write_text(self.SKIPPED_TEST, encoding="utf-8")
             result = git("commit", "-am", "skip", cwd=root, check=False)
             self.assertNotEqual(0, result.returncode)
-            self.assertIn("no-test-skip-commit", result.stdout + result.stderr)
-            self.assertIn("app_test.py", result.stdout + result.stderr)
+            self.assert_single_denial_line(result, "no-test-skip-commit", "app_test.py")
 
     def test_rejects_a_skip_committed_via_pathspec(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -208,7 +216,7 @@ class PreCommitHookTests(GitHookFixtureMixin, unittest.TestCase):
             (root / "app_test.py").write_text(self.SKIPPED_TEST, encoding="utf-8")
             result = git("commit", "-m", "skip", "--", "app_test.py", cwd=root, check=False)
             self.assertNotEqual(0, result.returncode)
-            self.assertIn("no-test-skip-commit", result.stdout + result.stderr)
+            self.assert_single_denial_line(result, "no-test-skip-commit")
 
     def test_rejects_a_skip_committed_via_include(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -218,7 +226,7 @@ class PreCommitHookTests(GitHookFixtureMixin, unittest.TestCase):
             (root / "app_test.py").write_text(self.SKIPPED_TEST, encoding="utf-8")
             result = git("commit", "-m", "skip", "--include", "app_test.py", cwd=root, check=False)
             self.assertNotEqual(0, result.returncode)
-            self.assertIn("no-test-skip-commit", result.stdout + result.stderr)
+            self.assert_single_denial_line(result, "no-test-skip-commit")
 
     def test_rejects_a_skip_committed_via_git_stage_then_commit(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -229,7 +237,7 @@ class PreCommitHookTests(GitHookFixtureMixin, unittest.TestCase):
             git("stage", "app_test.py", cwd=root)
             result = git("commit", "-m", "skip", cwd=root, check=False)
             self.assertNotEqual(0, result.returncode)
-            self.assertIn("no-test-skip-commit", result.stdout + result.stderr)
+            self.assert_single_denial_line(result, "no-test-skip-commit")
 
     def test_denial_appends_hook_denied_naming_rule_and_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
