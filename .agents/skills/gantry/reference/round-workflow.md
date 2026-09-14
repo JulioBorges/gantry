@@ -706,22 +706,41 @@ if (!integrationStopped && A.isLastRound) {
   if (completed.length > 0) {
     const ghCheck = await runCommand('gh --version', { cwd: A.repoRoot })
     if (ghCheck && ghCheck.exitCode === 0 && typeof prompt === 'function') {
-      const bodyLines = completed.map(d => {
-        const criteriaText = (d.verdict && d.verdict.criteria ? d.verdict.criteria : []).map(c => `- [x] ${c.evidence}`).join('\\n')
-        return `## ${d.ref}\\n\\n${criteriaText}`
-      })
-      const body = bodyLines.join('\\n\\n')
-      const target = policy.git && policy.git.target ? policy.git.target : 'main'
-      const answer = await prompt(`Open a draft pull request from ${A.branch} to ${target}?\\n\\nBody preview:\\n${body}\\n\\n(yes/no)`)
-      if (answer && answer.toLowerCase().trim() === 'yes') {
-        const pr = await runCommand(`gh pr create --draft --base ${shellQuote(target)} --head ${shellQuote(A.branch)} --title "Run delivery" --body ${shellQuote(body)}`, { cwd: A.repoRoot })
-        if (pr && pr.exitCode === 0) {
-          prOffer = { status: 'opened', target }
+      const checkRoadmap = await runCommand(`python3 "${scripts}/roadmap.py" check`, { cwd: A.repoRoot })
+      const checkFrontier = await runCommand(`python3 "${scripts}/frontier.py" --scope all --json`, { cwd: A.repoRoot })
+      if ((!checkRoadmap || checkRoadmap.exitCode === 0) && (!checkFrontier || checkFrontier.exitCode === 0)) {
+        const bodyLines = []
+        for (const d of completed) {
+          const accCheck = await runCommand(`python3 "${scripts}/acceptance.py" "${A.repoRoot}/${d.issuePath}" --json`)
+          let texts = {}
+          if (accCheck && accCheck.exitCode === 0) {
+            try {
+              const accPayload = JSON.parse(accCheck.stdout)
+              if (Array.isArray(accPayload.criteria)) {
+                for (const c of accPayload.criteria) {
+                  texts[c.index] = c.text
+                }
+              }
+            } catch (e) {}
+          }
+          const criteriaText = (d.verdict && d.verdict.criteria ? d.verdict.criteria : []).map(c => `- [x] ${texts[c.index] || 'Criterion'}: ${c.evidence}`).join('\\n')
+          bodyLines.push(`## ${d.ref}\\n\\n${criteriaText}`)
+        }
+        const body = bodyLines.join('\\n\\n')
+        const target = policy.git && policy.git.target ? policy.git.target : 'main'
+        const answer = await prompt(`Open a draft pull request from ${A.branch} to ${target}?\\n\\nBody preview:\\n${body}\\n\\n(yes/no)`)
+        if (answer && answer.toLowerCase().trim() === 'yes') {
+          const pr = await runCommand(`gh pr create --draft --base ${shellQuote(target)} --head ${shellQuote(A.branch)} --title "Run delivery" --body ${shellQuote(body)}`, { cwd: A.repoRoot })
+          if (pr && pr.exitCode === 0) {
+            prOffer = { status: 'opened', target }
+          } else {
+            prOffer = { status: 'failed', target }
+          }
         } else {
-          prOffer = { status: 'failed', target }
+          prOffer = { status: 'declined', target }
         }
       } else {
-        prOffer = { status: 'declined', target }
+         prOffer = { status: 'failed_checks', target: policy.git && policy.git.target ? policy.git.target : 'main' }
       }
     } else {
       prOffer = { status: 'unavailable', target: policy.git && policy.git.target ? policy.git.target : 'main' }
