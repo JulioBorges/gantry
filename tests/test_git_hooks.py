@@ -228,6 +228,17 @@ class PreCommitHookTests(GitHookFixtureMixin, unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assert_single_denial_line(result, "no-test-skip-commit")
 
+    def test_rejects_a_skip_committed_via_dash_i(self) -> None:
+        """AC4 names `-i` literally, alongside the `--include` spelling above."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            self.commit(root, "app_test.py", self.CLEAN_TEST)
+            (root / "app_test.py").write_text(self.SKIPPED_TEST, encoding="utf-8")
+            result = git("commit", "-m", "skip", "-i", "app_test.py", cwd=root, check=False)
+            self.assertNotEqual(0, result.returncode)
+            self.assert_single_denial_line(result, "no-test-skip-commit")
+
     def test_rejects_a_skip_committed_via_git_stage_then_commit(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -146,10 +146,12 @@ class NoHooksFallbackTests(unittest.TestCase):
         self.round_workflow = (REPO_ROOT / ".agents" / "skills" / "gantry" / "reference" / "round-workflow.md").read_text(encoding="utf-8")
 
     def test_implementer_prompt_states_every_protected_rule(self) -> None:
-        self.assertIn("Never edit ROADMAP.md, Status, or criteria checkboxes.", self.round_workflow)
-        self.assertIn("Never force-push, and never skip, disable\nor weaken a test.", self.round_workflow)
-        self.assertIn("--no-verify", self.round_workflow)
-        self.assertIn("core.hooksPath", self.round_workflow)
+        self.assertIn(
+            "Never edit ROADMAP.md, Status, or criteria checkboxes. Never force-push, and never skip, disable\n"
+            "or weaken a test. Never bypass the repository git hooks: no \\`--no-verify\\`, no \\`core.hooksPath\\`\n"
+            "override, no \\`--git-dir\\`/\\`GIT_DIR=\\`.",
+            self.round_workflow,
+        )
 
     def test_critic_prompt_checks_every_protected_rule(self) -> None:
         self.assertIn("Status/checkbox/ROADMAP edits", self.round_workflow)
