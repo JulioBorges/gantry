@@ -24,7 +24,7 @@ You are the sole conversational writer of the Gantry repository policy.
    Once the operator confirms the settings, construct the JSON configuration and pipe it to `setup.py`:
    
    ```bash
-   echo '{...}' | python3 .agents/skills/gantry/scripts/setup.py
+   python3 .agents/skills/gantry/scripts/setup.py --config '{...}'
    ```
    
    The `setup.py` script renders the full proposed `.gantry/config.json` before writing, supports merge, overwrite, and abort for an existing policy, handles idempotent merging of the Claude Code hook fragment into `.claude/settings.json`, and adds or replaces only the marked Gantry section in `AGENTS.md`. Do not modify these files directly.

@@ -16,16 +16,16 @@ def merge_dicts(base: dict, update: dict) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Gantry Setup config writer")
     parser.add_argument("--config", help="JSON config string")
+    parser.add_argument("--config-file", help="Path to JSON config file")
     args = parser.parse_args()
 
-    if args.config:
+    if args.config_file:
+        config = json.loads(Path(args.config_file).read_text(encoding="utf-8"))
+    elif args.config:
         config = json.loads(args.config)
     else:
-        config_text = sys.stdin.read().strip()
-        if not config_text:
-            print("Error: No config provided", file=sys.stderr)
-            sys.exit(2)
-        config = json.loads(config_text)
+        print("Error: No config provided", file=sys.stderr)
+        sys.exit(2)
 
     print("Proposed .gantry/config.json:")
     print(json.dumps(config, indent=2))
@@ -61,18 +61,55 @@ def main() -> None:
     if hook_frag_path.exists():
         hook_frag = json.loads(hook_frag_path.read_text(encoding="utf-8"))
         settings_path = repo_root / ".claude" / "settings.json"
-        if settings_path.exists():
-            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        content = settings_path.read_text(encoding="utf-8") if settings_path.exists() else ""
+        
+        new_hooks = hook_frag.get("hooks", {})
+        if not content.strip():
+            settings_path.write_text(json.dumps({"hooks": new_hooks}, indent=2) + "\n", encoding="utf-8")
         else:
-            settings = {}
-            settings_path.parent.mkdir(parents=True, exist_ok=True)
-
-        if "hooks" not in settings:
-            settings["hooks"] = {}
-        for k, v in hook_frag.get("hooks", {}).items():
-            settings["hooks"][k] = v
-
-        settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+            # Parse top level to check if hooks exists
+            parsed = json.loads(content)
+            if "hooks" not in parsed:
+                last_brace = content.rfind('}')
+                if last_brace != -1:
+                    hooks_json = json.dumps({"hooks": new_hooks}, indent=2)[1:-1]
+                    if not parsed:
+                        new_content = content[:last_brace] + hooks_json + content[last_brace:]
+                    else:
+                        new_content = content[:last_brace] + "," + hooks_json + content[last_brace:]
+                    settings_path.write_text(new_content, encoding="utf-8")
+            else:
+                import re
+                match = re.search(r'"hooks"\s*:\s*\{', content)
+                if match:
+                    start_idx = match.end() - 1
+                    brace_count = 0
+                    end_idx = start_idx
+                    in_string = False
+                    escape = False
+                    for i in range(start_idx, len(content)):
+                        c = content[i]
+                        if not in_string:
+                            if c == '{': brace_count += 1
+                            elif c == '}':
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    end_idx = i + 1
+                                    break
+                            elif c == '"': in_string = True
+                        else:
+                            if escape: escape = False
+                            elif c == '\\': escape = True
+                            elif c == '"': in_string = False
+                    old_hooks = json.loads(content[start_idx:end_idx])
+                    for k, v in new_hooks.items():
+                        old_hooks[k] = v
+                    lines = content[:start_idx].split('\n')
+                    base_indent = len(lines[-1]) - len(lines[-1].lstrip()) if lines else 2
+                    new_hooks_text = json.dumps(old_hooks, indent=2)
+                    indented_new_hooks = new_hooks_text.replace('\n', '\n' + ' ' * base_indent)
+                    settings_path.write_text(content[:start_idx] + indented_new_hooks + content[end_idx:], encoding="utf-8")
 
     agents_path = repo_root / "AGENTS.md"
     content = agents_path.read_text(encoding="utf-8") if agents_path.exists() else ""

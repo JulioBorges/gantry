@@ -2,22 +2,18 @@
 """Automated transcript tests for the Gantry setup skill."""
 from __future__ import annotations
 
-import ast
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
-import io
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = REPO_ROOT / ".agents" / "skills" / "gantry"
 SCRIPTS = SKILL_DIR / "scripts"
-sys.path.insert(0, str(SCRIPTS))
+SETUP_SCRIPT = SCRIPTS / "setup.py"
 
-import setup  # type: ignore
 
 class GantrySetupTests(unittest.TestCase):
     def test_setup_transcript_proves_config_json_is_shown_and_waits_for_confirmation(self) -> None:
@@ -26,19 +22,20 @@ class GantrySetupTests(unittest.TestCase):
             root = Path(temp).resolve()
             config_json = {"artifacts": {"specs": ".scratch/specs"}}
             
-            with mock.patch("sys.argv", ["setup.py"]):
-                with mock.patch("sys.stdin", io.StringIO(json.dumps(config_json))):
-                    with mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
-                        with mock.patch("builtins.input", return_value="n") as mock_input:
-                            with mock.patch("pathlib.Path.cwd", return_value=root):
-                                with self.assertRaises(SystemExit):
-                                    setup.main()
-                                
-            output = mock_stdout.getvalue()
-            self.assertIn("Proposed .gantry/config.json:", output)
-            self.assertIn('"specs": ".scratch/specs"', output)
+            p = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--config", json.dumps(config_json)],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
             
-            mock_input.assert_called_once_with("Write this policy? [y/N] ")
+            stdout, stderr = p.communicate(input="n\n")
+            
+            self.assertIn("Proposed .gantry/config.json:", stdout)
+            self.assertIn('"specs": ".scratch/specs"', stdout)
+            self.assertIn("Write this policy? [y/N]", stdout)
             
             self.assertFalse((root / ".gantry" / "config.json").exists())
 
@@ -54,26 +51,30 @@ class GantrySetupTests(unittest.TestCase):
             config_json = {"new": "value2"}
             
             # Test Merge
-            with mock.patch("sys.argv", ["setup.py"]):
-                with mock.patch("sys.stdin", io.StringIO(json.dumps(config_json))):
-                    with mock.patch("sys.stdout", new_callable=io.StringIO):
-                        with mock.patch("builtins.input", return_value="m") as mock_input:
-                            with mock.patch("pathlib.Path.cwd", return_value=root):
-                                setup.main()
-                                
-            mock_input.assert_called_once_with("Config exists. [M]erge, [O]verwrite, or [A]bort? ")
+            p = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--config", json.dumps(config_json)],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            stdout, _ = p.communicate(input="m\n")
+            self.assertIn("Config exists. [M]erge, [O]verwrite, or [A]bort?", stdout)
             written = json.loads(config_path.read_text(encoding="utf-8"))
             self.assertEqual({"existing": "value", "new": "value2"}, written)
             
             # Test Overwrite
             config_json2 = {"overwrite": "yes"}
-            with mock.patch("sys.argv", ["setup.py"]):
-                with mock.patch("sys.stdin", io.StringIO(json.dumps(config_json2))):
-                    with mock.patch("sys.stdout", new_callable=io.StringIO):
-                        with mock.patch("builtins.input", return_value="o") as mock_input:
-                            with mock.patch("pathlib.Path.cwd", return_value=root):
-                                setup.main()
-                                
+            p2 = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--config", json.dumps(config_json2)],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            p2.communicate(input="o\n")
             written2 = json.loads(config_path.read_text(encoding="utf-8"))
             self.assertEqual({"overwrite": "yes"}, written2)
 
@@ -86,34 +87,44 @@ class GantrySetupTests(unittest.TestCase):
             claude_dir.mkdir()
             settings_path = claude_dir / "settings.json"
             
-            # create initial unrelated key
-            settings_path.write_text(json.dumps({"unrelated": "key"}, indent=2) + "\n", encoding="utf-8")
+            # create initial unrelated key with custom byte formatting
+            initial_bytes = b'{\n\t"unrelated" :  "key" \n}'
+            settings_path.write_bytes(initial_bytes)
             
             config_json = {"test": "val"}
             
             # First run
-            with mock.patch("sys.argv", ["setup.py"]):
-                with mock.patch("sys.stdin", io.StringIO(json.dumps(config_json))):
-                    with mock.patch("sys.stdout", new_callable=io.StringIO):
-                        with mock.patch("builtins.input", return_value="y"):
-                            with mock.patch("pathlib.Path.cwd", return_value=root):
-                                setup.main()
-                                
-            content_first = settings_path.read_text(encoding="utf-8")
-            parsed_first = json.loads(content_first)
+            p = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--config", json.dumps(config_json)],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            p.communicate(input="y\n")
+                            
+            content_first_bytes = settings_path.read_bytes()
+            parsed_first = json.loads(content_first_bytes.decode("utf-8"))
             self.assertEqual("key", parsed_first["unrelated"])
             self.assertIn("hooks", parsed_first)
             
+            # Assert byte-for-byte outside hooks
+            self.assertTrue(content_first_bytes.startswith(b'{\n\t"unrelated" :  "key"'))
+            
             # Second run (setup accepted again, overwrite)
-            with mock.patch("sys.argv", ["setup.py"]):
-                with mock.patch("sys.stdin", io.StringIO(json.dumps(config_json))):
-                    with mock.patch("sys.stdout", new_callable=io.StringIO):
-                        with mock.patch("builtins.input", return_value="o"):
-                            with mock.patch("pathlib.Path.cwd", return_value=root):
-                                setup.main()
-                                
-            content_second = settings_path.read_text(encoding="utf-8")
-            self.assertEqual(content_first, content_second, "Second run should produce byte-identical file")
+            p2 = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--config", json.dumps(config_json)],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            p2.communicate(input="o\n")
+                            
+            content_second_bytes = settings_path.read_bytes()
+            self.assertEqual(content_first_bytes, content_second_bytes, "Second run should produce byte-identical file")
 
     def test_setup_adds_or_replaces_only_marked_gantry_section_in_agents_md(self) -> None:
         """Setup adds or replaces only the marked Gantry section in AGENTS.md."""
@@ -121,34 +132,46 @@ class GantrySetupTests(unittest.TestCase):
             root = Path(temp).resolve()
             agents_path = root / "AGENTS.md"
             
-            initial_content = "Existing content\n"
-            agents_path.write_text(initial_content, encoding="utf-8")
+            initial_content = b"Before\nExisting content\n"
+            agents_path.write_bytes(initial_content)
             
             config_json = {"test": "val"}
             
             # First run
-            with mock.patch("sys.argv", ["setup.py"]):
-                with mock.patch("sys.stdin", io.StringIO(json.dumps(config_json))):
-                    with mock.patch("sys.stdout", new_callable=io.StringIO):
-                        with mock.patch("builtins.input", return_value="y"):
-                            with mock.patch("pathlib.Path.cwd", return_value=root):
-                                setup.main()
-                                
-            first_run_content = agents_path.read_text(encoding="utf-8")
-            self.assertTrue(first_run_content.startswith("Existing content\n"))
-            self.assertIn("<!-- gantry:begin -->", first_run_content)
-            self.assertIn("<!-- gantry:end -->", first_run_content)
+            p = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--config", json.dumps(config_json)],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            p.communicate(input="y\n")
+                            
+            first_run_content = agents_path.read_bytes()
+            self.assertTrue(first_run_content.startswith(b"Before\nExisting content\n"))
+            self.assertIn(b"<!-- gantry:begin -->", first_run_content)
+            self.assertIn(b"<!-- gantry:end -->", first_run_content)
+            
+            # Add some After content manually just to test replacement
+            agents_path.write_bytes(first_run_content + b"\nAfter")
+            first_run_content_with_after = agents_path.read_bytes()
             
             # Second run, should replace the section exactly
-            with mock.patch("sys.argv", ["setup.py"]):
-                with mock.patch("sys.stdin", io.StringIO(json.dumps(config_json))):
-                    with mock.patch("sys.stdout", new_callable=io.StringIO):
-                        with mock.patch("builtins.input", return_value="o"):
-                            with mock.patch("pathlib.Path.cwd", return_value=root):
-                                setup.main()
-                                
-            second_run_content = agents_path.read_text(encoding="utf-8")
-            self.assertEqual(first_run_content, second_run_content)
+            p2 = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--config", json.dumps(config_json)],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            p2.communicate(input="o\n")
+                            
+            second_run_content = agents_path.read_bytes()
+            self.assertEqual(first_run_content_with_after, second_run_content)
+            self.assertTrue(second_run_content.startswith(b"Before\nExisting content\n"))
+            self.assertTrue(second_run_content.endswith(b"\nAfter"))
             
     def test_skill_prompt_instructions(self) -> None:
         """The skill reads capability declarations, creates no engine, etc."""
