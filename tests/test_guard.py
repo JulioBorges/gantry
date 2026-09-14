@@ -875,6 +875,55 @@ class GuardHookTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
 
+    def test_answers_a_one_megabyte_all_git_tokens_command_in_under_200ms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            command = "git " * (1024 * 1024 // 4)
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
+    def test_answers_a_one_megabyte_repeated_git_push_command_in_under_200ms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            command = "git push " * (1024 * 1024 // 9)
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
+    def test_answers_a_one_megabyte_git_x_tokens_command_in_under_200ms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            command = "git x " * (1024 * 1024 // 6)
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
+    def test_denies_a_one_megabyte_leading_git_tokens_command_ending_in_force_push(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            command = "git " * (1024 * 1024 // 4) + "git push --force"
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+            self.assertIn("no-force-push", result.stdout)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
     # -- unknown / non-decision events never grant authority ----------------------------------
 
     def test_unknown_event_and_precompact_degrade_without_granting_authority(self) -> None:

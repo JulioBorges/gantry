@@ -77,10 +77,16 @@ STATUS_LINE_RE = re.compile(r"(?m)^Status:\s*(\S+)")
 CHECKBOX_LINE_RE = re.compile(r"(?m)^\s*-\s\[[ xX]\]")
 CHECKBOX_FULL_LINE_RE = re.compile(r"(?m)^\s*-\s\[[ xX]\].*$")
 CHECKED_CHECKBOX_RE = re.compile(r"(?m)^\s*-\s\[[xX]\]")
-PUSH_RE = re.compile(r"\bgit\b[^&|;]*\bpush\b")
 FORCE_FLAG_RE = re.compile(r"(--force(-with-lease)?\b|(?:^|\s)-f\b)")
 FORCE_REFSPEC_RE = re.compile(r"(?:^|\s)\+\S")
-COMMIT_RE = re.compile(r"\bgit\b[^&|;]*\bcommit\b")
+# `\bgit\b[^&|;]*\bpush\b` (and the equivalent `commit` pattern) look linear but are not:
+# for a command with many `git` tokens and no `push`/`commit` anywhere, `re.search` retries
+# the whole `[^&|;]*\bpush\b` backtrack from every `git` match it finds, which is O(n) per
+# attempt and O(k) attempts -- O(n*k) overall. `_command_has_git_then_token` instead
+# whitespace-tokenises each `[&|;\n]`-delimited segment exactly once and walks it left to
+# right, so the whole command is scanned in a single O(n) pass regardless of how many `git`
+# tokens it contains.
+COMMAND_SEGMENT_SPLIT_RE = re.compile(r"[&|;\n]+")
 # Segment matches exclude newlines so a heredoc body following `git commit -F - <<EOF`
 # is never pulled into the segment tokenised below -- a multi-megabyte heredoc payload
 # stays off the shlex.split() path entirely.
@@ -105,6 +111,36 @@ def _bounded_tokens(segment: str) -> list[str]:
         return shlex.split(bounded)
     except ValueError:
         return bounded.split()
+
+
+def _segment_has_git_then_token(segment: str, target: str) -> bool:
+    """Whitespace-tokenise `segment` once and report whether a `git` token is
+    followed later in the same segment by a `target` token.
+
+    This is the O(len(segment)) replacement for `\\bgit\\b[^&|;]*\\bTARGET\\b`
+    -- a single left-to-right walk instead of a regex backtrack retried from
+    every `git` occurrence.
+    """
+    seen_git = False
+    for token in segment.split():
+        if token == "git":
+            seen_git = True
+        elif seen_git and token == target:
+            return True
+    return False
+
+
+def _command_has_git_then_token(command: str, target: str) -> bool:
+    """Split `command` on shell separators and check each segment independently.
+
+    Splitting on `[&|;\\n]` first keeps a `git ... ; ... TARGET` command (where the
+    `TARGET` is unrelated to `git`) from producing a false positive, matching the
+    `[^&|;]*` exclusion the previous regex-based check enforced.
+    """
+    return any(
+        _segment_has_git_then_token(segment, target)
+        for segment in COMMAND_SEGMENT_SPLIT_RE.split(command)
+    )
 
 
 TEST_SKIP_PATTERNS = [
@@ -459,9 +495,11 @@ def decide(payload: dict, cwd: Path) -> Decision:
         command = extract_command(arguments)
         if not command:
             return Decision(True)
-        if PUSH_RE.search(command) and (FORCE_FLAG_RE.search(command) or FORCE_REFSPEC_RE.search(command)):
+        if _command_has_git_then_token(command, "push") and (
+            FORCE_FLAG_RE.search(command) or FORCE_REFSPEC_RE.search(command)
+        ):
             return Decision(False, "no-force-push", command.strip()[:200])
-        if COMMIT_RE.search(command):
+        if _command_has_git_then_token(command, "commit"):
             matched_file = staged_diff_skip_match(cwd)
             if not matched_file:
                 add_targets = extract_git_add_targets(command)
