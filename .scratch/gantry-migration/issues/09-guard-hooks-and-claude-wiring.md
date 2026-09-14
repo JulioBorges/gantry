@@ -1,7 +1,7 @@
 # Guard hooks and Claude Code wiring
 
 Type: issue
-Status: blocked
+Status: ready-for-agent
 Slice: `gantry-migration#09`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
