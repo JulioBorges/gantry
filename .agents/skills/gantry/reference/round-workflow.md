@@ -231,8 +231,25 @@ async function markRunIn(worktree) {
   markedWorktrees.add(worktree)
 }
 
+// Each round is a separate invocation with its own memory, so `markedWorktrees` only ever holds
+// what *this* invocation marked -- an Issue finished in an earlier round is absent from the last
+// one and its worktree would keep a marker naming a Run that is already over. The Run's end
+// therefore enumerates the clone's worktrees and clears every marker that names this Run.
 async function unmarkRun() {
-  for (const worktree of markedWorktrees) {
+  if (!runLogEnabled) return
+  const worktrees = new Set(markedWorktrees)
+  const listed = await runCommand('git worktree list --porcelain', { cwd: A.repoRoot })
+  if (listed && listed.exitCode === 0) {
+    for (const line of String(listed.stdout || '').split('\n')) {
+      if (line.startsWith('worktree ')) worktrees.add(line.slice('worktree '.length).trim())
+    }
+  }
+  for (const worktree of worktrees) {
+    if (!worktree) continue
+    const current = await runCommand(
+      `python3 "${scripts}/runlog.py" current --cwd ${shellQuote(worktree)}`, { cwd: A.repoRoot },
+    )
+    if (!current || current.exitCode !== 0 || String(current.stdout || '').trim() !== A.runId) continue
     await runCommand(`python3 "${scripts}/runlog.py" unmark --cwd ${shellQuote(worktree)}`, { cwd: A.repoRoot })
   }
   markedWorktrees.clear()
