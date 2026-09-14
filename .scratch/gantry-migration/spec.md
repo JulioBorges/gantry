@@ -38,7 +38,7 @@ This spec is the migration: `asdlc` becomes the three skills of the pack (`gantr
 - `dashboard.py` binds `127.0.0.1` only, serves the kanban from files in the pack with zero external assets, and reflects a new run-log event within two seconds.
 - `budget.py` estimates tokens as UTF-8 bytes divided by four, reads the assumed window from the capabilities file for the chosen model, and applies the `contextShare` from the policy, 0.15 by default.
 - The differential mode of `gates.py` runs the same declared command on the round's base and on the delivery, in separate worktrees of the same clone, and matches findings by the tuple (rule, file, message). Every differential mapping resolves its RFC 6901 pointers to one findings array and scalar fields for every finding; file paths are normalized repository-relative paths, and duplicate identities in either output result in `verdict: fail`, exit 1 and an `invalid` entry naming the source and identity. Every differential mapping resolves `severity` to exactly one of `info`, `warning` or `error`; their ordering is `info < warning < error`. A matching delivery finding with a higher severity is `aggravated`; a missing or invalid severity is a failed gate configuration. An identity present only on the base is reported as `resolved`.
-- A hook denial names its rule and the path it refused in one line, and the same denial is written to the run log as `hook.denied`.
+- A hook denial names its rule and the path it refused in one line; the same denial is written to the run log as `hook.denied` when a Run ID is present in the environment the hook's git subprocess inherits.
 - Every artifact the pack writes — issues, comments, reports, lesson candidates, pull request bodies — is English.
 
 ## Contract
@@ -166,6 +166,25 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-14 — The round-3 critic asked for an operator decision before touching code: keep the
+  `hook.denied`-recording contract guaranteed (build real `GANTRY_RUN_ID` propagation now) or accept
+  best-effort recording as the shipped contract (amend this spec, keep ADR-0005's wording, and open the
+  propagation Issue it already points at). The operator was asked (comment on `gantry-migration#09`) but
+  had not answered by the time this round had to proceed; best-effort was kept as the lower-risk default
+  because guaranteed recording's only pack-owned mechanism -- a per-unit "current Run" marker in
+  `runlog.py` -- would misattribute denials across concurrent worktrees of one execution unit unless keyed
+  per-worktree, which is real design work an operator should sign off on, not something to improvise
+  un-reviewed in a hook that also has security consequences. This is a provisional call, not a closed
+  decision: amended this Constraints section to say a hook denial is recorded "when a Run ID is present in
+  the environment the hook's git subprocess inherits" rather than unconditionally (ADR-0005's own wording,
+  which already stated this honestly, is unchanged), and opened `gantry-migration#19` as the owner of
+  closing the gap (propagating `GANTRY_RUN_ID`/`GANTRY_STATE_ROOT` correctly, including across concurrent
+  worktrees), left `Status: draft` pending the operator's choice of mechanism and confirmation that
+  best-effort is acceptable in the meantime. Also added the literal `-i` spelling to `PreCommitHookTests`
+  (AC4 names it; the suite previously only exercised `--include`) and tightened
+  `NoHooksFallbackTests.test_implementer_prompt_states_every_protected_rule` to assert the exact
+  `implementPrompt` sentence rather than four separate file-wide substrings, matching how
+  `test_critic_prompt_checks_every_protected_rule` already asserts its exact sentence.
 - 2026-09-14 — Addressed adversarial-critic feedback on the no-hooks fallback: `round-workflow.md`'s
   `implementPrompt` now states the hook-bypass rule explicitly ("Never bypass the repository git hooks:
   no `--no-verify`, no `core.hooksPath` override, no `--git-dir`/`GIT_DIR=`.") alongside the existing
