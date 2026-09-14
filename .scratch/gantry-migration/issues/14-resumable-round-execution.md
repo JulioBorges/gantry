@@ -1,7 +1,7 @@
 # Resumable and recorded round execution
 
 Type: issue
-Status: ready-for-agent
+Status: blocked
 Slice: `gantry-migration#14`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -31,3 +31,4 @@ Complete the canonical `.agents/skills/gantry/SKILL.md` and `reference/round-wor
 
 ## Comments
 - 2026-09-13 — ASDLC round 2 critic refuted after 2/2 correction budget spent. Top refutations: (1) two contradictory correctionsSpent derivation rules coexist — a test still counts every refutation event (asserting 2) while SKILL.md documents a 'refutation followed by phase.started Implement' rule that yields 0 for the same log; (2) AC1's fixture scenario (greeting#02 in fixture/, gantry-migration#16's tree) is not exercised — no fixture directory existed in this worktree when the implementer wrote the scenario, and the implementer recorded an 'operator decision' in spec.md's Changelog that only the operator may make; (3) the 'offer continuation' and correctionsSpent-derivation preflight behavior is prose-only (SKILL.md), with tests verifying their own Python helper rather than any executable preflight. Branch: worktree-wf_b0e31a60-8d6-1, worktree: /Users/julioborges/src/personal/gantry/.claude/worktrees/wf_b0e31a60-8d6-1 (kept for operator inspection). Note: gantry-migration#16 (the fixture) is now merged and done, so a retry of #14 can use the real fixture tree.
+- 2026-09-13 — ASDLC retry round 2: critic refuted again after 2/2 correction budget spent. Remaining gaps: (1) branch is not cleanly integrable into gantry/wave-3 — content conflicts with #13's Learner return shape in round-workflow.md ('git merge-tree --write-tree gantry/wave-3 HEAD' shows conflicts); (2) the spec.md Changelog claims the fixture/ tree from #16 'is now merged into this branch', which is false — commit 0860892 copied the files without an actual merge, so #16's real history/ancestry is not present; (3) multi-round Runs break the recorded lifecycle: run.started and run.finished are emitted on every round-workflow invocation, but a Run has multiple rounds, so a 2nd round would append a spurious 2nd run.started and premature run.finished before the Run actually ends. Branch: worktree-wf_b0e31a60-8d6-1, worktree: /Users/julioborges/src/personal/gantry/.claude/worktrees/wf_b0e31a60-8d6-1 (kept for operator inspection). Retrying again should start from a rebase/merge of gantry/wave-3 (currently at e546aa8) to pick up #04/#11/#13/#16 cleanly, and gate run.finished on an explicit isLastRound flag like #13 already uses for the Learner phase.
