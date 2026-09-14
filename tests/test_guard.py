@@ -336,6 +336,148 @@ class GuardHookTests(unittest.TestCase):
             allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
             self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
 
+    # -- replace_all must be honored, not silently treated as a single replacement ----------
+
+    def test_denies_single_edit_replace_all_whose_later_occurrence_is_the_status_value(self) -> None:
+        """The first textual occurrence of old_string sits outside the Status line, but with
+        replace_all:true the real tool would rewrite every occurrence -- including the later
+        one that IS the Status value. Guard must simulate the full replacement, not just the
+        first hit, to catch this."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text(
+                "## Notes\n\nready-for-agent needs another pass\n\nStatus: ready-for-agent\n",
+                encoding="utf-8",
+            )
+
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    "old_string": "ready-for-agent",
+                    "new_string": "done",
+                    "replace_all": True,
+                },
+            }
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            lines = [line for line in denied.stdout.splitlines() if line]
+            self.assertEqual(1, len(lines))
+            self.assertIn("issue-status-protected", lines[0])
+            self.assertIn("10-new.md", lines[0])
+
+            unit = self.unit_id(root)
+            events = [json.loads(line) for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(1, len([event for event in events if event["event"] == "hook.denied"]))
+
+    def test_denies_multiedit_second_edit_replace_all_whose_occurrence_is_the_status_value(self) -> None:
+        """The first edit plants the token elsewhere in the file; the second edit then
+        replace_all's it, including the Status line -- guard must chain both edits and
+        honor replace_all on the second one."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text(
+                "## Notes\n\nplaceholder note\n\nStatus: ready-for-agent\n",
+                encoding="utf-8",
+            )
+
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    "edits": [
+                        {"old_string": "placeholder note", "new_string": "ready-for-agent still pending"},
+                        {"old_string": "ready-for-agent", "new_string": "done", "replace_all": True},
+                    ],
+                },
+            }
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("issue-status-protected", denied.stdout)
+
+            unit = self.unit_id(root)
+            events = [json.loads(line) for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(1, len([event for event in events if event["event"] == "hook.denied"]))
+
+    def test_denies_multiedit_second_edit_replace_all_whose_occurrence_is_a_checkbox_line(self) -> None:
+        """Same shape as the Status case, but for '[ ]' -> '[x]' via a chained replace_all edit."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text(
+                "## Notes\n\nplaceholder note\n\n## Acceptance criteria\n\n- [ ] Some criterion\n",
+                encoding="utf-8",
+            )
+
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    "edits": [
+                        {"old_string": "placeholder note", "new_string": "[ ] still pending"},
+                        {"old_string": "[ ]", "new_string": "[x]", "replace_all": True},
+                    ],
+                },
+            }
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("issue-checkbox-protected", denied.stdout)
+
+            unit = self.unit_id(root)
+            events = [json.loads(line) for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(1, len([event for event in events if event["event"] == "hook.denied"]))
+
+    def test_allows_replace_all_edit_that_touches_neither_status_nor_checkbox_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text(
+                "Type: issue\nStatus: ready-for-agent\n\n## Notes\n\nold note, old note again\n",
+                encoding="utf-8",
+            )
+
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    "old_string": "old note",
+                    "new_string": "new note",
+                    "replace_all": True,
+                },
+            }
+            allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+
     # -- subagent + degradation --------------------------------------------------------------
 
     def test_subagent_stop_appends_event_and_malformed_payload_still_degrades_safely(self) -> None:

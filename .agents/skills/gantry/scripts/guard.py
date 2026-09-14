@@ -369,7 +369,8 @@ def apply_edits(original: str, arguments: dict) -> str | None:
         new = arguments.get("new_string", arguments.get("newString"))
         if not isinstance(old, str) or not isinstance(new, str):
             return None
-        edits = [{"old_string": old, "new_string": new}]
+        replace_all = arguments.get("replace_all", arguments.get("replaceAll"))
+        edits = [{"old_string": old, "new_string": new, "replace_all": replace_all}]
     text = original
     for edit in edits:
         if not isinstance(edit, dict):
@@ -380,7 +381,9 @@ def apply_edits(original: str, arguments: dict) -> str | None:
             return None
         if old not in text:
             return None
-        text = text.replace(old, new, 1)
+        replace_all = bool(edit.get("replace_all", edit.get("replaceAll")))
+        count = -1 if replace_all else 1
+        text = text.replace(old, new, count)
     return text
 
 
