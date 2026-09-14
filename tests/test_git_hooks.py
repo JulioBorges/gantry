@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 GANTRY = REPO_ROOT / ".agents" / "skills" / "gantry"
 HOOKS_DIR = GANTRY / "hooks" / "git"
 RUNLOG = GANTRY / "scripts" / "runlog.py"
+GUARD = GANTRY / "scripts" / "guard.py"
 
 
 def git(*args: str, cwd: Path, check: bool = True, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -233,6 +234,58 @@ class PrePushHookTests(GitHookFixtureMixin, unittest.TestCase):
             self.assertEqual(1, len(events))
             self.assertEqual("no-test-skip-commit", events[0]["data"]["rule"])
             self.assertEqual("app_test.py", events[0]["data"]["path"])
+
+    def test_a_no_verify_abbreviation_really_bypasses_the_git_hooks(self) -> None:
+        """Why `guard.py` matches `--no-veri` rather than the full `--no-verify` spelling.
+
+        git accepts any unambiguous abbreviation of a long option, so `git push --no-veri`
+        is `--no-verify`: this hook never runs, the forced update really lands on the bare
+        remote, and nothing prints a denial line. The git layer cannot defend against its
+        own `--no-verify`, so the harness guard is the only place that spelling can be
+        refused -- which is what tests/test_guard.py's
+        test_denies_every_abbreviation_git_accepts_for_no_verify covers.
+        """
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            remote, local = self.make_remote_and_local(temp_path)
+            self.commit(local, "a.txt", "base\n")
+            first = self.push(local, "origin", "HEAD:refs/heads/main")
+            self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+            remote_before = git("rev-parse", "refs/heads/main", cwd=remote).stdout.strip()
+
+            self.diverge(local, "no-veri")
+            local_sha = git("rev-parse", "HEAD", cwd=local).stdout.strip()
+            self.assertNotEqual(remote_before, local_sha)
+
+            forced = self.push(local, "--no-veri", "--force", "origin", "HEAD:refs/heads/main")
+            self.assertEqual(0, forced.returncode, forced.stdout + forced.stderr)
+            self.assertEqual(
+                [],
+                [line for line in (forced.stdout + forced.stderr).splitlines() if line.startswith("deny:")],
+                forced.stdout + forced.stderr,
+            )
+            self.assertEqual(
+                local_sha,
+                git("rev-parse", "refs/heads/main", cwd=remote).stdout.strip(),
+                "the forced update really landed on the remote",
+            )
+
+            # The only defence left for this spelling: the harness guard refuses the command
+            # before the Bash tool ever runs it.
+            denied = subprocess.run(
+                [sys.executable, str(GUARD), "PreToolUse"],
+                cwd=local,
+                input=json.dumps({
+                    "session_id": "sess-1",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "git push --no-veri --force origin HEAD:refs/heads/main"},
+                }),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("hook-bypass-protected", denied.stdout)
 
     def test_accepts_a_clean_first_push_of_a_new_branch(self) -> None:
         """A brand-new ref has no remote tip: only the commits it actually adds are scanned."""
