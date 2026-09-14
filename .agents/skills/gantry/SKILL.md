@@ -67,18 +67,23 @@ Every script provides `--help`, and data-producing paths support `--json`.
   `correctionsSpent`; it never decides readiness or completion — `frontier.py`, Issue `Status:` lines
   and `roadmap.py` do.
 - `reference/round-workflow.md` appends every recorded-Run lifecycle event through `runlog.py append
-  <unitId> <runId>` when the caller supplies both: `run.started` opens the Run (with the repository root,
-  a policy hash, the harness tier and the effective `staleAfterSeconds` in `data`), then `round.started`,
-  one `phase.started` / `phase.finished` pair per Implement, Review and Critic phase, one
+  <unitId> <runId>` when the caller supplies both. A Run spans one or more rounds, each a separate
+  invocation of this workflow sharing the same `runId`/`unitId`: only the first round (`args.isFirstRound`
+  not explicitly `false`) appends `run.started` (with the repository root, a policy hash, the harness
+  tier and the effective `staleAfterSeconds` in `data`) and, when resuming, `run.resumed` and
+  `policy.changed`; every subsequent round of the same Run passes `args.isFirstRound = false` so these
+  three events are never appended again — a Run log accepts only one `run.started` and rejects a
+  duplicate. Every round, first or not, then appends `round.started`, one `phase.started` /
+  `phase.finished` pair per Implement, Review and Critic phase, one
   `subagent.started` / `subagent.stopped` pair per fresh agent carrying its validated role result,
   `review.finding` after the Reviewer returns, `refutation` on every non-accepted Critic verdict,
   `issue.blocked` when the correction ceiling is spent without acceptance, `issue.done` on successful
-  integration, `policy.changed` when a resumed Run's policy hash differs from the prior Run's, `run.cancelled`
-  on the first red post-merge gate and `round.finished` / `run.finished` at the end. `issue.blocked` records
-  only a Run-log fact: the Issue's `Status:` line stays `ready-for-agent` so `frontier.py` keeps offering it,
-  and only `roadmap.py done` after Critic acceptance ever changes an Issue's authoritative status. Omitting
-  `runId` or `unitId` disables recording entirely and leaves the round behaviorally identical, so a harness
-  with no resolved Run log keeps working.
+  integration, `run.cancelled` on the first red post-merge gate, and `round.finished`. Only the last round
+  of a Run (`args.isLastRound = true`) appends `run.finished`, once, after that round's `round.finished`.
+  `issue.blocked` records only a Run-log fact: the Issue's `Status:` line stays `ready-for-agent` so
+  `frontier.py` keeps offering it, and only `roadmap.py done` after Critic acceptance ever changes an
+  Issue's authoritative status. Omitting `runId` or `unitId` disables recording entirely and leaves the
+  round behaviorally identical, so a harness with no resolved Run log keeps working.
 - Use `frontier.py --scope <scope> --json` as the only authority for dependency rounds. Exit 1 for a
   cyclic or dangling blocker graph. Parked `draft`, `blocked`, and `needs-operator` Issues are reported
   and skipped.

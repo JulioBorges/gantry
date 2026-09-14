@@ -3,10 +3,13 @@
 One round contains only Issues selected by `frontier.py` whose dependency readiness is satisfied. The
 caller supplies `args.round`, `args.issues`, `args.models`, `args.branch`, `args.baseRef`,
 `args.isolate`, `args.correctionBudget`, `args.skillDir`, `args.repoRoot`, effective `args.policy` and
-rendered `args.paths`. For the last round of a Run, the caller also supplies `args.isLastRound` (boolean,
-true only for that final frontier round) and `args.learnerRunLogs` (an array of Run-log JSONL paths,
-normally just the current Run's `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`), so the optional Learner
-phase below can run; `args.models.learn` is optional and falls back to `args.models.critic` when absent.
+rendered `args.paths`. A Run spans one or more rounds, each a separate invocation of this workflow
+sharing the same `args.runId` and `args.unitId`: the caller supplies `args.isFirstRound = false` for
+every round after the first (it defaults to `true`, so a single-round Run or a harness that never sets
+it needs no change), and, for the last round of a Run, `args.isLastRound` (boolean, true only for that
+final frontier round) and `args.learnerRunLogs` (an array of Run-log JSONL paths, normally just the
+current Run's `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`), so the optional Learner phase below can
+run; `args.models.learn` is optional and falls back to `args.models.critic` when absent.
 The host supplies its command runner as `runCommand(command, { cwd })`; integration cannot proceed
 without it.
 
@@ -14,9 +17,12 @@ without it.
 
 When the caller also supplies `args.runId` and `args.unitId` (the value of
 `runlog.py unit-id --cwd <repoRoot>`), this workflow appends every lifecycle event through
-`runlog.py append <unitId> <runId>`: `run.started` always opens the recorded Run first (this Run log's
-required first event, per `runlog.py`'s own rule), and `run.resumed` follows immediately after when
-`args.priorRun` names the Run and worktree being continued, then `round.started`, one `phase.started` /
+`runlog.py append <unitId> <runId>`: on the first round of a Run (`args.isFirstRound` not explicitly
+`false`), `run.started` always opens the recorded Run first (this Run log's required first event, per
+`runlog.py`'s own rule), and `run.resumed` follows immediately after when `args.priorRun` names the Run
+and worktree being continued; a later round of the same Run passes `args.isFirstRound = false` so
+`run.started`, `run.resumed` and `policy.changed` are never appended again — a Run log accepts only one
+`run.started` and rejects a duplicate. Every round, first or not, appends `round.started`, one `phase.started` /
 `phase.finished` pair per Implement, Review and Critic phase, one `subagent.started` / `subagent.stopped`
 pair per fresh agent carrying the validated role result, `review.finding` after the Reviewer returns,
 `refutation` on every non-accepted Critic verdict, `issue.blocked` when the correction ceiling is spent
@@ -162,7 +168,8 @@ function priorAssignment(issue) {
   return A.priorRun && A.priorRun.issue === issue.ref ? A.priorRun : null
 }
 
-if (runLogEnabled) {
+const isFirstRound = A.isFirstRound !== false
+if (runLogEnabled && isFirstRound) {
   const runStartedData = {
     repositoryRoot: A.repoRoot,
     policyHash: stableHash(policy),
@@ -181,6 +188,8 @@ if (runLogEnabled) {
   if (A.priorRun && A.priorRun.policyHash && A.priorRun.policyHash !== runStartedData.policyHash) {
     await appendRunEvent('policy.changed', undefined, undefined, { policyHash: runStartedData.policyHash })
   }
+}
+if (runLogEnabled) {
   await appendRunEvent('round.started', undefined, undefined, { round: A.round })
 }
 

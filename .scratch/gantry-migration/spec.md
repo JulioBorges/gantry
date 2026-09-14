@@ -166,6 +166,20 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Addressed a third retry round of adversarial-critic feedback on multi-round Runs:
+  `round-workflow.md` now takes an explicit `args.isFirstRound` (default `true`) alongside
+  `args.isLastRound`, so `run.started`, `run.resumed` and `policy.changed` are appended only on the
+  first round of a Run and `run.finished` only on its last, while `round.started` / `round.finished`
+  still record every round — a Run log accepts exactly one `run.started` and rejects a duplicate, so a
+  second round that still emitted it would previously throw. Proven by a new test that runs
+  `round-workflow.md` twice under the same `runId`/`unitId` (round 1 with `isFirstRound` defaulted and
+  `isLastRound: false`, round 2 with `isFirstRound: false` and `isLastRound: true`) and asserts exactly
+  one `run.started`, one `round.started`/`round.finished` pair per round, and exactly one `run.finished`
+  emitted last, only after round 2. The previously merged single-round lifecycle test now passes
+  `isLastRound: true` to match. This branch has also been updated by merging current `main` (which
+  carries `gantry-migration#04`, `#11`, `#13` and `#16`'s real `fixture/` history) rather than the prior
+  round's copy-only stand-in, resolving a real conflict in `round-workflow.md`'s final block where the
+  `run.finished` and Learner-phase gating from both branches are unified under `args.isLastRound`.
 - 2026-09-13 — Addressed a retry round of adversarial-critic feedback: `runlog.py`'s
   `derive_corrections_spent` now withholds the `run.resumed.data.correctionsSpent` base unless that
   same `run.resumed` event's `data.issue` also equals the Issue being queried — the base is per-Issue,

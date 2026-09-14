@@ -1341,6 +1341,7 @@ Scenario: greet a user
                     "unitId": unit_id,
                     "stateRoot": str(state_root),
                     "tier": "reference",
+                    "isLastRound": True,
                     "criticResult": {
                         "criteria": self.critic_evidence(root, issue),
                     },
@@ -1395,6 +1396,97 @@ Scenario: greet a user
             self.assertEqual("gantry/lifecycle", implement_result["branch"])
             self.assertEqual(["test commit"], implement_result["commits"])
             self.assertEqual("workflow execution", implement_result["summary"])
+
+    def test_round_workflow_emits_run_started_and_run_finished_exactly_once_across_two_rounds(self) -> None:
+        # A Run spans multiple rounds of the same round-workflow.md invocation sharing one runId/unitId.
+        # `run.started` must open the Run exactly once (on the first round) and `run.finished` must close
+        # it exactly once, only after the last round — never once per round-workflow invocation.
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue_one = self.write_issue(root, "tworound#01", "ready-for-agent")
+            issue_two = self.write_issue(root, "tworound#02", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+
+            state_root = Path(state_dir)
+            unit_id = "aaaaaaaaaaaa"
+            run_id = "run-tworound-1"
+
+            round_one = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{"ref": "tworound#01", "path": str(issue_one.relative_to(root)), "title": "Two round one", "specPath": ".scratch/tworound/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/tworound",
+                    "baseRef": base_ref,
+                    "isolate": False,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "commandMode": "real",
+                    "runId": run_id,
+                    "unitId": unit_id,
+                    "stateRoot": str(state_root),
+                    "tier": "reference",
+                    "isLastRound": False,
+                    "criticResult": {
+                        "criteria": self.critic_evidence(root, issue_one),
+                    },
+                },
+            )
+            self.assertEqual("done", round_one["result"]["results"][0]["outcome"])
+
+            round_two = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 2,
+                    "issues": [{"ref": "tworound#02", "path": str(issue_two.relative_to(root)), "title": "Two round two", "specPath": ".scratch/tworound/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/tworound",
+                    "baseRef": base_ref,
+                    "isolate": False,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "commandMode": "real",
+                    "runId": run_id,
+                    "unitId": unit_id,
+                    "stateRoot": str(state_root),
+                    "tier": "reference",
+                    "isFirstRound": False,
+                    "isLastRound": True,
+                    "criticResult": {
+                        "criteria": self.critic_evidence(root, issue_two),
+                    },
+                },
+            )
+            self.assertEqual("done", round_two["result"]["results"][0]["outcome"])
+
+            events = self.read_run_log_events(state_root, unit_id, run_id)
+            names = [event["event"] for event in events]
+            self.assertEqual(1, names.count("run.started"))
+            self.assertEqual(2, names.count("round.started"))
+            self.assertEqual(2, names.count("round.finished"))
+            self.assertEqual(1, names.count("run.finished"))
+            round_started_rounds = [event["data"]["round"] for event in events if event["event"] == "round.started"]
+            self.assertEqual([1, 2], round_started_rounds)
+            # `run.finished` is the very last event, emitted only once both rounds (and their own
+            # round.finished) have already been recorded.
+            self.assertEqual("run.finished", names[-1])
+            self.assertEqual("round.finished", names[-2])
 
     def test_round_workflow_resume_with_changed_policy_emits_policy_changed(self) -> None:
         with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
