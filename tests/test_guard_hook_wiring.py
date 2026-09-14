@@ -175,6 +175,17 @@ class SpecChangelogTests(unittest.TestCase):
             spec,
         )
 
+    def test_spec_and_adr_state_the_recording_guarantee_not_a_best_effort(self) -> None:
+        spec = (REPO_ROOT / ".scratch" / "gantry-migration" / "spec.md").read_text(encoding="utf-8")
+        adr = (REPO_ROOT / "docs" / "adr" / "0005-git-hooks-enforce-git-rules.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "the same denial is always written to the run log as `hook.denied` when it happens inside a Run",
+            spec,
+        )
+        self.assertIn("Made `hook.denied` recording a guarantee", spec)
+        self.assertIn("Recording is guaranteed, not best-effort", adr)
+        self.assertNotIn("Recording is therefore best-effort", adr)
+
 
 if __name__ == "__main__":
     unittest.main()
