@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HOOKS = REPO_ROOT / ".agents" / "skills" / "gantry" / "hooks"
 CAPABILITIES = REPO_ROOT / ".agents" / "skills" / "gantry" / "capabilities"
+RUNLOG = REPO_ROOT / ".agents" / "skills" / "gantry" / "scripts" / "runlog.py"
 
 
 def iter_commands(node: object):
@@ -62,7 +64,7 @@ module.exports = hooks;
 """
         return script
 
-    def run_hook(self, project_dir: Path, event: str, payload: dict) -> subprocess.CompletedProcess[str]:
+    def run_hook(self, project_dir: Path, event: str, payload: dict, env: dict | None = None) -> subprocess.CompletedProcess[str]:
         driver = f"""
 const hooks = require({json.dumps(str(HOOKS / "opencode.plugin.js"))})({{ project: {{ directory: {json.dumps(str(project_dir))} }} }});
 hooks[{json.dumps(event)}]({json.dumps(payload)}, {{}}).then(
@@ -74,7 +76,9 @@ hooks[{json.dumps(event)}]({json.dumps(payload)}, {{}}).then(
             handle.write(driver)
             driver_path = handle.name
         try:
-            return subprocess.run([shutil.which("node"), driver_path], capture_output=True, text=True, check=False)
+            return subprocess.run(
+                [shutil.which("node"), driver_path], capture_output=True, text=True, check=False, env=env,
+            )
         finally:
             Path(driver_path).unlink(missing_ok=True)
 
@@ -129,6 +133,68 @@ hooks[{json.dumps(event)}]({json.dumps(payload)}, {{}}).then(
             )
             self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
             self.assertIn("resolved", allowed.stdout)
+
+    def test_a_real_opencode_payload_records_into_the_marked_run_not_its_own_session_id(self) -> None:
+        """OpenCode's `sessionID` is a session, not a Gantry Run: the marker must win over it.
+
+        The plugin passes no `--run-id` and OpenCode exports no `GANTRY_*` variable, so the
+        worktree's current-Run marker is the only thing that can name the Run -- resolving the
+        session ID first would key the lookup to a Run log that never exists and drop the denial.
+        """
+        with tempfile.TemporaryDirectory() as temp:
+            project_dir = Path(temp)
+            state = project_dir / "state"
+            run = "run-opencode-1"
+            subprocess.run(["git", "init", "--quiet"], cwd=project_dir, check=True)
+            subprocess.run(["git", "config", "user.email", "guard@example.test"], cwd=project_dir, check=True)
+            subprocess.run(["git", "config", "user.name", "Guard Test"], cwd=project_dir, check=True)
+            (project_dir / "tracked.txt").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=project_dir, check=True)
+
+            unit = json.loads(
+                subprocess.run(
+                    [sys.executable, str(RUNLOG), "unit-id", "--cwd", str(project_dir), "--json"],
+                    cwd=project_dir, text=True, capture_output=True, check=True,
+                ).stdout
+            )["unitId"]
+            started = {
+                "ts": "2026-09-14T12:00:00Z",
+                "run": run,
+                "event": "run.started",
+                "data": {"repositoryRoot": str(project_dir), "policyHash": "abc123", "tier": "supported", "staleAfterSeconds": 900},
+            }
+            subprocess.run(
+                [sys.executable, str(RUNLOG), "append", unit, "--state-root", str(state)],
+                cwd=project_dir, input=json.dumps(started), text=True, capture_output=True, check=True,
+            )
+            subprocess.run(
+                [sys.executable, str(RUNLOG), "mark", run, "--cwd", str(project_dir), "--state-root", str(state)],
+                cwd=project_dir, text=True, capture_output=True, check=True,
+            )
+
+            environment = {key: value for key, value in os.environ.items() if not key.startswith("GANTRY_")}
+            denied = self.run_hook(
+                project_dir,
+                "tool.execute.before",
+                {
+                    "tool": "edit",
+                    "sessionID": "ses_8f1c2b7e3a4d4e5f8b901c2d3e4f5a6b",
+                    "args": {"filePath": "ROADMAP.md", "oldString": "a", "newString": "b"},
+                },
+                env=environment,
+            )
+            self.assertEqual(1, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("roadmap-protected", denied.stdout)
+
+            events = [
+                json.loads(line)
+                for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            denials = [event for event in events if event["event"] == "hook.denied"]
+            self.assertEqual(1, len(denials), events)
+            self.assertEqual("roadmap-protected", denials[0]["data"]["rule"])
+            self.assertEqual(run, denials[0]["run"])
 
 
 class CodexHookWiringTests(unittest.TestCase):
