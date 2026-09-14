@@ -960,6 +960,85 @@ class GuardHookTests(unittest.TestCase):
             self.assertEqual(1, len(denials))
             self.assertEqual("roadmap-protected", denials[0]["data"]["rule"])
 
+    def test_a_real_claude_code_payload_records_into_the_marked_run_not_its_own_session_id(self) -> None:
+        """The shape Claude Code actually sends: a UUID `session_id`, `cwd`, `transcript_path`.
+
+        Claude Code passes no `--run-id` and exports no `GANTRY_*` variable, and its session ID is
+        a UUID that is *not* a Gantry Run ID -- no Run log will ever exist under it. Resolving it
+        ahead of the worktree's own current-Run marker therefore silently drops every denial in
+        exactly the configuration the pack ships, so the marker must be consulted first.
+        """
+        session_id = "9f1c2b7e-3a4d-4e5f-8b90-1c2d3e4f5a6b"
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+            marked = self.run_runlog(root, "mark", run, "--cwd", str(root), "--state-root", str(state))
+            self.assertEqual(0, marked.returncode, marked.stderr)
+
+            issue = root / ".scratch" / "sample" / "issues" / "09-guard.md"
+            issue.parent.mkdir(parents=True, exist_ok=True)
+            issue.write_text(
+                "# Guard\n\nType: issue\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] Some criterion\n",
+                encoding="utf-8",
+            )
+            environment = {key: value for key, value in os.environ.items() if not key.startswith("GANTRY_")}
+
+            def send(event: str, payload: dict) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [sys.executable, str(GUARD), event],
+                    cwd=root,
+                    input=json.dumps(payload),
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    env=environment,
+                )
+
+            base = {"session_id": session_id, "transcript_path": str(root / "transcript.jsonl"), "cwd": str(root)}
+            cases = [
+                ("roadmap-protected", {
+                    "tool_name": "Edit",
+                    "tool_input": {"file_path": "ROADMAP.md", "old_string": "- a", "new_string": "- [x] a"},
+                }),
+                ("issue-status-protected", {
+                    "tool_name": "Edit",
+                    "tool_input": {
+                        "file_path": ".scratch/sample/issues/09-guard.md",
+                        "old_string": "Status: ready-for-agent",
+                        "new_string": "Status: done",
+                    },
+                }),
+                ("issue-checkbox-protected", {
+                    "tool_name": "Edit",
+                    "tool_input": {
+                        "file_path": ".scratch/sample/issues/09-guard.md",
+                        "old_string": "- [ ] Some criterion",
+                        "new_string": "- [x] Some criterion",
+                    },
+                }),
+            ]
+            for rule, extra in cases:
+                with self.subTest(rule=rule):
+                    denied = send("PreToolUse", {**base, **extra})
+                    self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+                    self.assertIn(rule, denied.stdout)
+
+            stopped = send("SubagentStop", {**base, "subagent_type": "implementer"})
+            self.assertEqual(0, stopped.returncode, stopped.stdout + stopped.stderr)
+
+            unit = self.unit_id(root)
+            events = [json.loads(line) for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()]
+            recorded = [event for event in events if event["event"] == "hook.denied"]
+            self.assertEqual(
+                [rule for rule, _ in cases],
+                [event["data"]["rule"] for event in recorded],
+                "every denial from a real Claude Code payload lands in the marked Run's log",
+            )
+            self.assertTrue(all(event["run"] == run for event in recorded), recorded)
+            self.assertEqual(1, len([event for event in events if event["event"] == "subagent.stopped"]))
+
     # -- unknown / non-decision events never grant authority ----------------------------------
 
     def test_unknown_event_and_precompact_degrade_without_granting_authority(self) -> None:

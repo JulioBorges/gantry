@@ -311,22 +311,36 @@ def decide(payload: dict, cwd: Path) -> Decision:
 
 
 def resolve_run(payload: dict, override: str | None, state_root_override: str | None, cwd: Path) -> tuple[str | None, str | None]:
-    """Resolve (Run ID, state root) for recording: explicit override, environment, payload, marker.
+    """Resolve (Run ID, state root) for recording: explicit override, environment, marker, payload.
 
-    The marker -- `runlog.read_marker`, kept in the worktree's own git directory by the round
-    workflow -- is the same fallback the git hooks use, so a denial inside a Run is recorded
-    even when the harness passes no `--run-id`, exports no `GANTRY_RUN_ID` and sends a payload
-    with no session ID.
+    `--run-id` and `$GANTRY_RUN_ID` are authoritative -- a caller that names a Run means it. The
+    worktree's current-Run marker (`runlog.read_marker`, written by the round workflow into the
+    worktree's own git directory, and the same fallback the git hooks use) comes *before* the
+    payload's session ID, because a harness session ID is not a Gantry Run ID: Claude Code sends a
+    UUID that no Run log will ever be keyed by, so preferring it over a marker naming a Run whose
+    log does exist would silently drop every denial in the configuration the pack ships. A session
+    ID is only consulted when nothing else names a Run, and then only when its Run log already
+    exists -- a Run ID that resolves to no log records nothing at all.
     """
     root = state_root_override or os.environ.get("GANTRY_STATE_ROOT") or None
-    candidate = override or os.environ.get("GANTRY_RUN_ID") or _first(payload, ("session_id", "sessionID", "sessionId"))
+    candidate = override or os.environ.get("GANTRY_RUN_ID")
     if candidate and runlog.RUN_ID_RE.fullmatch(str(candidate)):
         return str(candidate), root
     marker = runlog.read_marker(cwd)
-    if not marker:
-        return None, root
-    marked_root = marker.get("stateRoot")
-    return marker["run"], root or (marked_root if isinstance(marked_root, str) else None)
+    if marker:
+        marked_root = marker.get("stateRoot")
+        return marker["run"], root or (marked_root if isinstance(marked_root, str) else None)
+    session = _first(payload, ("session_id", "sessionID", "sessionId"))
+    if session and runlog.RUN_ID_RE.fullmatch(str(session)) and run_log_exists(str(session), root, cwd):
+        return str(session), root
+    return None, root
+
+
+def run_log_exists(run_id: str, state_root: str | None, cwd: Path) -> bool:
+    try:
+        return runlog.run_log_path(runlog.state_root(state_root), runlog.unit_id(cwd), run_id).exists()
+    except (runlog.EventError, OSError, ValueError):
+        return False
 
 
 
@@ -491,7 +505,11 @@ def main() -> int:
     parser.add_argument("event", help="harness hook event name, e.g. PreToolUse or SubagentStop")
     parser.add_argument("--cwd", default=".", help="repository or worktree the payload applies to")
     parser.add_argument("--state-root", help="override ~/.gantry/state")
-    parser.add_argument("--run-id", help="override the Run ID (defaults to $GANTRY_RUN_ID or the payload session ID)")
+    parser.add_argument(
+        "--run-id",
+        help="override the Run ID (defaults to $GANTRY_RUN_ID, then this worktree's current-Run "
+        "marker, then a payload session ID that already has a Run log)",
+    )
     parser.add_argument("--json", action="store_true", help="emit the decision as a compact JSON object")
     args = parser.parse_args()
 
