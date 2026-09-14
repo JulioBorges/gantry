@@ -24,7 +24,7 @@ This spec is the migration: `asdlc` becomes the three skills of the pack (`gantr
 - **Repository policy:** `.gantry/config.json`, tracked, sparse, written only by `gantry-setup`. Keys: `artifacts` (`specs`, `issues`, `adrs`, `decisions` path patterns), `templates` (`dir`, `headingMap` of equivalent headings), `checks` (list of `{name, command, mode: "absolute" | "differential", mapping: {findings, rule, file, line, message, severity}, secrets: boolean}`), `git` (`target`, `prefix`), `hooks` (`record`, `deny` lists), `budget` (`corrections`, `contextShare`) and `dashboard` (`staleAfterSeconds`, a positive integer). A differential `mapping` uses RFC 6901 JSON Pointers: `findings` resolves from the command's JSON root to an array, and every other field resolves from each array item to one scalar. `file` must resolve to a normalized path relative to the repository root. Any duplicate `(rule, file, message)` identity after normalization, in either the base or delivery output, fails the check with `verdict: fail`, exit 1 and an `invalid` entry naming the source and identity. `staleAfterSeconds` defaults to `900` when absent; a policy value takes precedence over that default. `common.py` resolves the effective policy as pack defaults overlaid by the file.
 - **Run log:** `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`, where `unit-id` is the first twelve hex characters of the SHA-256 of the real path of `git rev-parse --git-common-dir`, so every worktree of one clone shares it. One JSON object per line: `ts`, `run`, `event`, optional `issue`, `phase`, `data`. A `run.started` event records the repository root, policy hash, tier and effective `staleAfterSeconds` in `data`; dashboard staleness uses that snapshot for the Run. A `policy.changed` event never changes an existing Run's snapshot, and the new policy takes effect when a later Run starts. Events: `run.started`, `run.resumed`, `run.cancelled`, `run.finished`, `round.started`, `round.finished`, `phase.started`, `phase.finished`, `subagent.started`, `subagent.stopped`, `compaction`, `hook.denied`, `hook.degraded`, `policy.changed`, `issue.done`, `issue.blocked`, `refutation`, `review.finding`. `hook.degraded` records `data.source` (the hook event name), `data.missing` (the list of declared payload field names absent from the payload) and `data.degraded: true`. The log stores references and the role results' JSON, never diffs or command output.
 - **Capabilities:** `.agents/skills/gantry/capabilities/{claude-code,opencode,codex}.json` with `tier`, `hooks`, `structured_output`, `worktree_isolation`, `per_role_model`, `parallel_round`, `skills_path`, `hook_events` and `payload_fields`. `guard.py` and the setup skill read them; the run report prints the tier.
-- **Hook wiring:** `.agents/skills/gantry/hooks/claude-code.settings.json` (a `hooks` fragment merged into `.claude/settings.json`), `.agents/skills/gantry/hooks/opencode.plugin.js` (a plugin forwarding `tool.execute.before` and `session.compacted` to `guard.py`), `.agents/skills/gantry/hooks/codex.hooks.json`. Every entry executes `python3 <skillDir>/scripts/guard.py <event>` with the payload on stdin.
+- **Hook wiring:** `.agents/skills/gantry/hooks/claude-code.settings.json` (a `hooks` fragment merged into `.claude/settings.json`), `.agents/skills/gantry/hooks/opencode.plugin.js` (a plugin forwarding `tool.execute.before` and `session.compacted` to `guard.py`), `.agents/skills/gantry/hooks/codex.hooks.json`. Every entry executes `python3 <skillDir>/scripts/guard.py <event>` with the payload on stdin. Git-level rules — no force push, no test-skip commit — are enforced by the tracked git hooks `.agents/skills/gantry/hooks/git/{pre-commit,pre-push}` activated through `core.hooksPath` (`docs/adr/0005`); `guard.py` only refuses Bash commands that would disable them (`--no-verify`, `core.hooksPath`, `--git-dir`, `GIT_DIR=`).
 - **Fixture:** `fixture/`, a small Python project with `fixture/pyproject.toml`, `fixture/tests/`, a standard-library linter `fixture/tools/lint.py` emitting JSON findings, `fixture/.gantry/config.json` declaring one absolute check (`pytest`) and one differential check (the linter), `fixture/.scratch/greeting/spec.md` and three issues under `fixture/.scratch/greeting/issues/`. It is the repository every acceptance scenario below runs against, and the run that proves a support tier is recorded in `fixture/README.md`.
 - **Dependencies:** `python3` 3.10 or newer and `git` are required; `gh` is used only when the operator accepts the draft run pull request; the `tdd` and `code-review` skills are invoked when installed and the prompts carry the fallback when they are not. Nothing in the pack imports a third-party package.
 
@@ -175,6 +175,120 @@ Scenario: The run ends with an offered draft pull request
 - 2026-09-13 — Fixed the guard hook handler's draft-Issue exemption to apply only to *creating* a new Issue file: an existing Issue's Status/checkbox fields now always fall through to protection even when the new content looks draft-safe on its own, and `decide()` now prefers the payload's own `cwd`/`directory` field over `--cwd` when locating an Issue path or the staged diff to check for test-skip commits.
 - 2026-09-13 — Hardened the guard hook handler: capability-incomplete payloads (per the harness's declared `payload_fields`) now record a `hook.degraded` Run log event instead of a false completion or a denial, draft Issue creation is exempt from the Status/checkbox protection, test-skip patterns are anchored so they no longer match their own literals in guard's sources, and a force-pushing `+refspec` is denied alongside `--force`.
 - 2026-09-13 — Added the guard hook handler and its Claude Code, OpenCode and Codex wiring, protecting the roadmap and Issue Status/checkbox fields, force-pushes and test-skip commits, and recording hook and subagent events into the Run log.
+- 2026-09-14 — Addressed a fifth retry round of adversarial-critic feedback on the optional Learner
+  phase and the host command-runner contract. `round-workflow.md`'s `learn()` now records the Learner
+  phase like every other phase — `phase.started`, `subagent.started` (`role: 'learner'`),
+  `subagent.stopped` (carrying the drafted candidates as its result) and `phase.finished` — but only
+  when it actually runs (recurring evidence found); a short-circuited Learner (no Run-log path, or
+  nothing recurring) records none of those four events. Because `runlog.py` requires an `issue` on
+  every `phase.started`/`phase.finished` event and the Learner is not scoped to one Issue, these events
+  use the reserved, non-Issue reference `learn#00`. The workflow's tail was reordered so
+  `const candidates = A.isLastRound ? await learn() : []` runs after `round.finished` but before
+  `run.finished` is appended, so `run.finished` remains the Run log's last event on a completed Run and
+  no subagent runs after it — previously `learn()` ran after `run.finished`, letting a Learner subagent
+  execute after the Run's own recorded completion. `SKILL.md` and `round-workflow.md`'s 'Recorded Run
+  lifecycle' prose no longer scope phase/subagent pairs to only Implement, Review and Critic, and both
+  now state the Learner phase is recorded before `run.finished`. A new workflow integration test,
+  `test_round_workflow_records_the_learner_phase_before_run_finished`, runs the canonical workflow as
+  the last round of a Run with `learnerRunLogs` pointing at a fixture Run log containing two recurring
+  `refutation` events, and asserts the Learn phase's `phase.started`/`subagent.started`/
+  `subagent.stopped` (with a `result`)/`phase.finished` events are present, in order, between
+  `round.finished` and the final `run.finished` event. The host contract prose in both `SKILL.md` and
+  `round-workflow.md` now reads `runCommand(command, { cwd, input })` and states that `input`, when
+  supplied, is written to the invoked command's stdin — every recorded Run event goes through
+  `runlog.py append` this way, so a harness port that drops `input` breaks every recorded round, not
+  only this one.
+- 2026-09-14 — Addressed a fourth retry round of adversarial-critic feedback: the Critic's `subagent.stopped`
+  no longer carries its verdict unchanged into the Run log. A Critic proving completion runs a real
+  `gates.py --run --diff-base <baseRef> --json` and returns that parsed payload unchanged in
+  `gateResult` (the spec's own contract), so `gateResult.gates[]` carries real `command` and
+  `output_tail` fields for every gate it ran — and `runlog.py append` rejects any `command`- or
+  `output`-tokenized key at any nesting depth by its own rule (spec line 25: the Run log records
+  references and role results, never command output). Recording the raw verdict would therefore throw
+  on every genuinely gate-green Critic pass, breaking the Run log for real work rather than only for
+  disallowed data. `round-workflow.md` now records `projectCriticResult(verdict)` instead: `complete`,
+  `criteria`, `gatesVerdict`, `gateFailures`, `refutations`, `requiredFixes` and `decisionsForOperator`
+  pass through unchanged, and `gateResult` is narrowed to only its `verdict` and `requirements` strings
+  — dropping `gates` (and therefore every `command`/`output_tail`) entirely. This keeps the Run log a
+  record of the Critic's role result and reasoning about the gates, never of the gate commands' output,
+  while `criticAccepted` and the workflow's own structured output still see the full, untouched verdict.
+  `runlog.py` keeps failing loudly on prohibited data from any other role. `SKILL.md` and
+  `round-workflow.md`'s 'Recorded Run lifecycle' prose now describe this projection, and a new workflow
+  integration test in `tests/test_canonical_gantry_workflow.py` runs the canonical workflow with a Critic
+  double that returns a `gateResult` shaped exactly like real `gates.py --json` output (`gates[{name,
+  source, command, exit_code, output_tail, status}]`, `requirements`, `git`, `verdict: 'pass'`) under
+  `commandMode: 'real'` with `runId`/`unitId` set, asserting the round reaches `'done'`, a Critic
+  `subagent.stopped` event is present, and no line of the recorded Run log contains a `command` or
+  `output` key.
+- 2026-09-13 — Addressed a third retry round of adversarial-critic feedback on multi-round Runs:
+  `round-workflow.md` now takes an explicit `args.isFirstRound` (default `true`) alongside
+  `args.isLastRound`, so `run.started`, `run.resumed` and `policy.changed` are appended only on the
+  first round of a Run and `run.finished` only on its last, while `round.started` / `round.finished`
+  still record every round — a Run log accepts exactly one `run.started` and rejects a duplicate, so a
+  second round that still emitted it would previously throw. Proven by a new test that runs
+  `round-workflow.md` twice under the same `runId`/`unitId` (round 1 with `isFirstRound` defaulted and
+  `isLastRound: false`, round 2 with `isFirstRound: false` and `isLastRound: true`) and asserts exactly
+  one `run.started`, one `round.started`/`round.finished` pair per round, and exactly one `run.finished`
+  emitted last, only after round 2. The previously merged single-round lifecycle test now passes
+  `isLastRound: true` to match. This branch has also been updated by merging current `main` (which
+  carries `gantry-migration#04`, `#11`, `#13` and `#16`'s real `fixture/` history) rather than the prior
+  round's copy-only stand-in, resolving a real conflict in `round-workflow.md`'s final block where the
+  `run.finished` and Learner-phase gating from both branches are unified under `args.isLastRound`.
+- 2026-09-13 — Addressed a retry round of adversarial-critic feedback: `runlog.py`'s
+  `derive_corrections_spent` now withholds the `run.resumed.data.correctionsSpent` base unless that
+  same `run.resumed` event's `data.issue` also equals the Issue being queried — the base is per-Issue,
+  never per-Run, so one Issue's resumed budget can no longer leak into another Issue that shares the
+  same Run log — proven by a dedicated unit test with one Run log resuming Issue A (base 2) alongside
+  Issue B's own started correction pass and an unrelated Issue C absent from the log entirely (A stays
+  2, B is 1 from its own pass alone, C is 0). `runlog.py corrections` also now fails closed
+  (`runlog error: no Run log for <runId>`, exit 1) instead of silently reporting `0` when no Run log
+  exists for the requested Run ID; `SKILL.md`'s preflight prose, `round-workflow.md`'s 'Recorded Run
+  lifecycle' section and this changelog now say so. The AC1 fixture test
+  (`test_gantry_greeting_offers_and_resumes_a_fixture_interrupted_run_in_its_worktree`) was strengthened
+  so the prior interrupted Run's log carries a real refutation for `greeting#02` followed by a
+  `phase.started` Implement (so `runlog.py corrections` derives `1`, not `0`), the resumed Run's
+  `run.resumed.data.correctionsSpent` is asserted to equal `1`, and the resumed round is asserted to
+  spend its one remaining correction attempt before `issue.blocked` records `data.corrections == 2`,
+  with worktree `W` preserved and `greeting#02` still `Status: ready-for-agent`.
+- 2026-09-13 — Addressed adversarial-critic feedback on the recorded-Run wiring: `run.resumed` now carries
+  `issue` and `correctionsSpent` alongside the prior Run and worktree; Review and Critic `phase.started`
+  events now carry `worktree` so an interrupted Review or Critic phase surfaces in `runlog.py inflight`;
+  documented the derivation rule for a resumed `correctionsSpent` as `run.resumed.data.correctionsSpent`
+  (or `0`) plus refutations in that same Run's log that actually started a correction pass (a later
+  `phase.started` Implement for the same Issue), replacing the earlier `data.attempt - 1` sub-rule; and
+  added a chained-resume test proving the rule composes correctly across three Runs, an inflight test for
+  interrupted Review/Critic phases, and stronger ordering assertions on the isolated multi-Issue serial
+  integration test (exactly one `--no-ff` merge and one gate per Issue, in order, with nothing after the
+  red post-merge gate).
+- 2026-09-13 — Resolved the prior entry's open stand-in: the `fixture/` tree from `gantry-migration#16`
+  (as it stands on `gantry/wave-3` at `e546aa8`) is now merged into this branch, and
+  `test_gantry_greeting_offers_and_resumes_a_fixture_interrupted_run_in_its_worktree` proves this Issue's
+  acceptance criterion against the real fixture: it builds an isolated `copy_fixture.py --mode approved`
+  copy, simulates a Run interrupted while the fixture's real `greeting#02` Issue was in the Implement phase
+  in worktree `W`, shows `runlog.py inflight` offering `W`, and resumes `round-workflow.md` in `W` so that
+  `run.resumed` carries the prior Run id and `W` while `greeting#02` keeps `Status: ready-for-agent` (proven
+  against the real Issue file, not a synthetic stand-in). The `resumeq#01`/`resume#01`-based tests remain as
+  additional coverage of the derivation and chained-resume rules, not as a substitute for this criterion.
+- 2026-09-13 — Addressed a second round of adversarial-critic feedback: `runlog.py corrections <unitId>
+  <runId> <issue> [--json]` is now a shipped, tested query — the sole implementation of the documented
+  `correctionsSpent` derivation rule — and `SKILL.md`'s preflight prose and this Issue's tests all invoke it
+  instead of duplicating the rule in prose or in test-local Python; `appendRunEvent` in
+  `round-workflow.md` now runs `runlog.py append` through `runWorkflowCommand`, so a rejected event (for
+  example a prohibited key such as `gateResult.diff`) throws instead of being silently discarded, proven by
+  a test that asserts the thrown error and the missing Run log line; and the 'Recorded Run lifecycle'
+  paragraph now states plainly that `run.started` always opens a recorded Run and `run.resumed` follows it
+  when `args.priorRun` is supplied, matching both the code and `runlog.py`'s own first-event rule.
+- 2026-09-13 — Documented the explicit derivation of a resumed Run's `correctionsSpent` (the prior Run's own
+  `run.resumed.data.correctionsSpent`, if any, plus every `refutation` event for the matching Issue that is
+  later followed by a `phase.started` `Implement` event — i.e. only refutations whose correction pass
+  actually started — read from the matched Run's own log; `runlog.py inflight` never reports it) and
+  clarified that a resumed `branch` is optional because `round-workflow.md` derives and verifies it itself;
+  documented that a ceiling-spent, refuted Issue keeps its authoritative `Status: ready-for-agent` and is
+  only recorded as blocked in the Run log, so `frontier.py` still offers it; added lifecycle tests for the
+  derived-resume path, the no-hooks protected-rules-in-prompts contract, and the still-workable refuted
+  Issue.
+- 2026-09-13 — Wired the canonical `SKILL.md` preflight and `round-workflow.md` execution to the Run log: `run.started`/`run.resumed` open a recorded Run, every phase, subagent start/stop, review finding, refutation, Issue outcome, policy change and completion or cancellation appends its event, a rerun offers continuation of an in-flight Issue in its preserved worktree with spent correction attempts retained, and Issue `Status:` and `roadmap.py` remain the only authority for readiness and completion.
+
 - 2026-09-13 — Routed the Requirement Critic result through the same `requestRole` validation as every
   other role, added its Result Contract schema and registered role, and stopped the run with a Protocol
   Failure instead of silently proceeding when the result is missing or invalid.
