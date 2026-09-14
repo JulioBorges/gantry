@@ -209,15 +209,23 @@ class PrePushHookTests(GitHookFixtureMixin, unittest.TestCase):
             run = self.seed_run(local, state)
             self.mark_run(local, state, run)
 
+            environment = self.env_without_gantry_variables()
             self.commit(local, "app_test.py", "import unittest\n")
             first = self.push(local, "origin", "HEAD:refs/heads/main")
             self.assertEqual(0, first.returncode, first.stdout + first.stderr)
 
             (local / "app_test.py").write_text(skipped, encoding="utf-8")
             git("add", "app_test.py", cwd=local)
-            git("commit", "--quiet", "-n", "-m", "skip past pre-commit", cwd=local)
+            git("commit", "--quiet", "-n", "-m", "skip past pre-commit", cwd=local, env=environment)
 
-            denied = self.push(local, "origin", "HEAD:refs/heads/main")
+            denied = subprocess.run(
+                ["git", "push", "origin", "HEAD:refs/heads/main"],
+                cwd=local,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment,
+            )
             self.assertNotEqual(0, denied.returncode, denied.stdout + denied.stderr)
             self.assert_single_denial_line(denied, "no-test-skip-commit", "app_test.py")
 
