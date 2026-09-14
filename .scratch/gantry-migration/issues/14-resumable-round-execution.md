@@ -1,7 +1,7 @@
 # Resumable and recorded round execution
 
 Type: issue
-Status: blocked
+Status: ready-for-agent
 Slice: `gantry-migration#14`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
