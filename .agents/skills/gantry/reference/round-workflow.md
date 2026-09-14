@@ -25,8 +25,12 @@ readiness or completion — only `frontier.py`, Issue `Status:` lines and `roadm
 `args.priorRun` names the Issue being continued (`args.priorRun.issue`), its preserved worktree, branch
 and `correctionsSpent` are reused instead of
 creating a new worktree or resetting the correction count, and the Issue keeps its authoritative Status
-until the Critic accepts it. Omitting `args.runId` or `args.unitId` disables all of the above and leaves
-the round behaviorally identical, so a harness without a resolved Run log keeps working.
+until the Critic accepts it. `args.priorRun.correctionsSpent` is scoped to `args.priorRun.issue` alone —
+`runlog.py corrections` (the sole source of this value; see `SKILL.md`) withholds the `run.resumed`
+base from any other Issue that happens to share the same Run log, so callers must never reuse one
+Issue's derived `correctionsSpent` for a different Issue. Omitting `args.runId` or `args.unitId` disables
+all of the above and leaves the round behaviorally identical, so a harness without a resolved Run log
+keeps working.
 
 ```
 implement (TDD) → review (standards + Spec) → one review fix pass

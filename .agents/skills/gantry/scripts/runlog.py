@@ -272,13 +272,21 @@ def derive_corrections_spent(events: list[dict], issue_ref: str) -> int:
     """Apply the documented derivation rule to one Run's own valid events.
 
     `runlog.py inflight` never reports `correctionsSpent`: it is derived here from (1) the
-    `run.resumed.data.correctionsSpent` recorded on this same Run, or 0 when absent, plus (2) the
+    `run.resumed.data.correctionsSpent` recorded on this same Run, but only when that same
+    `run.resumed` event also names `issue_ref` as `data.issue` (0 otherwise, including when the Run
+    has no `run.resumed` event, or when its `run.resumed` names a different Issue), plus (2) the
     number of `refutation` events for `issue_ref` that are each followed, later in the same log, by a
     `phase.started` `Implement` event for that same Issue — i.e. only refutations whose correction
-    pass actually started count toward the spent budget.
+    pass actually started count toward the spent budget. The base is per-Issue, not per-Run: a Run
+    resumed for one Issue must never lend its `correctionsSpent` base to any other Issue that also
+    happens to appear in the same Run's log.
     """
     resumed = next((event for event in events if event["event"] == "run.resumed"), None)
-    base = resumed["data"].get("correctionsSpent", 0) if resumed else 0
+    base = (
+        resumed["data"].get("correctionsSpent", 0)
+        if resumed and resumed["data"].get("issue") == issue_ref
+        else 0
+    )
     started_corrections = 0
     for index, event in enumerate(events):
         if event["event"] != "refutation" or event.get("issue") != issue_ref:
@@ -346,6 +354,8 @@ def main() -> int:
             if not ISSUE_RE.fullmatch(args.issue):
                 raise EventError("issue must be an Issue reference such as sample#01")
             path = run_log_path(root, args.unit_id, args.run_id)
+            if not path.exists():
+                raise EventError(f"no Run log for {args.run_id}")
             events = read_valid_events(path)
             spent = derive_corrections_spent(events, args.issue)
             payload = {

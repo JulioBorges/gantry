@@ -166,6 +166,22 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-13 — Addressed a retry round of adversarial-critic feedback: `runlog.py`'s
+  `derive_corrections_spent` now withholds the `run.resumed.data.correctionsSpent` base unless that
+  same `run.resumed` event's `data.issue` also equals the Issue being queried — the base is per-Issue,
+  never per-Run, so one Issue's resumed budget can no longer leak into another Issue that shares the
+  same Run log — proven by a dedicated unit test with one Run log resuming Issue A (base 2) alongside
+  Issue B's own started correction pass and an unrelated Issue C absent from the log entirely (A stays
+  2, B is 1 from its own pass alone, C is 0). `runlog.py corrections` also now fails closed
+  (`runlog error: no Run log for <runId>`, exit 1) instead of silently reporting `0` when no Run log
+  exists for the requested Run ID; `SKILL.md`'s preflight prose, `round-workflow.md`'s 'Recorded Run
+  lifecycle' section and this changelog now say so. The AC1 fixture test
+  (`test_gantry_greeting_offers_and_resumes_a_fixture_interrupted_run_in_its_worktree`) was strengthened
+  so the prior interrupted Run's log carries a real refutation for `greeting#02` followed by a
+  `phase.started` Implement (so `runlog.py corrections` derives `1`, not `0`), the resumed Run's
+  `run.resumed.data.correctionsSpent` is asserted to equal `1`, and the resumed round is asserted to
+  spend its one remaining correction attempt before `issue.blocked` records `data.corrections == 2`,
+  with worktree `W` preserved and `greeting#02` still `Status: ready-for-agent`.
 - 2026-09-13 — Addressed adversarial-critic feedback on the recorded-Run wiring: `run.resumed` now carries
   `issue` and `correctionsSpent` alongside the prior Run and worktree; Review and Critic `phase.started`
   events now carry `worktree` so an interrupted Review or Critic phase surfaces in `runlog.py inflight`;

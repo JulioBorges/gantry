@@ -1491,10 +1491,13 @@ Spec: `.scratch/planned/spec.md`
 
     def test_gantry_greeting_offers_and_resumes_a_fixture_interrupted_run_in_its_worktree(self) -> None:
         # Covers AC1 with the real `fixture/` tree from gantry-migration#16 (not a synthetic stand-in):
-        # a Run interrupted while `greeting#02` was in the Implement phase in worktree W causes the next
-        # `gantry greeting` invocation to offer continuation in W via `runlog.py inflight`; choosing it
-        # appends `run.resumed` with the prior Run id and W, retains spent correction attempts, and keeps
-        # `greeting#02` at `Status: ready-for-agent` until Critic acceptance.
+        # a Run interrupted while `greeting#02` was in the Implement phase in worktree W, having already
+        # burned one real correction attempt (a refutation followed by a later Implement phase.started),
+        # causes the next `gantry greeting` invocation to offer continuation in W via `runlog.py inflight`.
+        # `runlog.py corrections` derives `1` from that prior log; choosing to continue appends
+        # `run.resumed` with the prior Run id, W and `correctionsSpent: 1`, and the resumed round spends
+        # only its one remaining correction attempt (out of budget 2) before `issue.blocked` records
+        # `data.corrections == 2`, worktree W preserved and `greeting#02` still `Status: ready-for-agent`.
         with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
             root = Path(temp) / "fixture-copy"
             build = subprocess.run(
@@ -1527,6 +1530,16 @@ Spec: `.scratch/planned/spec.md`
                     "ts": "2026-09-13T09:01:00Z", "run": prior_run_id, "event": "phase.started",
                     "issue": "greeting#02", "phase": "Implement", "data": {"worktree": str(issue_worktree)},
                 })
+                # ...and it already burned one correction attempt: a real refutation followed by a
+                # later Implement phase.started, so `runlog.py corrections` derives `1`, not `0`.
+                self.append_runlog_event(state_root, unit_id, prior_run_id, {
+                    "ts": "2026-09-13T09:02:00Z", "run": prior_run_id, "event": "refutation",
+                    "issue": "greeting#02", "phase": "Critic", "data": {"attempt": 1, "refutations": ["prior refutation"]},
+                })
+                self.append_runlog_event(state_root, unit_id, prior_run_id, {
+                    "ts": "2026-09-13T09:03:00Z", "run": prior_run_id, "event": "phase.started",
+                    "issue": "greeting#02", "phase": "Implement", "data": {"worktree": str(issue_worktree)},
+                })
 
                 # The next `gantry greeting` invocation queries `runlog.py inflight` and offers W.
                 inflight = subprocess.run(
@@ -1542,7 +1555,7 @@ Spec: `.scratch/planned/spec.md`
                 self.assertEqual(str(issue_worktree), match["worktree"])
 
                 corrections_spent = self.run_corrections_command(state_root, unit_id, match["run"], match["issue"])
-                self.assertEqual(0, corrections_spent)
+                self.assertEqual(1, corrections_spent)
 
                 # Choosing to continue in W resumes round-workflow. The Critic refutes, so this proves
                 # `greeting#02` stays `ready-for-agent` while the Run records the continuation.
@@ -1584,6 +1597,9 @@ Spec: `.scratch/planned/spec.md`
                 delivery = run["result"]["results"][0]
                 self.assertEqual("refuted", delivery["outcome"])
                 self.assertEqual(str(issue_worktree), delivery["worktree"])
+                # Only the one remaining correction attempt (budget 2 minus the 1 already spent) is
+                # available: the resumed round spends it and then blocks at the ceiling.
+                self.assertEqual(2, delivery["corrections"])
 
                 events = self.read_run_log_events(state_root, unit_id, now_run_id)
                 self.assertEqual("run.started", events[0]["event"])
@@ -1591,8 +1607,13 @@ Spec: `.scratch/planned/spec.md`
                 self.assertEqual(prior_run_id, resumed["data"]["priorRun"])
                 self.assertEqual(str(issue_worktree), resumed["data"]["worktree"])
                 self.assertEqual("greeting#02", resumed["data"]["issue"])
+                self.assertEqual(1, resumed["data"]["correctionsSpent"])
                 refutation = next(event for event in events if event["event"] == "refutation")
                 self.assertIn("cli.py prints to stderr", refutation["data"]["refutations"])
+                blocked = next(event for event in events if event["event"] == "issue.blocked")
+                self.assertEqual("greeting#02", blocked["issue"])
+                self.assertEqual(str(issue_worktree), blocked["data"]["worktree"])
+                self.assertEqual(2, blocked["data"]["corrections"])
 
                 # Status authority stays in the Issue file: greeting#02 keeps Status: ready-for-agent
                 # until the Critic accepts it, and `frontier.py` still reports it as workable.
