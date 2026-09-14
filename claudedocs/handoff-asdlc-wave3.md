@@ -15,14 +15,25 @@ points at it.
 `roadmap.py check` is clean (13/18; wave 3 at 5/6). `frontier.py --scope wave:3` returns no runnable
 work — only `#09` parked.
 
-## `#09` needs an operator decision before any retry
+## `#09` — decision taken, implementation to be pulled in a new session
 
 The round-3 critic (full text in the Issue's Comments, commit `3064fae`) proved the guard's regex-based
 Bash parsing is both quadratic on 1 MB payloads and bypassable through quoting, pathspecs, combined short
-flags, quoted refspecs, `--mirror`, token literals and absolute `git` paths, and concluded that
-regex/whitespace parsing of shell is not a defensible enforcement boundary. It recommends either full
-`shlex` tokenisation plus git-side `pre-commit`/`pre-push` hooks, or narrowing the spec guarantee to
-best-effort detection of listed shapes. Decide that first; a fourth blind retry would repeat the pattern.
+flags, quoted refspecs, `--mirror`, token literals and absolute `git` paths. The operator ruled on
+2026-09-14: enforcement of no-force-push / no-test-skip-commit moves to the repository's own git hooks —
+**`docs/adr/0005-git-hooks-enforce-git-rules.md`**. `#09`'s *What to build* and AC4 were amended to match
+(operator-approved breakdown change); the spec's *Hook wiring* bullet names the new `hooks/git/` layer.
+`#09` stays `blocked` until the next run flips it to `ready-for-agent`.
+
+To pull it: `roadmap.py status gantry-migration#09 ready-for-agent`, then run the round on the preserved
+worktree `.claude/worktrees/wf_8d1cbc1a-f67-2` (branch `worktree-wf_8d1cbc1a-f67-2`, HEAD `d344f14`, clean,
+166 tests green) — merge `main` into it first so ADR-0005 and the amendment are present. The implementer
+must add `hooks/git/pre-commit` + `pre-push`, delete guard.py's Bash-parsing machinery (segment/force
+regexes, `_bounded_tokens`, `commit_uses_all_flag`, `extract_git_add_targets`, `tracked_worktree_skip_match`
+and their tests) in favour of the single linear substring rule, keep Edit/Write/MultiEdit protection and
+`hook.degraded` handling, and prove the hooks in temporary git repos with `core.hooksPath` set by the test.
+Writing `core.hooksPath` into the operator's repository belongs to `#10`; its hook criteria should gain that
+line — a breakdown change that still needs operator approval and was deliberately not made here.
 
 ## Not done regardless
 
