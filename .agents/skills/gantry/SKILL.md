@@ -12,7 +12,8 @@ approval decisions in the host harness.
 
 ```
 preflight → models → frontier.py → planned round loop
-                         └→ research → draft plan → critique → STOP for operator approval
+                         └→ spec.py --check → Requirement Critic → research → draft plan → critique
+                            → STOP for operator approval
 round: implement (TDD) → review (standards + Spec) → Critic → serial integration → roadmap.py done
 ```
 
@@ -39,6 +40,11 @@ Every script provides `--help`, and data-producing paths support `--json`.
 - Use `frontier.py --scope <scope> --json` as the only authority for dependency rounds. Exit 1 for a
   cyclic or dangling blocker graph. Parked `draft`, `blocked`, and `needs-operator` Issues are reported
   and skipped.
+- Before slicing, `spec.py --check` validates the Spec's structure and then the read-only Requirement
+  Critic (Critic model) assesses ambiguity, coherence, verifiability and non-goal coverage. A blocking
+  finding stops the run, quotes the finding, and tells the operator to amend the Spec; the Critic never
+  edits it. Neither structural validation nor Requirement Review approves planning — only explicit
+  operator approval does.
 - Planning creates draft Issues and never edits `ROADMAP.md`. Present drafts and the critic verdict, then
   stop. Only explicit operator approval permits `roadmap.py status <ref> ready-for-agent`, followed by
   `roadmap.py waves` and `roadmap.py check`.
@@ -56,6 +62,13 @@ Every script provides `--help`, and data-producing paths support `--json`.
   Only after explicit Cleanup Authorization may the workflow pass that unchanged JSON to
   `cleanup.py --yes --plan-file <authorized-plan.json>`; it revalidates the plan against the repository
   state and refuses any divergence. The workflow never executes `cleanup.py --yes` automatically.
+- After the last round, the optional Learner (`reference/round-workflow.md`) reads only the refutation
+  and review-finding events already recorded in the Run log and drafts a lesson candidate for each
+  problem that recurred across Issues or attempts. The final Run report lists every lesson candidate,
+  with its evidence and proposed target, as an operator decision: the workflow never writes a candidate
+  into `AGENTS.md`, `CONTEXT.md`, a template or policy on its own. Pass `args.isLastRound = true` and
+  `args.learnerRunLogs` only for that final frontier round; `learnerRunLogs` is the current Run's own
+  Run-log path(s), normally `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`.
 
 ## Harness-neutral execution
 
@@ -66,7 +79,8 @@ The deterministic scripts and workflow semantics stay identical in every harness
 
 ## References
 
-- `reference/plan-workflow.md` — research, draft, plan critic and mandatory operator stop.
+- `reference/plan-workflow.md` — structural validation, Requirement Critic, research, draft, plan
+  critic and mandatory operator stop.
 - `reference/round-workflow.md` — TDD implementation, two-axis review, adversarial Critic and serial
   integration contract.
 - `templates/` — default Spec, PRD and Issue structures.

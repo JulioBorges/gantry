@@ -36,7 +36,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **8 / 18** |
+| Issues completed | **12 / 18** |
 | Specs completed | **0 / 1** |
 | Execution waves | **7** |
 
@@ -114,7 +114,7 @@ longer exist.
 
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
-| 01 | `gantry-migration` | 8/18 | 0–6 |
+| 01 | `gantry-migration` | 12/18 | 0–6 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -149,19 +149,19 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-migration#12`** — Explicit cleanup plan and execution
   <br>↳ blocked by: gantry-migration#02
 
-### Wave 3 — 0/6 done
+### Wave 3 — 4/6 done
 
-- [ ] **`gantry-migration#04`** — Requirement Critic stops ambiguous planning
+- [x] **`gantry-migration#04`** — Requirement Critic stops ambiguous planning
   <br>↳ blocked by: gantry-migration#03
 - [ ] **`gantry-migration#09`** — Guard hooks and Claude Code wiring
   <br>↳ blocked by: gantry-migration#08, gantry-migration#05
-- [ ] **`gantry-migration#11`** — Read-only multi-Run dashboard
+- [x] **`gantry-migration#11`** — Read-only multi-Run dashboard
   <br>↳ blocked by: gantry-migration#08
-- [ ] **`gantry-migration#13`** — Recurring lesson candidates
+- [x] **`gantry-migration#13`** — Recurring lesson candidates
   <br>↳ blocked by: gantry-migration#08, gantry-migration#06
 - [ ] **`gantry-migration#14`** — Resumable and recorded round execution
   <br>↳ blocked by: gantry-migration#06, gantry-migration#07, gantry-migration#08
-- [ ] **`gantry-migration#16`** — Reference fixture isolation foundation
+- [x] **`gantry-migration#16`** — Reference fixture isolation foundation
   <br>↳ blocked by: gantry-migration#03, gantry-migration#07
 
 ### Wave 4 — 0/2 done
