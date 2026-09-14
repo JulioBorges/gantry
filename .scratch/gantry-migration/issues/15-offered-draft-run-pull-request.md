@@ -1,7 +1,7 @@
 # Offered draft Run pull request
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-migration#15`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -16,10 +16,10 @@ Add the end-of-Run draft pull request offer to `.agents/skills/gantry/SKILL.md` 
 
 ## Acceptance criteria
 
-- [ ] With a stub `gh` on `PATH` and operator confirmation, a workflow test observes exactly one draft-pull-request command targeting the configured branch and a body that contains each completed Issue’s criteria and Critic evidence.
-- [ ] With no `gh` executable or with operator refusal, no pull request command runs and the English Run report names the run branch and configured target as the handoff.
-- [ ] The offer occurs only after final `roadmap.py check`, frontier reporting, and the optional Learner phase has completed or been explicitly skipped; it states the capability-file support tier and never merges, observes provider state, or creates per-Issue pull requests.
-- [ ] The Spec Changelog receives an English entry in the same merge, with the pull-request workflow test runnable from the repository.
+- [x] With a stub `gh` on `PATH` and operator confirmation, a workflow test observes exactly one draft-pull-request command targeting the configured branch and a body that contains each completed Issue’s criteria and Critic evidence.
+- [x] With no `gh` executable or with operator refusal, no pull request command runs and the English Run report names the run branch and configured target as the handoff.
+- [x] The offer occurs only after final `roadmap.py check`, frontier reporting, and the optional Learner phase has completed or been explicitly skipped; it states the capability-file support tier and never merges, observes provider state, or creates per-Issue pull requests.
+- [x] The Spec Changelog receives an English entry in the same merge, with the pull-request workflow test runnable from the repository.
 
 ## Blocked by
 
