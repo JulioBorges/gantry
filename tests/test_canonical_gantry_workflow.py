@@ -1459,6 +1459,116 @@ Scenario: greet a user
             self.assertIsNone(last["error"], last["error"])
             self.assertFalse(marker.exists(), "the marker is cleared when the Run ends")
 
+    def test_round_workflow_marks_the_issue_worktree_of_an_isolated_round(self) -> None:
+        """An isolated round works in `<repoRoot>.gantry-<spec>-<nn>`, not the repository root.
+
+        That worktree is where the Implementer's `git` runs, so it is the worktree whose own git
+        directory must carry the current-Run marker before any agent starts -- otherwise a
+        `pre-commit`/`pre-push` denial there resolves no Run and the `hook.denied` guarantee is
+        empty for exactly the case isolation is used for.
+        """
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "isomark#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            policy_path = root / ".gantry" / "config.json"
+            policy_path.parent.mkdir()
+            policy_path.write_text('{"git":{"issueBranch":"issues/{spec}/{number:02d}"}}', encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True,
+            ).stdout.strip()
+
+            state_root = Path(state_dir)
+            unit_id = "efefefefefef"
+            run_id = "run-isomark-1"
+            issue_branch = "issues/isomark/01"
+            issue_worktree = Path(f"{root}.gantry-isomark-01")
+
+            def invoke(is_first_round: bool, is_last_round: bool, round_number: int, prior_run: dict | None) -> dict:
+                return self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": round_number,
+                        "issues": [{"ref": "isomark#01", "path": str(issue.relative_to(root)), "title": "Isolated marker", "specPath": ".scratch/isomark/spec.md"}],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": "gantry/isomark",
+                        "baseRef": base_ref,
+                        "isolate": True,
+                        "correctionBudget": 0,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/", "issueBranch": "issues/{spec}/{number:02d}"}, "budget": {"corrections": 0}},
+                        "paths": {},
+                        "date": "2026-09-14",
+                        "commandMode": "real",
+                        "issueBranch": issue_branch,
+                        "issueWorktree": str(issue_worktree),
+                        "runId": run_id,
+                        "unitId": unit_id,
+                        "stateRoot": str(state_root),
+                        "tier": "reference",
+                        "isFirstRound": is_first_round,
+                        "isLastRound": is_last_round,
+                        **({"priorRun": prior_run} if prior_run else {}),
+                        # Refuted, so the Issue keeps its worktree into the next round instead of
+                        # being merged and completed.
+                        "criticResult": {
+                            "complete": False,
+                            "refutations": ["criterion one is unproven"],
+                            "requiredFixes": ["prove criterion one"],
+                        },
+                    },
+                )
+
+            try:
+                first = invoke(True, False, 1, None)
+                self.assertIsNone(first["error"], first["error"])
+                self.assertEqual("refuted", first["result"]["results"][0]["outcome"])
+
+                worktree_git_dir = Path(
+                    subprocess.run(
+                        ["git", "rev-parse", "--git-dir"],
+                        cwd=issue_worktree,
+                        text=True,
+                        capture_output=True,
+                        check=True,
+                    ).stdout.strip()
+                )
+                self.assertNotEqual(root / ".git", worktree_git_dir, "git keys a git directory per worktree")
+                marker = worktree_git_dir / "gantry" / "current-run.json"
+
+                mark_calls = [
+                    call for call in first["commandCalls"]
+                    if "runlog.py" in call["command"] and f"mark '{run_id}' --cwd '{issue_worktree}'" in call["command"]
+                ]
+                self.assertTrue(mark_calls, first["commandCalls"])
+                implement_call = next(call for call in first["calls"] if call["label"].startswith("implement:"))
+                self.assertEqual(str(issue_worktree), implement_call["cwd"])
+                self.assertLess(
+                    mark_calls[0]["sequence"],
+                    implement_call["sequence"],
+                    "the Issue worktree is marked before any agent works in it",
+                )
+
+                self.assertTrue(marker.is_file(), f"{marker} should carry the Run between rounds")
+                self.assertEqual(run_id, json.loads(marker.read_text(encoding="utf-8"))["run"])
+
+                last = invoke(
+                    False, True, 2,
+                    {"issue": "isomark#01", "worktree": str(issue_worktree), "branch": issue_branch, "correctionsSpent": 0},
+                )
+                self.assertIsNone(last["error"], last["error"])
+                self.assertFalse(marker.exists(), "the Issue worktree's marker is cleared when the Run ends")
+                self.assertFalse((root / ".git" / "gantry" / "current-run.json").exists())
+            finally:
+                subprocess.run(["git", "worktree", "remove", "--force", str(issue_worktree)], cwd=root, check=False)
+
     def test_round_workflow_records_the_learner_phase_before_run_finished(self) -> None:
         # The optional Learner phase, when it actually runs, must be recorded exactly like every other
         # phase (phase.started / subagent.started / subagent.stopped / phase.finished) and must be
