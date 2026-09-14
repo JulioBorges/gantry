@@ -74,9 +74,14 @@ BASH_TOOLS = {"bash", "shell", "exec"}
 
 ISSUE_FILE_RE = re.compile(r"^\d{2,}-[a-z0-9-]+\.md$")
 STATUS_LINE_RE = re.compile(r"(?m)^Status:\s*(\S+)")
-CHECKBOX_LINE_RE = re.compile(r"(?m)^\s*-\s\[[ xX]\]")
-CHECKBOX_FULL_LINE_RE = re.compile(r"(?m)^\s*-\s\[[ xX]\].*$")
-CHECKED_CHECKBOX_RE = re.compile(r"(?m)^\s*-\s\[[xX]\]")
+# `[ \t]*` (never `\s*`) after `^` in multiline mode: `\s` matches `\n`, so `^\s*` can consume
+# whole blank/whitespace-only lines before backtracking one character at a time back to the
+# previous line start it already tried -- O(n) backtrack retried from each of the O(n) line
+# starts a large whitespace-heavy text has, i.e. O(n^2). Restricting to horizontal whitespace
+# bounds the backtrack to the current line's length, keeping the match O(n) overall.
+CHECKBOX_LINE_RE = re.compile(r"(?m)^[ \t]*-\s\[[ xX]\]")
+CHECKBOX_FULL_LINE_RE = re.compile(r"(?m)^[ \t]*-\s\[[ xX]\].*$")
+CHECKED_CHECKBOX_RE = re.compile(r"(?m)^[ \t]*-\s\[[xX]\]")
 FORCE_FLAG_RE = re.compile(r"(--force(-with-lease)?\b|(?:^|\s)-f\b)")
 FORCE_REFSPEC_RE = re.compile(r"(?:^|\s)\+\S")
 # `\bgit\b[^&|;]*\bpush\b` (and the equivalent `commit` pattern) look linear but are not:
@@ -92,25 +97,29 @@ COMMAND_SEGMENT_SPLIT_RE = re.compile(r"[&|;\n]+")
 # stays off the shlex.split() path entirely.
 COMMIT_SEGMENT_RE = re.compile(r"\bgit\b[^&|;\n]*\bcommit\b[^&|;\n]*")
 GIT_ADD_SEGMENT_RE = re.compile(r"\bgit\b[^&|;\n]*\badd\b[^&|;\n]*")
-# `-a`/`-A`/`--all` and `add`'s target/flag tokens always appear immediately around the
-# `commit`/`add` keyword, well before any (possibly huge) commit-message or heredoc-body
-# argument. Bounding what we hand to shlex.split() keeps tokenising O(1) regardless of
-# how large the surrounding command string is, without changing which flags are detected.
+# shlex.split() correctly honours quoting, but is not linear-time on adversarial input, so it
+# is only used below the length at which it is measured to stay fast; a `-a`/`-A`/`--all` or
+# `add` target that arrives after a long commit-message or after hundreds of prior targets must
+# never be dropped just because the segment is long -- every token in the full segment is
+# always inspected, never truncated.
 SEGMENT_SCAN_LIMIT = 4096
 
 
 def _bounded_tokens(segment: str) -> list[str]:
-    """Tokenise the first `SEGMENT_SCAN_LIMIT` characters of `segment`.
+    """Tokenise the whole of `segment`, never dropping trailing tokens.
 
-    Bounding the input to shlex.split() keeps this O(1) even when `segment` itself is
-    megabytes long (e.g. a single unbroken commit-message token), which a raw
-    shlex.split() over the full string would not be.
+    `shlex.split()` is used for segments up to `SEGMENT_SCAN_LIMIT` characters, where it stays
+    fast and honours quoting. Beyond that, a plain whitespace `str.split()` over the *entire*
+    segment is used instead -- O(len(segment)) with no quote-awareness, but it still sees every
+    token, including a trailing `-a`/`-A`/`--all` after a multi-kilobyte commit message or a
+    `git add` target far past the first few hundred files.
     """
-    bounded = segment[:SEGMENT_SCAN_LIMIT]
-    try:
-        return shlex.split(bounded)
-    except ValueError:
-        return bounded.split()
+    if len(segment) <= SEGMENT_SCAN_LIMIT:
+        try:
+            return shlex.split(segment)
+        except ValueError:
+            return segment.split()
+    return segment.split()
 
 
 def _segment_has_git_then_token(segment: str, target: str) -> bool:
@@ -495,6 +504,11 @@ def decide(payload: dict, cwd: Path) -> Decision:
         command = extract_command(arguments)
         if not command:
             return Decision(True)
+        # A shell backslash-newline is a line continuation, not a separator: `git commit \\\n
+        # -a -m x` is one logical command line, `git commit -a -m x`. Normalising it before any
+        # segmenting/tokenising keeps COMMAND_SEGMENT_SPLIT_RE, COMMIT_SEGMENT_RE and
+        # GIT_ADD_SEGMENT_RE from being fooled into treating a continued flag as absent.
+        command = re.sub(r"\\\n", " ", command)
         if _command_has_git_then_token(command, "push") and (
             FORCE_FLAG_RE.search(command) or FORCE_REFSPEC_RE.search(command)
         ):

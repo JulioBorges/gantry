@@ -767,6 +767,55 @@ class GuardHookTests(unittest.TestCase):
             allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
             self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
 
+    def test_denies_commit_dash_a_after_a_five_thousand_character_message(self) -> None:
+        """A trailing -a beyond the bounded-token scan window must still be seen."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            test_file = root / "app_test.py"
+            test_file.write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "app_test.py"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "add test"], cwd=root, check=True)
+
+            # Modify the tracked file without staging the change.
+            test_file.write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            long_message = "x" * 5000
+            command = f"git commit -m '{long_message}' -a"
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("no-test-skip-commit", denied.stdout)
+            self.assertIn("app_test.py", denied.stdout)
+
+    def test_denies_git_add_naming_an_untracked_skip_file_after_many_other_targets(self) -> None:
+        """A `git add` target past the bounded-token scan window must still be seen."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            (root / "skip_test.py").write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            other_targets = " ".join(f"other_{i}.txt" for i in range(700))
+            command = f"git add {other_targets} skip_test.py && git commit -m x"
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("no-test-skip-commit", denied.stdout)
+            self.assertIn("skip_test.py", denied.stdout)
+
     def test_allows_committing_guards_own_source_despite_skip_pattern_literals(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -781,6 +830,64 @@ class GuardHookTests(unittest.TestCase):
             commit_payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git commit -m 'copy guard sources'"}}
             allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=commit_payload)
             self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+
+    def test_denies_commit_dash_a_split_across_a_backslash_newline_continuation(self) -> None:
+        """A shell line-continuation must not hide `-a` from the tokeniser."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            test_file = root / "app_test.py"
+            test_file.write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "app_test.py"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "add test"], cwd=root, check=True)
+
+            test_file.write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            command = "git commit \\\n  -a -m x"
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("no-test-skip-commit", denied.stdout)
+            self.assertIn("app_test.py", denied.stdout)
+
+    def test_denies_git_add_split_across_a_backslash_newline_continuation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            (root / "skip_test.py").write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            command = "git add \\\n skip_test.py && git commit -m x"
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("no-test-skip-commit", denied.stdout)
+            self.assertIn("skip_test.py", denied.stdout)
+
+    def test_denies_force_push_split_across_a_backslash_newline_continuation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            command = "git \\\n push --force"
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("no-force-push", denied.stdout)
 
     def test_denies_push_with_a_leading_plus_refspec(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -922,6 +1029,148 @@ class GuardHookTests(unittest.TestCase):
             elapsed = time.monotonic() - start
             self.assertEqual(2, result.returncode, result.stdout + result.stderr)
             self.assertIn("no-force-push", result.stdout)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
+    def test_answers_editing_an_existing_issue_with_a_half_megabyte_whitespace_new_string_in_under_200ms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text(
+                "Type: issue\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] Some criterion\n",
+                encoding="utf-8",
+            )
+
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    # Keeps the checkbox line itself untouched (old_string == new_string prefix)
+                    # and only appends whitespace-only lines after it, so the resulting text
+                    # carries the same acceptance-criteria checkboxes as the original -- this
+                    # exercises CHECKBOX_FULL_LINE_RE over 0.5 MB without changing the decision.
+                    "old_string": "Some criterion\n",
+                    "new_string": "Some criterion\n" + " \n" * 500_000,
+                },
+            }
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
+    def test_answers_editing_an_existing_issue_with_a_one_megabyte_absent_old_string_in_under_200ms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text(
+                "Type: issue\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] Some criterion\n",
+                encoding="utf-8",
+            )
+
+            # The old_string is not present in the file, so apply_edits() returns None and
+            # decide() falls back to the coarse extract_text()/CHECKBOX_LINE_RE check over the
+            # raw old_string + new_string text -- which must still be linear at 1 MB.
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    "old_string": " \n" * (1024 * 1024 // 2),
+                    "new_string": "unchanged",
+                },
+            }
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
+    def test_answers_writing_over_an_existing_issue_with_a_one_megabyte_whitespace_content_in_under_200ms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text(
+                "Type: issue\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] Some criterion\n",
+                encoding="utf-8",
+            )
+
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    "content": " \n" * (1024 * 1024 // 2),
+                },
+            }
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
+    def test_answers_writing_a_new_issue_with_a_one_megabyte_whitespace_content_in_under_200ms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+
+            # The target Issue does not exist yet, so decide() takes the is_draft_safe() path,
+            # which must also stay linear over 1 MB of whitespace-only content.
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/11-new.md",
+                    "content": " \n" * (1024 * 1024 // 2),
+                },
+            }
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
+
+    def test_answers_editing_an_existing_issue_with_a_one_megabyte_newline_only_new_string_in_under_200ms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text(
+                "Type: issue\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] Some criterion\n",
+                encoding="utf-8",
+            )
+
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    "old_string": "Some criterion\n",
+                    "new_string": "Some criterion\n" + "\n" * (1024 * 1024),
+                },
+            }
+            start = time.monotonic()
+            result = self.run_guard(root, "PreToolUse", payload=payload)
+            elapsed = time.monotonic() - start
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             self.assertLess(elapsed, 0.2, f"guard.py took {elapsed:.3f}s")
 
     # -- unknown / non-decision events never grant authority ----------------------------------
