@@ -148,11 +148,18 @@ class NoHooksFallbackTests(unittest.TestCase):
     def test_implementer_prompt_states_every_protected_rule(self) -> None:
         self.assertIn("Never edit ROADMAP.md, Status, or criteria checkboxes.", self.round_workflow)
         self.assertIn("Never force-push, and never skip, disable\nor weaken a test.", self.round_workflow)
+        self.assertIn("--no-verify", self.round_workflow)
+        self.assertIn("core.hooksPath", self.round_workflow)
 
     def test_critic_prompt_checks_every_protected_rule(self) -> None:
         self.assertIn("Status/checkbox/ROADMAP edits", self.round_workflow)
         self.assertIn("skipped,\ndisabled or mock-replaced tests", self.round_workflow)
         self.assertIn("forced rewrite", self.round_workflow)
+        self.assertIn(
+            "So is any commit or push made with \\`--no-verify\\` or under a \\`core.hooksPath\\`/\\`--git-dir\\`/\n"
+            "\\`GIT_DIR=\\` override, and any test-skip pattern that reached HEAD despite the hooks.",
+            self.round_workflow,
+        )
 
 
 class SpecChangelogTests(unittest.TestCase):

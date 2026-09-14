@@ -404,7 +404,8 @@ Implement only this Issue. Invoke the \`tdd\` skill and work behavior by behavio
 code → refactor. Keep tests real where the criterion requires a real process, file, repository or command.
 Run \`python3 ${scripts}/gates.py --run --diff-base ${A.baseRef} --cwd "$(pwd)"\` before returning.
 Never edit ROADMAP.md, Status, or criteria checkboxes. Never force-push, and never skip, disable
-or weaken a test. Commit small changes and leave a clean tree.
+or weaken a test. Never bypass the repository git hooks: no \`--no-verify\`, no \`core.hooksPath\`
+override, no \`--git-dir\`/\`GIT_DIR=\`. Commit small changes and leave a clean tree.
 Effective Git policy: target ${policy.git.target}, prefix ${policy.git.prefix}.
 ${feedback ? `Fix every item first:\n${feedback.items.map((item, index) => `${index + 1}. ${typeof item === 'string' ? item : `${item.finding} → ${item.fix}`}`).join('\n')}` : ''}
 Return worktree, branch, commits, summary, testsAdded, gatesResult, decisions and blockers as structured output.`
@@ -430,7 +431,9 @@ and requirements. Return that parsed result unchanged in \`gateResult\`; derive 
 Require a clean tree and commits after ${A.baseRef}. Inspect the diff for skipped,
 disabled or mock-replaced tests, TODO/FIXME/not implemented text, Status/checkbox/ROADMAP edits, and scope
 creep. Check \`git reflog\` and the branch history for a forced rewrite; a force-push is a refutation on
-its own. Verify the Review findings were actually fixed. Do not edit.
+its own. So is any commit or push made with \`--no-verify\` or under a \`core.hooksPath\`/\`--git-dir\`/
+\`GIT_DIR=\` override, and any test-skip pattern that reached HEAD despite the hooks. Verify the Review
+findings were actually fixed. Do not edit.
 Return complete only for gate-green, clean, fully evidenced work; otherwise ordered requiredFixes,
 refutations, gateResult, gateFailures and decisionsForOperator as structured output.`
 }
