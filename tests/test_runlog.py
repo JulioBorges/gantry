@@ -374,6 +374,51 @@ class RunLogTests(unittest.TestCase):
             self.assertEqual(0, help_result.returncode, help_result.stderr)
             self.assertIn("usage:", help_result.stdout.lower())
 
+    def test_hook_degraded_requires_source_missing_list_and_degraded_true(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            unit = json.loads(self.run_script(root, "unit-id", "--cwd", str(root), "--json").stdout)["unitId"]
+            started = self.started()
+            self.assertEqual(0, self.run_script(root, "append", unit, "--state-root", str(state), event=started).returncode)
+
+            degraded = {
+                "ts": "2026-09-13T12:00:30Z",
+                "run": "run-01",
+                "event": "hook.degraded",
+                "data": {"source": "PreToolUse", "missing": ["tool_input"], "degraded": True},
+            }
+            accepted = self.run_script(root, "append", unit, "--state-root", str(state), event=degraded)
+            self.assertEqual(0, accepted.returncode, accepted.stderr)
+
+            missing_fields = {**degraded, "data": {"source": "PreToolUse"}}
+            rejected = self.run_script(root, "append", unit, "--state-root", str(state), event=missing_fields)
+            self.assertEqual(1, rejected.returncode)
+
+            not_degraded = {**degraded, "data": {"source": "PreToolUse", "missing": ["tool_input"], "degraded": False}}
+            rejected_flag = self.run_script(root, "append", unit, "--state-root", str(state), event=not_degraded)
+            self.assertEqual(1, rejected_flag.returncode)
+
+    def test_every_runlog_event_is_named_in_the_spec_blueprint_run_log_bullet(self) -> None:
+        specification = importlib.util.spec_from_file_location("gantry_runlog", RUNLOG)
+        self.assertIsNotNone(specification)
+        module = importlib.util.module_from_spec(specification)
+        self.assertIsNotNone(specification.loader)
+        specification.loader.exec_module(module)
+
+        spec_path = REPO_ROOT / ".scratch" / "gantry-migration" / "spec.md"
+        spec_text = spec_path.read_text(encoding="utf-8")
+        run_log_bullet = next(
+            line for line in spec_text.splitlines() if line.startswith("- **Run log:**")
+        )
+        for event in module.EVENTS:
+            self.assertIn(
+                f"`{event}`",
+                run_log_bullet,
+                f"runlog.EVENTS names {event!r} but the spec's Run log bullet does not list it",
+            )
+
     def test_corrections_derives_spent_count_from_started_correction_passes_only(self) -> None:
         # A shipped query, not prose or test-local code: `runlog.py corrections` applies the
         # documented derivation rule (prior `run.resumed.data.correctionsSpent`, plus only the
@@ -498,6 +543,79 @@ class RunLogTests(unittest.TestCase):
             bad_issue = self.run_script(root, "corrections", unit, "no-such-run", "not-an-issue", "--state-root", str(state), "--json")
             self.assertEqual(1, bad_issue.returncode)
             self.assertIn("issue", bad_issue.stderr.lower())
+
+
+class CurrentRunMarkerTests(unittest.TestCase):
+    """The per-worktree current-Run marker: how a hook that inherits no environment finds its Run."""
+
+    def run_script(self, root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(RUNLOG), *args],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def init_repository(self, root: Path) -> None:
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.email", "runlog@example.test"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "Run Log Test"], cwd=root, check=True)
+        (root / "tracked.txt").write_text("base\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+
+    def test_mark_records_the_run_inside_the_worktrees_own_git_directory_and_unmark_clears_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+
+            absent = self.run_script(root, "current", "--cwd", str(root))
+            self.assertEqual(2, absent.returncode, absent.stdout + absent.stderr)
+
+            marked = self.run_script(root, "mark", "run-01", "--cwd", str(root), "--state-root", str(state))
+            self.assertEqual(0, marked.returncode, marked.stderr)
+            marker = root / ".git" / "gantry" / "current-run.json"
+            self.assertTrue(marker.is_file(), "the marker belongs to the worktree's own git directory")
+
+            current = self.run_script(root, "current", "--cwd", str(root), "--json")
+            self.assertEqual(0, current.returncode, current.stderr)
+            payload = json.loads(current.stdout)
+            self.assertEqual("run-01", payload["run"])
+            self.assertEqual(str(state.resolve()), payload["stateRoot"])
+
+            plain = self.run_script(root, "current", "--cwd", str(root))
+            self.assertEqual("run-01", plain.stdout.strip())
+
+            cleared = self.run_script(root, "unmark", "--cwd", str(root))
+            self.assertEqual(0, cleared.returncode, cleared.stderr)
+            self.assertFalse(marker.exists())
+            self.assertEqual(2, self.run_script(root, "current", "--cwd", str(root)).returncode)
+
+    def test_two_worktrees_of_one_clone_carry_independent_markers(self) -> None:
+        """Concurrent worktrees of one execution unit must never inherit each other's Run."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "main"
+            root.mkdir()
+            self.init_repository(root)
+            second = Path(temp) / "second"
+            subprocess.run(
+                ["git", "worktree", "add", "--quiet", "-b", "second", str(second)],
+                cwd=root,
+                check=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(0, self.run_script(root, "mark", "run-main", "--cwd", str(root)).returncode)
+            self.assertEqual(0, self.run_script(second, "mark", "run-second", "--cwd", str(second)).returncode)
+
+            self.assertEqual("run-main", self.run_script(root, "current", "--cwd", str(root)).stdout.strip())
+            self.assertEqual("run-second", self.run_script(second, "current", "--cwd", str(second)).stdout.strip())
+
+            self.assertEqual(0, self.run_script(second, "unmark", "--cwd", str(second)).returncode)
+            self.assertEqual("run-main", self.run_script(root, "current", "--cwd", str(root)).stdout.strip())
+            self.assertEqual(2, self.run_script(second, "current", "--cwd", str(second)).returncode)
 
 
 if __name__ == "__main__":

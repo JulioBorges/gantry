@@ -1,0 +1,4 @@
+{
+  "_note": "Codex has no hook events yet (see ../capabilities/codex.json: hooks=false, hook_events=[]). This file is the same guard.py wiring the other two harnesses use -- 'python3 <skillDir>/scripts/guard.py <event>' with the event payload on stdin -- ready to activate entry by entry the day Codex ships a hook event. Until then it grants guard.py no authority over Codex, matching the compatible tier: every protected rule stays enforced only through the prompts and the Critic.",
+  "hooks": {}
+}

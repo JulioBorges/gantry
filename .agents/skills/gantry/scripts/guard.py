@@ -1,0 +1,568 @@
+#!/usr/bin/env python3
+"""Guard hook handler: protects Issue/Roadmap authority and records events.
+
+`guard.py` is invoked by a harness hook with the event name as its one positional
+argument and the harness's JSON payload on standard input. Per ADR-0003, it never
+decides whether work is ready or done -- that authority stays with `roadmap.py` and
+the other workflow scripts. It only blocks specific shortcuts (editing the roadmap or
+an Issue's Status/checkbox fields outside `roadmap.py`, and a Bash command that would
+disable the git-level guard hooks) and records hook and subagent events into the Run
+log. Any payload shape it does not recognise degrades to "record what is safely
+recordable, grant no authority" -- it never denies without both a rule and a refused
+path, and it never manufactures a false completion. Empty, undecodable or non-object
+stdin is recorded as a `hook.degraded` event with `data.missing == ["payload"]`
+whenever a Run ID is resolvable from `--run-id`, `$GANTRY_RUN_ID` or this worktree's
+current-Run marker (never from the payload, since there is none to read); with no Run ID
+at all, nothing is recorded.
+
+Per `docs/adr/0005-git-hooks-enforce-git-rules.md`, no-force-push and no-test-skip-commit
+are enforced by the repository's own `pre-push`/`pre-commit` git hooks
+(`.agents/skills/gantry/hooks/git/`), which see the actual ref update or staged diff
+rather than a Bash command string. `guard.py`'s only remaining Bash rule is a linear
+substring check refusing a command that would disable that git layer.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+import runlog  # noqa: E402
+
+DECISION_EVENTS = {"PreToolUse", "tool.execute.before"}
+SUBAGENT_START_EVENTS = {"SubagentStart"}
+SUBAGENT_STOP_EVENTS = {"SubagentStop"}
+COMPACTION_EVENTS = {"PreCompact", "session.compacted"}
+
+CAPABILITIES_DIR = Path(__file__).parent.parent / "capabilities"
+HARNESS_BY_EVENT = {
+    "PreToolUse": "claude-code",
+    "PostToolUse": "claude-code",
+    "SubagentStart": "claude-code",
+    "SubagentStop": "claude-code",
+    "PreCompact": "claude-code",
+    "tool.execute.before": "opencode",
+    "session.compacted": "opencode",
+}
+# The concepts (not literal keys -- a harness may spell them differently) a given
+# event needs to be handled without guessing. Anything a concept resolves to a
+# harness's declared `payload_fields` name, and is then absent from the payload
+# itself, is recorded as a degradation, never a denial.
+EVENT_REQUIRED_CONCEPTS = {
+    "PreToolUse": ("tool_name", "tool_input"),
+    "PostToolUse": ("tool_name", "tool_input"),
+    "SubagentStart": ("session_id",),
+    "SubagentStop": ("session_id",),
+    "PreCompact": (),
+    "tool.execute.before": ("tool_name", "tool_input"),
+    "session.compacted": ("session_id",),
+}
+# Which literal `payload_fields` name each harness uses for a concept.
+CONCEPT_FIELD_BY_HARNESS = {
+    "claude-code": {"tool_name": "tool_name", "tool_input": "tool_input", "session_id": "session_id"},
+    "opencode": {"tool_name": "tool", "tool_input": "args", "session_id": "sessionID"},
+}
+CONCEPT_ALIASES = {
+    "tool_name": ("tool_name", "tool", "toolName"),
+    "tool_input": ("tool_input", "args", "toolInput", "input"),
+    "session_id": ("session_id", "sessionID", "sessionId"),
+}
+
+MODIFYING_TOOLS = {"edit", "write", "multiedit", "notebookedit", "applypatch", "patch"}
+BASH_TOOLS = {"bash", "shell", "exec"}
+
+ISSUE_FILE_RE = re.compile(r"^\d{2,}-[a-z0-9-]+\.md$")
+STATUS_LINE_RE = re.compile(r"(?m)^Status:\s*(\S+)")
+# `[ \t]*` (never `\s*`) after `^` in multiline mode: `\s` matches `\n`, so `^\s*` can consume
+# whole blank/whitespace-only lines before backtracking one character at a time back to the
+# previous line start it already tried -- O(n) backtrack retried from each of the O(n) line
+# starts a large whitespace-heavy text has, i.e. O(n^2). Restricting to horizontal whitespace
+# bounds the backtrack to the current line's length, keeping the match O(n) overall.
+CHECKBOX_LINE_RE = re.compile(r"(?m)^[ \t]*-\s\[[ xX]\]")
+CHECKBOX_FULL_LINE_RE = re.compile(r"(?m)^[ \t]*-\s\[[ xX]\].*$")
+CHECKED_CHECKBOX_RE = re.compile(r"(?m)^[ \t]*-\s\[[xX]\]")
+# The only remaining Bash rule (docs/adr/0005): a linear substring check refusing a
+# command that would disable the git-level guard hooks. It tokenises nothing, so a
+# 1 MB command is answered in a few milliseconds, and it allows every other Bash
+# command -- git decides no-force-push and no-test-skip-commit itself, at the
+# pre-push/pre-commit layer.
+# `--no-veri`, not `--no-verify`: git accepts any unambiguous abbreviation of a long option, and
+# `--no-veri` is the shortest one it accepts for `--no-verify` on both `commit` and `push`
+# (`--no-ver` is refused as ambiguous with `--no-verbose`). As a plain substring it therefore
+# catches `--no-veri`, `--no-verif` and `--no-verify` alike, while `--no-verb`/`--no-verbose` --
+# a different flag, which does not disable a hook -- stays allowed.
+HOOK_DISABLING_SUBSTRINGS = ("--no-veri", "--git-dir", "GIT_DIR=", "GIT_CONFIG=", "GIT_CONFIG_")
+# Matched against the lowercased command: git configuration keys are case-insensitive, so
+# `-c core.hookspath=/dev/null` and `-c CORE.HOOKSPATH=...` disable the hooks exactly as
+# `core.hooksPath` does. Environment-variable names are not case-insensitive, so the
+# `GIT_*` spellings above stay case-sensitive.
+HOOK_DISABLING_SUBSTRINGS_CASE_INSENSITIVE = ("core.hookspath",)
+
+
+class Decision:
+    def __init__(self, allow: bool, rule: str | None = None, path: str | None = None):
+        self.allow = allow
+        self.rule = rule
+        self.path = path
+
+
+def now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _first(payload: dict, keys: tuple[str, ...]) -> object:
+    for key in keys:
+        if isinstance(payload, dict) and key in payload and payload[key] not in (None, ""):
+            return payload[key]
+    return None
+
+
+def tool_name(payload: dict) -> str:
+    value = _first(payload, ("tool_name", "tool", "toolName"))
+    return str(value).strip().lower() if value else ""
+
+
+def tool_input(payload: dict) -> dict:
+    value = _first(payload, ("tool_input", "args", "toolInput", "input"))
+    return value if isinstance(value, dict) else {}
+
+
+def extract_path(payload: dict, arguments: dict) -> str | None:
+    value = _first(arguments, ("file_path", "filePath", "path", "filename")) or _first(payload, ("file_path", "path"))
+    return str(value) if value else None
+
+
+def extract_text(arguments: dict) -> str:
+    parts: list[str] = []
+    for key in ("old_string", "oldString", "new_string", "newString", "content", "text"):
+        value = arguments.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    edits = arguments.get("edits")
+    if isinstance(edits, list):
+        for edit in edits:
+            if isinstance(edit, dict):
+                for key in ("old_string", "oldString", "new_string", "newString"):
+                    value = edit.get(key)
+                    if isinstance(value, str):
+                        parts.append(value)
+    return "\n".join(parts)
+
+
+def extract_new_text(arguments: dict) -> str:
+    """The resulting text a modifying tool would write -- never the text it replaces."""
+    parts: list[str] = []
+    for key in ("new_string", "newString", "content", "text"):
+        value = arguments.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    edits = arguments.get("edits")
+    if isinstance(edits, list):
+        for edit in edits:
+            if isinstance(edit, dict):
+                for key in ("new_string", "newString"):
+                    value = edit.get(key)
+                    if isinstance(value, str):
+                        parts.append(value)
+    return "\n".join(parts)
+
+
+def is_draft_safe(new_text: str) -> bool:
+    """True when the resulting content only ever declares `Status: draft` and no checked box."""
+    statuses = STATUS_LINE_RE.findall(new_text)
+    if any(status.lower() != "draft" for status in statuses):
+        return False
+    return CHECKED_CHECKBOX_RE.search(new_text) is None
+
+
+def extract_command(arguments: dict) -> str | None:
+    value = _first(arguments, ("command", "cmd"))
+    return str(value) if value else None
+
+
+def payload_cwd(payload: dict) -> str | None:
+    """The harness-reported working directory for this call, if the payload carries one.
+
+    Claude Code spells it `cwd`, OpenCode spells it `directory`. Neither is a decision
+    concept the capability files gate on -- it is only ever used to pick *where* to look
+    (a git worktree, an Issue path), never to grant or withhold authority on its own.
+    """
+    value = _first(payload, ("cwd", "directory"))
+    return str(value) if value else None
+
+
+def resolve_effective_cwd(payload: dict, fallback: Path) -> Path:
+    """Prefer the payload's own cwd/directory over the `--cwd` fallback when it names a real directory."""
+    candidate = payload_cwd(payload) if isinstance(payload, dict) else None
+    if candidate:
+        candidate_path = Path(candidate)
+        if not candidate_path.is_absolute():
+            candidate_path = fallback / candidate_path
+        if candidate_path.is_dir():
+            return candidate_path.resolve()
+    return fallback
+
+
+def apply_edits(original: str, arguments: dict) -> str | None:
+    """Apply Edit/MultiEdit-style `old_string` -> `new_string` edits to `original`, in order.
+
+    Returns `None` when an edit is malformed or its `old_string` is not literally present --
+    the same case in which the real tool call would itself fail -- so callers fall back to
+    the coarser text-based check instead of trusting a simulation that could not have happened.
+    """
+    edits = arguments.get("edits")
+    if not isinstance(edits, list):
+        old = arguments.get("old_string", arguments.get("oldString"))
+        new = arguments.get("new_string", arguments.get("newString"))
+        if not isinstance(old, str) or not isinstance(new, str):
+            return None
+        replace_all = arguments.get("replace_all", arguments.get("replaceAll"))
+        edits = [{"old_string": old, "new_string": new, "replace_all": replace_all}]
+    text = original
+    for edit in edits:
+        if not isinstance(edit, dict):
+            return None
+        old = edit.get("old_string", edit.get("oldString"))
+        new = edit.get("new_string", edit.get("newString"))
+        if not isinstance(old, str) or not isinstance(new, str):
+            return None
+        if old not in text:
+            return None
+        replace_all = bool(edit.get("replace_all", edit.get("replaceAll")))
+        count = -1 if replace_all else 1
+        text = text.replace(old, new, count)
+    return text
+
+
+def decide(payload: dict, cwd: Path) -> Decision:
+    """Evaluate one tool-invocation payload against the protected rule set."""
+    if not isinstance(payload, dict):
+        return Decision(True)
+    name = tool_name(payload)
+    arguments = tool_input(payload)
+    normalized_name = re.sub(r"[^a-z]", "", name)
+
+    if normalized_name in MODIFYING_TOOLS:
+        path = extract_path(payload, arguments)
+        if not path:
+            return Decision(True)
+        basename = Path(path).name
+        if basename.lower() == "roadmap.md":
+            return Decision(False, "roadmap-protected", path)
+        if ISSUE_FILE_RE.match(basename):
+            target = Path(path)
+            target = target if target.is_absolute() else cwd / target
+            if normalized_name in {"write", "multiedit"}:
+                # The draft exemption only ever applies to *creating* a new Issue file.
+                # Once the target exists, its Status/checkbox fields are already under
+                # protection, and the new content must fall through to the same
+                # STATUS_LINE_RE / CHECKBOX_LINE_RE checks any other edit would face --
+                # never exempted just because the new content, read alone, looks draft-safe.
+                if not target.exists() and is_draft_safe(extract_new_text(arguments)):
+                    return Decision(True)
+            if normalized_name in {"edit", "multiedit"} and target.exists():
+                # Compare the whole file before/after applying the edit in memory, so a
+                # value-only edit (e.g. 'ready-for-agent' -> 'done', or '[ ]' -> '[x]'
+                # without the '- ' scaffolding) is caught even though neither its
+                # old_string nor its new_string alone spells 'Status:' or a full checkbox line.
+                try:
+                    original = target.read_text(encoding="utf-8")
+                except OSError:
+                    original = None
+                if original is not None:
+                    updated = apply_edits(original, arguments)
+                    if updated is not None:
+                        if STATUS_LINE_RE.findall(original) != STATUS_LINE_RE.findall(updated):
+                            return Decision(False, "issue-status-protected", path)
+                        if CHECKBOX_FULL_LINE_RE.findall(original) != CHECKBOX_FULL_LINE_RE.findall(updated):
+                            return Decision(False, "issue-checkbox-protected", path)
+                        return Decision(True)
+            changed = extract_text(arguments)
+            if STATUS_LINE_RE.search(changed):
+                return Decision(False, "issue-status-protected", path)
+            if CHECKBOX_LINE_RE.search(changed):
+                return Decision(False, "issue-checkbox-protected", path)
+        return Decision(True)
+
+    if normalized_name in BASH_TOOLS:
+        command = extract_command(arguments)
+        if not command:
+            return Decision(True)
+        # The only remaining Bash rule (docs/adr/0005): a linear substring scan, never
+        # tokenised, so it stays fast on an arbitrarily large command. no-force-push and
+        # no-test-skip-commit are enforced by the git hooks themselves; this only refuses
+        # a command that would disable that layer.
+        for token in HOOK_DISABLING_SUBSTRINGS:
+            if token in command:
+                return Decision(False, "hook-bypass-protected", command.strip()[:200])
+        lowered = command.lower()
+        for token in HOOK_DISABLING_SUBSTRINGS_CASE_INSENSITIVE:
+            if token in lowered:
+                return Decision(False, "hook-bypass-protected", command.strip()[:200])
+        return Decision(True)
+
+    return Decision(True)
+
+
+def resolve_run(payload: dict, override: str | None, state_root_override: str | None, cwd: Path) -> tuple[str | None, str | None]:
+    """Resolve (Run ID, state root) for recording: explicit override, environment, marker, payload.
+
+    `--run-id` and `$GANTRY_RUN_ID` are authoritative -- a caller that names a Run means it. The
+    worktree's current-Run marker (`runlog.read_marker`, written by the round workflow into the
+    worktree's own git directory, and the same fallback the git hooks use) comes *before* the
+    payload's session ID, because a harness session ID is not a Gantry Run ID: Claude Code sends a
+    UUID that no Run log will ever be keyed by, so preferring it over a marker naming a Run whose
+    log does exist would silently drop every denial in the configuration the pack ships. A session
+    ID is only consulted when nothing else names a Run, and then only when its Run log already
+    exists -- a Run ID that resolves to no log records nothing at all.
+    """
+    root = state_root_override or os.environ.get("GANTRY_STATE_ROOT") or None
+    candidate = override or os.environ.get("GANTRY_RUN_ID")
+    if candidate and runlog.RUN_ID_RE.fullmatch(str(candidate)):
+        return str(candidate), root
+    marker = runlog.read_marker(cwd)
+    if marker:
+        marked_root = marker.get("stateRoot")
+        return marker["run"], root or (marked_root if isinstance(marked_root, str) else None)
+    session = _first(payload, ("session_id", "sessionID", "sessionId"))
+    if session and runlog.RUN_ID_RE.fullmatch(str(session)) and run_log_exists(str(session), root, cwd):
+        return str(session), root
+    return None, root
+
+
+def run_log_exists(run_id: str, state_root: str | None, cwd: Path) -> bool:
+    try:
+        return runlog.run_log_path(runlog.state_root(state_root), runlog.unit_id(cwd), run_id).exists()
+    except (runlog.EventError, OSError, ValueError):
+        return False
+
+
+
+
+def record(cwd: Path, state_root: str | None, run_id: str, event: dict) -> None:
+    """Best-effort append; a logging failure never changes the hook's decision."""
+    try:
+        payload = runlog.validate_event(event)
+        unit = runlog.unit_id(cwd)
+        root = runlog.state_root(state_root)
+        path = runlog.run_log_path(root, unit, run_id)
+        if not path.exists():
+            return
+        runlog.append_event(path, payload)
+    except (runlog.EventError, OSError, ValueError):
+        return
+
+
+_CAPABILITY_CACHE: dict[str, dict] = {}
+
+
+def load_capability(harness: str) -> dict:
+    """Read `capabilities/<harness>.json`; a missing or unreadable file means no declared fields."""
+    if harness in _CAPABILITY_CACHE:
+        return _CAPABILITY_CACHE[harness]
+    capability: dict = {}
+    try:
+        parsed = json.loads((CAPABILITIES_DIR / f"{harness}.json").read_text(encoding="utf-8"))
+        if isinstance(parsed, dict):
+            capability = parsed
+    except (OSError, json.JSONDecodeError):
+        capability = {}
+    _CAPABILITY_CACHE[harness] = capability
+    return capability
+
+
+def degradation_fields(event: str, payload: dict) -> list[str]:
+    """Declared field names (per the harness's capability file) this event needs that the payload lacks.
+
+    A concept (e.g. "tool_input") is present as soon as any of the harness's accepted
+    spellings for it carries a value, so a payload shaped like another harness's (as the
+    OpenCode-forwarded Claude Code shape is in `PreToolUse`-equivalent tests) is not
+    penalised for using a different, still-recognised, key.
+    """
+    harness = HARNESS_BY_EVENT.get(event)
+    concepts = EVENT_REQUIRED_CONCEPTS.get(event, ())
+    if not harness or not concepts:
+        return []
+    declared = set(load_capability(harness).get("payload_fields", []))
+    concept_field = CONCEPT_FIELD_BY_HARNESS.get(harness, {})
+    missing = []
+    for concept in concepts:
+        field_name = concept_field.get(concept, concept)
+        if field_name not in declared:
+            continue
+        if _first(payload, CONCEPT_ALIASES[concept]) is None:
+            missing.append(field_name)
+    return missing
+
+
+def record_degradation(cwd: Path, args: argparse.Namespace, payload: dict, event: str, missing: list[str]) -> None:
+    run_id, root = resolve_run(payload, args.run_id, args.state_root, cwd)
+    if not run_id:
+        return
+    record(
+        cwd,
+        root,
+        run_id,
+        {
+            "ts": now_iso(),
+            "run": run_id,
+            "event": "hook.degraded",
+            "data": {"source": event, "missing": missing, "degraded": True},
+        },
+    )
+
+
+def handle_decision_event(payload: dict, args: argparse.Namespace) -> Decision:
+    cwd = Path(args.cwd).resolve()
+    # decide() looks *where the tool call actually operates* (git worktree, Issue path),
+    # which the payload's own cwd/directory field describes more accurately than the
+    # invocation-wide --cwd when the two diverge; the run log still keys off --cwd.
+    decide_cwd = resolve_effective_cwd(payload, cwd)
+    decision = decide(payload, decide_cwd)
+    if not decision.allow:
+        run_id, root = resolve_run(payload, args.run_id, args.state_root, cwd)
+        if run_id:
+            record(
+                cwd,
+                root,
+                run_id,
+                {
+                    "ts": now_iso(),
+                    "run": run_id,
+                    "event": "hook.denied",
+                    "data": {"rule": decision.rule, "path": decision.path},
+                },
+            )
+    return decision
+
+
+def handle_subagent_event(payload: dict, args: argparse.Namespace, event: str) -> None:
+    cwd = Path(args.cwd).resolve()
+    run_id, root = resolve_run(payload if isinstance(payload, dict) else {}, args.run_id, args.state_root, cwd)
+    if not run_id:
+        return
+    role = None
+    if isinstance(payload, dict):
+        role = _first(payload, ("role", "subagent_type", "agent_type", "subagentType", "agentType", "description"))
+    record(
+        cwd,
+        root,
+        run_id,
+        {
+            "ts": now_iso(),
+            "run": run_id,
+            "event": event,
+            "data": {"role": str(role) if role else "unknown"},
+        },
+    )
+
+
+def handle_compaction_event(payload: dict, args: argparse.Namespace) -> None:
+    cwd = Path(args.cwd).resolve()
+    run_id, root = resolve_run(payload if isinstance(payload, dict) else {}, args.run_id, args.state_root, cwd)
+    if not run_id:
+        return
+    source = None
+    if isinstance(payload, dict):
+        source = _first(payload, ("trigger", "reason", "source"))
+    record(
+        cwd,
+        root,
+        run_id,
+        {
+            "ts": now_iso(),
+            "run": run_id,
+            "event": "compaction",
+            "data": {"source": str(source) if source else "unknown"},
+        },
+    )
+
+
+def read_payload() -> dict | None:
+    """Parse standard input; `None` means empty, undecodable, or not a JSON object.
+
+    A `None` payload is never recordable -- no event, degraded or otherwise, is ever
+    written for it, and the hook still exits 0 (allow).
+    """
+    raw = sys.stdin.read()
+    if not raw.strip():
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("event", help="harness hook event name, e.g. PreToolUse or SubagentStop")
+    parser.add_argument("--cwd", default=".", help="repository or worktree the payload applies to")
+    parser.add_argument("--state-root", help="override ~/.gantry/state")
+    parser.add_argument(
+        "--run-id",
+        help="override the Run ID (defaults to $GANTRY_RUN_ID, then this worktree's current-Run "
+        "marker, then a payload session ID that already has a Run log)",
+    )
+    parser.add_argument("--json", action="store_true", help="emit the decision as a compact JSON object")
+    args = parser.parse_args()
+
+    payload = read_payload()
+    cwd = Path(args.cwd).resolve()
+
+    def allow() -> int:
+        if args.json:
+            print(json.dumps({"decision": "allow"}, separators=(",", ":")))
+        else:
+            print("allow")
+        return 0
+
+    if payload is None:
+        # Empty, undecodable, or non-object stdin. A Run ID resolvable from --run-id,
+        # $GANTRY_RUN_ID or this worktree's current-Run marker (never from the payload,
+        # since there is none) still gets a hook.degraded event naming the missing payload;
+        # with no Run ID at all, nothing is recorded.
+        record_degradation(cwd, args, {}, args.event, ["payload"])
+        return allow()
+
+    missing = degradation_fields(args.event, payload)
+    if missing:
+        record_degradation(cwd, args, payload, args.event, missing)
+        return allow()
+
+    if args.event in DECISION_EVENTS:
+        decision = handle_decision_event(payload, args)
+        if decision.allow:
+            return allow()
+        message = f"deny: {decision.rule} {decision.path}"
+        if args.json:
+            print(json.dumps({"decision": "deny", "rule": decision.rule, "path": decision.path}, separators=(",", ":")))
+        else:
+            print(message)
+        print(message, file=sys.stderr)
+        return 2
+
+    if args.event in SUBAGENT_START_EVENTS:
+        handle_subagent_event(payload, args, "subagent.started")
+        return allow()
+
+    if args.event in SUBAGENT_STOP_EVENTS:
+        handle_subagent_event(payload, args, "subagent.stopped")
+        return allow()
+
+    if args.event in COMPACTION_EVENTS:
+        handle_compaction_event(payload, args)
+        return allow()
+
+    # Unknown payload shapes degrade to recording nothing and granting no authority.
+    return allow()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

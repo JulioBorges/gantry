@@ -1397,6 +1397,273 @@ Scenario: greet a user
             self.assertEqual(["test commit"], implement_result["commits"])
             self.assertEqual("workflow execution", implement_result["summary"])
 
+    def test_round_workflow_marks_the_worktree_with_the_run_before_any_agent_and_clears_it_at_the_end(self) -> None:
+        """The marker is what makes a git hook's `hook.denied` recording a guarantee."""
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "marked#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+
+            state_root = Path(state_dir)
+            unit_id = "cdcdcdcdcdcd"
+            run_id = "run-marked-1"
+            marker = root / ".git" / "gantry" / "current-run.json"
+
+            def invoke(is_first_round: bool, is_last_round: bool, round_number: int) -> dict:
+                return self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": round_number,
+                        "issues": [{"ref": "marked#01", "path": str(issue.relative_to(root)), "title": "Marked", "specPath": ".scratch/marked/spec.md"}],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": "gantry/marked",
+                        "baseRef": base_ref,
+                        "isolate": False,
+                        "correctionBudget": 2,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                        "paths": {},
+                        "date": "2026-09-14",
+                        "commandMode": "real",
+                        "runId": run_id,
+                        "unitId": unit_id,
+                        "stateRoot": str(state_root),
+                        "tier": "reference",
+                        "isFirstRound": is_first_round,
+                        "isLastRound": is_last_round,
+                        "criticResult": {"criteria": self.critic_evidence(root, issue)},
+                    },
+                )
+
+            first = invoke(True, False, 1)
+            self.assertIsNone(first["error"], first["error"])
+            mark_calls = [call for call in first["commandCalls"] if "runlog.py" in call["command"] and " mark " in call["command"]]
+            self.assertTrue(mark_calls, first["commandCalls"])
+            self.assertIn(str(root), mark_calls[0]["command"])
+            self.assertIn(run_id, mark_calls[0]["command"])
+            implement_call = next(call for call in first["calls"] if call["label"].startswith("implement:"))
+            self.assertLess(mark_calls[0]["sequence"], implement_call["sequence"], "the worktree is marked before any agent works in it")
+
+            self.assertTrue(marker.is_file(), "a Run that continues into another round keeps its marker")
+            self.assertEqual(run_id, json.loads(marker.read_text(encoding="utf-8"))["run"])
+
+            last = invoke(False, True, 2)
+            self.assertIsNone(last["error"], last["error"])
+            self.assertFalse(marker.exists(), "the marker is cleared when the Run ends")
+
+    def test_round_workflow_marks_the_issue_worktree_of_an_isolated_round(self) -> None:
+        """An isolated round works in `<repoRoot>.gantry-<spec>-<nn>`, not the repository root.
+
+        That worktree is where the Implementer's `git` runs, so it is the worktree whose own git
+        directory must carry the current-Run marker before any agent starts -- otherwise a
+        `pre-commit`/`pre-push` denial there resolves no Run and the `hook.denied` guarantee is
+        empty for exactly the case isolation is used for.
+        """
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "isomark#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            policy_path = root / ".gantry" / "config.json"
+            policy_path.parent.mkdir()
+            policy_path.write_text('{"git":{"issueBranch":"issues/{spec}/{number:02d}"}}', encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True,
+            ).stdout.strip()
+
+            state_root = Path(state_dir)
+            unit_id = "efefefefefef"
+            run_id = "run-isomark-1"
+            issue_branch = "issues/isomark/01"
+            issue_worktree = Path(f"{root}.gantry-isomark-01")
+
+            def invoke(is_first_round: bool, is_last_round: bool, round_number: int, prior_run: dict | None) -> dict:
+                return self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": round_number,
+                        "issues": [{"ref": "isomark#01", "path": str(issue.relative_to(root)), "title": "Isolated marker", "specPath": ".scratch/isomark/spec.md"}],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": "gantry/isomark",
+                        "baseRef": base_ref,
+                        "isolate": True,
+                        "correctionBudget": 0,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/", "issueBranch": "issues/{spec}/{number:02d}"}, "budget": {"corrections": 0}},
+                        "paths": {},
+                        "date": "2026-09-14",
+                        "commandMode": "real",
+                        "issueBranch": issue_branch,
+                        "issueWorktree": str(issue_worktree),
+                        "runId": run_id,
+                        "unitId": unit_id,
+                        "stateRoot": str(state_root),
+                        "tier": "reference",
+                        "isFirstRound": is_first_round,
+                        "isLastRound": is_last_round,
+                        **({"priorRun": prior_run} if prior_run else {}),
+                        # Refuted, so the Issue keeps its worktree into the next round instead of
+                        # being merged and completed.
+                        "criticResult": {
+                            "complete": False,
+                            "refutations": ["criterion one is unproven"],
+                            "requiredFixes": ["prove criterion one"],
+                        },
+                    },
+                )
+
+            try:
+                first = invoke(True, False, 1, None)
+                self.assertIsNone(first["error"], first["error"])
+                self.assertEqual("refuted", first["result"]["results"][0]["outcome"])
+
+                worktree_git_dir = Path(
+                    subprocess.run(
+                        ["git", "rev-parse", "--git-dir"],
+                        cwd=issue_worktree,
+                        text=True,
+                        capture_output=True,
+                        check=True,
+                    ).stdout.strip()
+                )
+                self.assertNotEqual(root / ".git", worktree_git_dir, "git keys a git directory per worktree")
+                marker = worktree_git_dir / "gantry" / "current-run.json"
+
+                mark_calls = [
+                    call for call in first["commandCalls"]
+                    if "runlog.py" in call["command"] and f"mark '{run_id}' --cwd '{issue_worktree}'" in call["command"]
+                ]
+                self.assertTrue(mark_calls, first["commandCalls"])
+                implement_call = next(call for call in first["calls"] if call["label"].startswith("implement:"))
+                self.assertEqual(str(issue_worktree), implement_call["cwd"])
+                self.assertLess(
+                    mark_calls[0]["sequence"],
+                    implement_call["sequence"],
+                    "the Issue worktree is marked before any agent works in it",
+                )
+
+                self.assertTrue(marker.is_file(), f"{marker} should carry the Run between rounds")
+                self.assertEqual(run_id, json.loads(marker.read_text(encoding="utf-8"))["run"])
+
+                last = invoke(
+                    False, True, 2,
+                    {"issue": "isomark#01", "worktree": str(issue_worktree), "branch": issue_branch, "correctionsSpent": 0},
+                )
+                self.assertIsNone(last["error"], last["error"])
+                self.assertFalse(marker.exists(), "the Issue worktree's marker is cleared when the Run ends")
+                self.assertFalse((root / ".git" / "gantry" / "current-run.json").exists())
+            finally:
+                subprocess.run(["git", "worktree", "remove", "--force", str(issue_worktree)], cwd=root, check=False)
+
+    def test_round_workflow_unmarks_every_worktree_of_the_run_not_only_this_invocations(self) -> None:
+        """An Issue finished in an earlier round is absent from the last one.
+
+        Each round is a separate invocation of this Workflow with its own memory, so the set of
+        worktrees *this* invocation marked is not the set of worktrees the Run marked. Clearing
+        only the former leaves a stale marker naming a finished Run in the Issue's worktree, and
+        the next hook denial there records into a Run that is already over. The Run end must
+        enumerate the clone's worktrees and clear every marker that names this Run.
+        """
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "isodrop#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            policy_path = root / ".gantry" / "config.json"
+            policy_path.parent.mkdir()
+            policy_path.write_text('{"git":{"issueBranch":"issues/{spec}/{number:02d}"}}', encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True,
+            ).stdout.strip()
+
+            state_root = Path(state_dir)
+            unit_id = "dadadadadada"
+            run_id = "run-isodrop-1"
+            issue_worktree = Path(f"{root}.gantry-isodrop-01")
+
+            def invoke(round_number: int, issues: list[dict], is_first: bool, is_last: bool) -> dict:
+                return self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": round_number,
+                        "issues": issues,
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": "gantry/isodrop",
+                        "baseRef": base_ref,
+                        "isolate": True,
+                        "correctionBudget": 0,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/", "issueBranch": "issues/{spec}/{number:02d}"}, "budget": {"corrections": 0}},
+                        "paths": {},
+                        "date": "2026-09-14",
+                        "commandMode": "real",
+                        "issueBranch": "issues/isodrop/01",
+                        "issueWorktree": str(issue_worktree),
+                        "runId": run_id,
+                        "unitId": unit_id,
+                        "stateRoot": str(state_root),
+                        "tier": "reference",
+                        "isFirstRound": is_first,
+                        "isLastRound": is_last,
+                        "criticResult": {
+                            "complete": False,
+                            "refutations": ["criterion one is unproven"],
+                            "requiredFixes": ["prove criterion one"],
+                        },
+                    },
+                )
+
+            try:
+                first = invoke(
+                    1,
+                    [{"ref": "isodrop#01", "path": str(issue.relative_to(root)), "title": "Dropped", "specPath": ".scratch/isodrop/spec.md"}],
+                    True,
+                    False,
+                )
+                self.assertIsNone(first["error"], first["error"])
+
+                worktree_git_dir = Path(
+                    subprocess.run(
+                        ["git", "rev-parse", "--git-dir"],
+                        cwd=issue_worktree, text=True, capture_output=True, check=True,
+                    ).stdout.strip()
+                )
+                marker = worktree_git_dir / "gantry" / "current-run.json"
+                self.assertTrue(marker.is_file(), f"{marker} should carry the Run after round 1")
+
+                # Round 2 is the Run's last and carries no Issue at all: isodrop#01 was already
+                # dealt with, so this invocation never marks its worktree and cannot remember it.
+                last = invoke(2, [], False, True)
+                self.assertIsNone(last["error"], last["error"])
+
+                self.assertFalse(
+                    marker.exists(),
+                    "a worktree marked by an earlier round of this Run must still be unmarked at the Run's end",
+                )
+                self.assertFalse((root / ".git" / "gantry" / "current-run.json").exists())
+            finally:
+                subprocess.run(["git", "worktree", "remove", "--force", str(issue_worktree)], cwd=root, check=False)
+
     def test_round_workflow_records_the_learner_phase_before_run_finished(self) -> None:
         # The optional Learner phase, when it actually runs, must be recorded exactly like every other
         # phase (phase.started / subagent.started / subagent.stopped / phase.finished) and must be
@@ -2961,7 +3228,9 @@ Slice: `legacy#07`
             "pathlib",
             "re",
             "runlog",
+            "shlex",
             "shutil",
+            "skipscan",
             "subprocess",
             "sys",
             "tempfile",
@@ -2970,10 +3239,11 @@ Slice: `legacy#07`
             "typing",
         }
         self.assertEqual(
-            {"acceptance.py", "budget.py", "cleanup.py", "common.py", "dashboard.py", "frontier.py", "gates.py", "learner.py", "result.py", "roadmap.py", "runlog.py", "spec.py"},
+            {"acceptance.py", "budget.py", "cleanup.py", "common.py", "dashboard.py", "frontier.py", "gates.py", "guard.py", "learner.py", "result.py", "roadmap.py", "runlog.py", "spec.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
-        for script in sorted(SCRIPTS.glob("*.py")):
+        git_hooks = SKILL_DIR / "hooks" / "git"
+        for script in sorted([*SCRIPTS.glob("*.py"), git_hooks / "pre-commit", git_hooks / "pre-push", git_hooks / "skipscan.py"]):
             tree = ast.parse(script.read_text(encoding="utf-8"), filename=str(script))
             imported = {
                 alias.name.split(".", 1)[0]

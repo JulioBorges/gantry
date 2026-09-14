@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""Git pre-commit hook: reject a commit whose staged diff introduces a test-skip pattern.
+
+Per `docs/adr/0005-git-hooks-enforce-git-rules.md`, test-skip detection lives here
+instead of in `guard.py`'s Bash-command parsing. This hook reads `git diff --cached
+--unified=0`, which -- because the subprocess call inherits this hook's environment,
+including whatever `GIT_INDEX_FILE` git itself points at for a pathspec or
+`-i`/`--include` commit -- reflects exactly the content this commit is about to
+write, regardless of how it reached the index: `-a`/`--all`, a pathspec argument,
+`-i`/`--include`, a prior `git stage` (an alias for `git add`), or a plain prior
+`git add`. Git resolves all of that staging semantics itself before invoking this
+hook; no Bash-command parsing is involved, so there is no spelling left to evade.
+
+Activated by `core.hooksPath` pointing at this directory
+(`.agents/skills/gantry/hooks/git/`); `gantry-setup` writes that config into the
+operator's repository (`gantry-migration#10`) -- this hook only proves itself in
+temporary repositories where a test sets `core.hooksPath` directly.
+"""
+from __future__ import annotations
+
+import datetime
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
+
+import runlog  # noqa: E402
+import skipscan  # noqa: E402
+
+
+def now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def record_denied(cwd: Path, path: str) -> None:
+    """Append the `hook.denied` event for this denial; a logging failure never changes the decision.
+
+    The Run is resolved by `runlog.resolve_hook_run`: `GANTRY_RUN_ID` when the caller
+    exported it, otherwise this worktree's own current-Run marker, which the round workflow
+    writes before any agent works there. A denial inside a Run is therefore recorded whether
+    or not the shell that invoked `git` carried any Gantry environment.
+    """
+    run_id, state_root_value = runlog.resolve_hook_run(cwd)
+    if not run_id:
+        return
+    try:
+        root = runlog.state_root(state_root_value)
+        unit = runlog.unit_id(cwd)
+        log_path = runlog.run_log_path(root, unit, run_id)
+        if not log_path.exists():
+            return
+        event = runlog.validate_event(
+            {
+                "ts": now_iso(),
+                "run": run_id,
+                "event": "hook.denied",
+                "data": {"rule": "no-test-skip-commit", "path": path},
+            }
+        )
+        runlog.append_event(log_path, event)
+    except (runlog.EventError, OSError, ValueError):
+        return
+
+
+def main() -> int:
+    matched_file = skipscan.staged_skip_match()
+    if not matched_file:
+        return 0
+    message = f"deny: no-test-skip-commit {matched_file}"
+    print(message, file=sys.stderr)
+    record_denied(Path.cwd(), matched_file)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Git pre-push hook: reject any non-fast-forward ref update, however it is spelled.
+
+Per `docs/adr/0005-git-hooks-enforce-git-rules.md`, force-push detection lives here
+instead of in `guard.py`'s Bash-command parsing: a blocklist over free-form shell
+text never converges (three ASDLC rounds each closed one spelling of `--force` and
+opened another), but the *ref update itself* has no spelling to hide behind. Git
+feeds this hook, on stdin, one line per ref update: `<local ref> <local sha1>
+<remote ref> <remote sha1>`. An update is non-fast-forward exactly when the remote
+SHA is not an ancestor of the local SHA -- `git merge-base --is-ancestor <remote-sha>
+<local-sha>` failing is the definition, checked directly against the actual SHAs
+git is about to push, never inferred from `--force`, `-f`, a combined short flag,
+a `+refspec`, `--mirror`, `--force-with-lease`, or any other way the command could
+have been typed. A brand-new or deleted ref (either SHA all zero) trivially passes:
+there is no prior tip to rewrite. Denying one ref update aborts the whole push.
+
+A fast-forward update is then scanned for the content `pre-commit` refuses: `git commit
+-n` is git's own short `--no-verify` and skips `pre-commit` altogether, so the push is
+the next point at which git shows the content itself instead of a command string. Only
+what the push adds is compared -- the remote's tip, or the parent of the oldest commit
+this push introduces -- so history the remote already carries is never re-judged.
+
+Activated by `core.hooksPath` pointing at this directory
+(`.agents/skills/gantry/hooks/git/`); `gantry-setup` writes that config into the
+operator's repository (`gantry-migration#10`) -- this hook only proves itself in
+temporary repositories where a test sets `core.hooksPath` directly.
+"""
+from __future__ import annotations
+
+import datetime
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
+
+import runlog  # noqa: E402
+import skipscan  # noqa: E402
+
+ZERO_SHA = {"0" * 40, "0" * 64}
+
+
+def now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def is_fast_forward(remote_sha: str, local_sha: str) -> bool:
+    """True when `remote_sha` is an ancestor of `local_sha`, or the ref is being created or deleted."""
+    if remote_sha in ZERO_SHA or local_sha in ZERO_SHA:
+        return True
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", remote_sha, local_sha],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def record_denied(cwd: Path, ref: str, rule: str = "no-force-push") -> None:
+    """Append the `hook.denied` event for this denial; a logging failure never changes the decision.
+
+    The Run is resolved by `runlog.resolve_hook_run`: `GANTRY_RUN_ID` when the caller
+    exported it, otherwise this worktree's own current-Run marker, which the round workflow
+    writes before any agent works there. A denial inside a Run is therefore recorded whether
+    or not the shell that invoked `git` carried any Gantry environment.
+    """
+    run_id, state_root_value = runlog.resolve_hook_run(cwd)
+    if not run_id:
+        return
+    try:
+        root = runlog.state_root(state_root_value)
+        unit = runlog.unit_id(cwd)
+        log_path = runlog.run_log_path(root, unit, run_id)
+        if not log_path.exists():
+            return
+        event = runlog.validate_event(
+            {
+                "ts": now_iso(),
+                "run": run_id,
+                "event": "hook.denied",
+                "data": {"rule": rule, "path": ref},
+            }
+        )
+        runlog.append_event(log_path, event)
+    except (runlog.EventError, OSError, ValueError):
+        return
+
+
+def main() -> int:
+    cwd = Path.cwd()
+    remote_name = sys.argv[1] if len(sys.argv) > 1 else "origin"
+    denied = False
+    for line in sys.stdin:
+        parts = line.strip().split()
+        if len(parts) != 4:
+            continue
+        _local_ref, local_sha, remote_ref, remote_sha = parts
+        if not is_fast_forward(remote_sha, local_sha):
+            message = f"deny: no-force-push {remote_ref}"
+            print(message, file=sys.stderr)
+            record_denied(cwd, remote_ref)
+            denied = True
+            continue
+        if local_sha in ZERO_SHA:
+            continue
+        # `git commit -n` (git's own short `--no-verify`) skips `pre-commit` entirely, so a
+        # test-skip pattern can reach a local commit; the push is the next point where git
+        # shows the content itself rather than a command string. Only what this push adds is
+        # scanned -- the remote's own tip, or the parent of the oldest commit the push
+        # introduces -- so history the remote already carries is never re-judged.
+        base = skipscan.push_base(local_sha, remote_sha, remote_name, ZERO_SHA)
+        matched_file = skipscan.range_skip_match(base, local_sha) if base else None
+        if matched_file:
+            message = f"deny: no-test-skip-commit {matched_file}"
+            print(message, file=sys.stderr)
+            record_denied(cwd, matched_file, "no-test-skip-commit")
+            denied = True
+    return 1 if denied else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

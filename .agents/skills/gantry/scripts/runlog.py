@@ -25,6 +25,7 @@ EVENTS = {
     "subagent.stopped",
     "compaction",
     "hook.denied",
+    "hook.degraded",
     "policy.changed",
     "issue.done",
     "issue.blocked",
@@ -66,6 +67,86 @@ def unit_id(cwd: Path) -> str:
     path = Path(common_dir)
     real_common_dir = (cwd / path).resolve() if not path.is_absolute() else path.resolve()
     return hashlib.sha256(str(real_common_dir).encode("utf-8")).hexdigest()[:12]
+
+
+def git_dir(cwd: Path) -> Path:
+    """The *per-worktree* git directory of `cwd` (`.git`, or `.git/worktrees/<name>`).
+
+    Unlike `unit_id`, which deliberately shares one identity across every worktree of a
+    clone, this is the one directory git itself keeps per worktree -- which is exactly the
+    keying a "current Run" marker needs, so two worktrees of one execution unit running
+    different Runs concurrently never attribute a hook denial to each other's Run.
+    """
+    try:
+        raw = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise EventError(f"could not resolve Git directory: {error}") from error
+    path = Path(raw)
+    return path.resolve() if path.is_absolute() else (cwd / path).resolve()
+
+
+def marker_path(cwd: Path) -> Path:
+    return git_dir(cwd) / "gantry" / "current-run.json"
+
+
+def write_marker(cwd: Path, run: str, state_root_value: str | None) -> Path:
+    """Record which Run is currently executing in this worktree."""
+    if not RUN_ID_RE.fullmatch(run):
+        raise EventError("run must contain only letters, numbers, dots, colons, underscores, or hyphens")
+    path = marker_path(cwd)
+    payload: dict[str, str] = {"run": run, "worktree": str(cwd.resolve())}
+    if state_root_value:
+        payload["stateRoot"] = str(state_root(state_root_value))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def read_marker(cwd: Path) -> dict | None:
+    """The current-Run marker of `cwd`'s worktree, or `None` when there is none to trust."""
+    try:
+        payload = json.loads(marker_path(cwd).read_text(encoding="utf-8"))
+    except (EventError, OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    run = payload.get("run")
+    if not isinstance(run, str) or not RUN_ID_RE.fullmatch(run):
+        return None
+    return payload
+
+
+def clear_marker(cwd: Path) -> None:
+    try:
+        marker_path(cwd).unlink(missing_ok=True)
+    except (EventError, OSError):
+        return
+
+
+def resolve_hook_run(cwd: Path) -> tuple[str | None, str | None]:
+    """Resolve (run id, state root) for a hook process, environment first, marker second.
+
+    A harness that exports `GANTRY_RUN_ID` into the hook's environment wins; otherwise the
+    Run is read from this worktree's own current-Run marker, which the round workflow writes
+    before any agent works in the worktree. This is what makes a `hook.denied` recording a
+    guarantee rather than a best-effort: a git hook inherits its environment from whatever
+    shelled out to `git`, but it always runs inside the worktree the marker describes.
+    """
+    env_state_root = os.environ.get("GANTRY_STATE_ROOT") or None
+    env_run = os.environ.get("GANTRY_RUN_ID")
+    if env_run and RUN_ID_RE.fullmatch(env_run):
+        return env_run, env_state_root
+    marker = read_marker(cwd)
+    if not marker:
+        return None, env_state_root
+    marked_root = marker.get("stateRoot")
+    return marker["run"], env_state_root or (marked_root if isinstance(marked_root, str) else None)
 
 
 def require_string(value: object, name: str) -> str:
@@ -183,6 +264,15 @@ def validate_event(payload: object) -> dict:
             raise EventError("hook.denied requires data.rule and data.path")
         require_string(data["rule"], "data.rule")
         require_string(data["path"], "data.path")
+    elif event == "hook.degraded":
+        if not isinstance(data, dict) or not {"source", "missing"} <= set(data):
+            raise EventError("hook.degraded requires data.source and data.missing")
+        require_string(data["source"], "data.source")
+        missing = data["missing"]
+        if not isinstance(missing, list) or not all(isinstance(item, str) and item for item in missing):
+            raise EventError("data.missing must be a list of non-empty strings")
+        if data.get("degraded") is not True:
+            raise EventError("hook.degraded requires data.degraded to be true")
     elif event == "policy.changed":
         if not isinstance(data, dict) or "policyHash" not in data:
             raise EventError("policy.changed requires data.policyHash")
@@ -324,9 +414,30 @@ def main() -> int:
     corrections_parser.add_argument("issue", help="Issue reference such as sample#01")
     corrections_parser.add_argument("--state-root", help="override ~/.gantry/state")
     corrections_parser.add_argument("--json", action="store_true", help="emit machine-readable output")
+    mark_parser = subparsers.add_parser("mark", help="record which Run is executing in this worktree")
+    mark_parser.add_argument("run_id", help="the Run currently executing here")
+    mark_parser.add_argument("--cwd", default=".", help="repository or worktree to mark")
+    mark_parser.add_argument("--state-root", help="override ~/.gantry/state for hooks in this worktree")
+    current_parser = subparsers.add_parser("current", help="print the Run marked as executing in this worktree")
+    current_parser.add_argument("--cwd", default=".", help="repository or worktree to inspect")
+    current_parser.add_argument("--json", action="store_true", help="emit machine-readable output")
+    unmark_parser = subparsers.add_parser("unmark", help="remove this worktree's current-Run marker")
+    unmark_parser.add_argument("--cwd", default=".", help="repository or worktree to clear")
     args = parser.parse_args()
 
     try:
+        if args.command == "mark":
+            write_marker(Path(args.cwd).resolve(), args.run_id, args.state_root)
+            return 0
+        if args.command == "current":
+            marker = read_marker(Path(args.cwd).resolve())
+            if not marker:
+                return 2
+            print(json.dumps(marker, sort_keys=True) if args.json else marker["run"])
+            return 0
+        if args.command == "unmark":
+            clear_marker(Path(args.cwd).resolve())
+            return 0
         if args.command == "unit-id":
             value = unit_id(Path(args.cwd).resolve())
             payload = {"unitId": value}
