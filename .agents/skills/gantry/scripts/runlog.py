@@ -268,6 +268,40 @@ def inflight(root: Path, unit: str) -> list[dict]:
     return result
 
 
+def derive_corrections_spent(events: list[dict], issue_ref: str) -> int:
+    """Apply the documented derivation rule to one Run's own valid events.
+
+    `runlog.py inflight` never reports `correctionsSpent`: it is derived here from (1) the
+    `run.resumed.data.correctionsSpent` recorded on this same Run, but only when that same
+    `run.resumed` event also names `issue_ref` as `data.issue` (0 otherwise, including when the Run
+    has no `run.resumed` event, or when its `run.resumed` names a different Issue), plus (2) the
+    number of `refutation` events for `issue_ref` that are each followed, later in the same log, by a
+    `phase.started` `Implement` event for that same Issue — i.e. only refutations whose correction
+    pass actually started count toward the spent budget. The base is per-Issue, not per-Run: a Run
+    resumed for one Issue must never lend its `correctionsSpent` base to any other Issue that also
+    happens to appear in the same Run's log.
+    """
+    resumed = next((event for event in events if event["event"] == "run.resumed"), None)
+    base = (
+        resumed["data"].get("correctionsSpent", 0)
+        if resumed and resumed["data"].get("issue") == issue_ref
+        else 0
+    )
+    started_corrections = 0
+    for index, event in enumerate(events):
+        if event["event"] != "refutation" or event.get("issue") != issue_ref:
+            continue
+        later = events[index + 1 :]
+        if any(
+            later_event["event"] == "phase.started"
+            and later_event.get("issue") == issue_ref
+            and later_event.get("phase") == "Implement"
+            for later_event in later
+        ):
+            started_corrections += 1
+    return base + started_corrections
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -282,6 +316,14 @@ def main() -> int:
     query_parser.add_argument("unit_id", help="twelve-hex repository execution-unit ID")
     query_parser.add_argument("--state-root", help="override ~/.gantry/state")
     query_parser.add_argument("--json", action="store_true", help="emit machine-readable output")
+    corrections_parser = subparsers.add_parser(
+        "corrections", help="derive correctionsSpent for one Issue from one Run's own log"
+    )
+    corrections_parser.add_argument("unit_id", help="twelve-hex repository execution-unit ID")
+    corrections_parser.add_argument("run_id", help="the Run whose log to read")
+    corrections_parser.add_argument("issue", help="Issue reference such as sample#01")
+    corrections_parser.add_argument("--state-root", help="override ~/.gantry/state")
+    corrections_parser.add_argument("--json", action="store_true", help="emit machine-readable output")
     args = parser.parse_args()
 
     try:
@@ -307,6 +349,22 @@ def main() -> int:
             if not path.exists() and event["event"] != "run.started":
                 raise EventError("the first event of a Run must be run.started")
             append_event(path, event)
+            return 0
+        if args.command == "corrections":
+            if not ISSUE_RE.fullmatch(args.issue):
+                raise EventError("issue must be an Issue reference such as sample#01")
+            path = run_log_path(root, args.unit_id, args.run_id)
+            if not path.exists():
+                raise EventError(f"no Run log for {args.run_id}")
+            events = read_valid_events(path)
+            spent = derive_corrections_spent(events, args.issue)
+            payload = {
+                "unitId": args.unit_id,
+                "runId": args.run_id,
+                "issue": args.issue,
+                "correctionsSpent": spent,
+            }
+            print(json.dumps(payload, sort_keys=True) if args.json else str(spent))
             return 0
         payload = {"unitId": args.unit_id, "inflight": inflight(root, args.unit_id)}
         print(json.dumps(payload, sort_keys=True) if args.json else "\n".join(

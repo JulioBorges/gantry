@@ -374,6 +374,131 @@ class RunLogTests(unittest.TestCase):
             self.assertEqual(0, help_result.returncode, help_result.stderr)
             self.assertIn("usage:", help_result.stdout.lower())
 
+    def test_corrections_derives_spent_count_from_started_correction_passes_only(self) -> None:
+        # A shipped query, not prose or test-local code: `runlog.py corrections` applies the
+        # documented derivation rule (prior `run.resumed.data.correctionsSpent`, plus only the
+        # refutations that a later `phase.started` Implement event proves actually started a
+        # correction pass) directly to one Run's own event log.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            unit = json.loads(self.run_script(root, "unit-id", "--cwd", str(root), "--json").stdout)["unitId"]
+            run_id = "corrections-run"
+            for event in (
+                self.started(run_id),
+                {
+                    "ts": "2026-09-13T12:00:10Z", "run": run_id, "event": "run.resumed",
+                    "data": {"priorRun": "run-before", "worktree": str(root), "issue": "sample#01", "correctionsSpent": 1},
+                },
+                {
+                    "ts": "2026-09-13T12:01:00Z", "run": run_id, "event": "phase.started",
+                    "issue": "sample#01", "phase": "Implement", "data": {"worktree": str(root)},
+                },
+                {
+                    "ts": "2026-09-13T12:02:00Z", "run": run_id, "event": "refutation",
+                    "issue": "sample#01", "phase": "Critic", "data": {"attempt": 2, "refutations": ["still wrong"]},
+                },
+                {
+                    "ts": "2026-09-13T12:03:00Z", "run": run_id, "event": "phase.started",
+                    "issue": "sample#01", "phase": "Implement", "data": {"worktree": str(root)},
+                },
+                # A refutation for a different Issue must never count toward sample#01.
+                {
+                    "ts": "2026-09-13T12:04:00Z", "run": run_id, "event": "refutation",
+                    "issue": "sample#99", "phase": "Critic", "data": {"attempt": 1, "refutations": ["unrelated"]},
+                },
+                {
+                    "ts": "2026-09-13T12:05:00Z", "run": run_id, "event": "phase.started",
+                    "issue": "sample#99", "phase": "Implement", "data": {"worktree": str(root)},
+                },
+            ):
+                appended = self.run_script(root, "append", unit, "--state-root", str(state), event=event)
+                self.assertEqual(0, appended.returncode, appended.stderr)
+
+            result = self.run_script(root, "corrections", unit, run_id, "sample#01", "--state-root", str(state), "--json")
+            self.assertEqual(0, result.returncode, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(unit, payload["unitId"])
+            self.assertEqual(run_id, payload["runId"])
+            self.assertEqual("sample#01", payload["issue"])
+            # 1 (resumed base) + 1 (the sample#01 refutation followed by a real correction pass) = 2.
+            self.assertEqual(2, payload["correctionsSpent"])
+
+            plain = self.run_script(root, "corrections", unit, run_id, "sample#01", "--state-root", str(state))
+            self.assertEqual(0, plain.returncode, plain.stderr)
+            self.assertEqual("2", plain.stdout.strip())
+
+            other_issue = self.run_script(root, "corrections", unit, run_id, "sample#99", "--state-root", str(state), "--json")
+            self.assertEqual(0, other_issue.returncode, other_issue.stderr)
+            # The `run.resumed` base (1) names `sample#01` in `data.issue`, so it is Issue-scoped and
+            # must never lend itself to sample#99: only sample#99's own refutation followed by a real
+            # correction pass counts, giving 0 (base, withheld) + 1 = 1.
+            self.assertEqual(1, json.loads(other_issue.stdout)["correctionsSpent"])
+
+    def test_corrections_resumed_base_only_applies_to_the_resumed_issue(self) -> None:
+        # A single Run log resumed for Issue A (base 2) must never lend that base to Issue B, even
+        # when B has its own started correction pass in the same log, and an unrelated Issue C that
+        # never appears in the log must derive 0.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            unit = json.loads(self.run_script(root, "unit-id", "--cwd", str(root), "--json").stdout)["unitId"]
+            run_id = "per-issue-base-run"
+            for event in (
+                self.started(run_id),
+                {
+                    "ts": "2026-09-13T12:00:10Z", "run": run_id, "event": "run.resumed",
+                    "data": {"priorRun": "run-before", "worktree": str(root), "issue": "issue-a#01", "correctionsSpent": 2},
+                },
+                {
+                    "ts": "2026-09-13T12:01:00Z", "run": run_id, "event": "phase.started",
+                    "issue": "issue-b#01", "phase": "Implement", "data": {"worktree": str(root)},
+                },
+                {
+                    "ts": "2026-09-13T12:02:00Z", "run": run_id, "event": "refutation",
+                    "issue": "issue-b#01", "phase": "Critic", "data": {"attempt": 1, "refutations": ["b needs work"]},
+                },
+                {
+                    "ts": "2026-09-13T12:03:00Z", "run": run_id, "event": "phase.started",
+                    "issue": "issue-b#01", "phase": "Implement", "data": {"worktree": str(root)},
+                },
+            ):
+                appended = self.run_script(root, "append", unit, "--state-root", str(state), event=event)
+                self.assertEqual(0, appended.returncode, appended.stderr)
+
+            issue_a = self.run_script(root, "corrections", unit, run_id, "issue-a#01", "--state-root", str(state), "--json")
+            self.assertEqual(0, issue_a.returncode, issue_a.stderr)
+            # Base 2 (resumed for issue-a#01, no started corrections of its own in this log) + 0 = 2.
+            self.assertEqual(2, json.loads(issue_a.stdout)["correctionsSpent"])
+
+            issue_b = self.run_script(root, "corrections", unit, run_id, "issue-b#01", "--state-root", str(state), "--json")
+            self.assertEqual(0, issue_b.returncode, issue_b.stderr)
+            # Base withheld (resumed names issue-a#01, not issue-b#01) + 1 (issue-b#01's own started
+            # correction pass) = 1.
+            self.assertEqual(1, json.loads(issue_b.stdout)["correctionsSpent"])
+
+            issue_c = self.run_script(root, "corrections", unit, run_id, "issue-c#01", "--state-root", str(state), "--json")
+            self.assertEqual(0, issue_c.returncode, issue_c.stderr)
+            # issue-c#01 never appears in this log at all: base withheld, no started corrections, 0.
+            self.assertEqual(0, json.loads(issue_c.stdout)["correctionsSpent"])
+
+    def test_corrections_rejects_unknown_run_or_malformed_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            unit = json.loads(self.run_script(root, "unit-id", "--cwd", str(root), "--json").stdout)["unitId"]
+
+            missing_run = self.run_script(root, "corrections", unit, "no-such-run", "sample#01", "--state-root", str(state), "--json")
+            self.assertEqual(1, missing_run.returncode)
+            self.assertIn("no Run log for no-such-run", missing_run.stderr)
+
+            bad_issue = self.run_script(root, "corrections", unit, "no-such-run", "not-an-issue", "--state-root", str(state), "--json")
+            self.assertEqual(1, bad_issue.returncode)
+            self.assertIn("issue", bad_issue.stderr.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

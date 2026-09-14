@@ -37,6 +37,66 @@ Every script provides `--help`, and data-producing paths support `--json`.
 
 - Preflight refuses a dirty worktree, offers a dedicated Run worktree before creating anything, resolves
   the effective policy, checks `roadmap.py check`, and asks models for Plan, Implement, Review and Critic.
+  Preflight also resolves `unitId` (`runlog.py unit-id --cwd <repoRoot> --json`) and a fresh `runId`, then
+  queries `runlog.py inflight <unitId> --json`. Every match names an Issue still `ready-for-agent`, its
+  phase and its preserved worktree; preflight offers the operator continuation there before doing anything
+  else. `runlog.py inflight` reports only `run`, `issue`, `phase`, `worktree`, `repositoryRoot`,
+  `policyHash`, `tier` and `staleAfterSeconds` — it does not report `correctionsSpent` or `branch`, so
+  preflight derives them before building `args.priorRun` by invoking the shipped query
+  `runlog.py corrections <unitId> <match.run> <match.issue> --json`, which reads the match's own Run log
+  (`~/.gantry/state/<unitId>/runs/<match.run>.jsonl`, or `--state-root` when overridden) and returns
+  `correctionsSpent` as the sum of two counts: (1) the `run.resumed.data.correctionsSpent` recorded in
+  that same Run log, but only when that same `run.resumed` event's `data.issue` also equals `match.issue`
+  — `0` when the log has no `run.resumed` event, or when its `run.resumed` names a different Issue, since
+  the base is per-Issue and must never be lent to another Issue that happens to share the Run log; plus
+  (2) the number of `refutation` events in that log whose `issue` equals `match.issue` and that are each
+  followed, later in the log, by a `phase.started` event for `Implement` on that same Issue — i.e. only
+  refutations whose correction pass actually started count toward the spent budget. Neither this
+  derivation rule nor `correctionsSpent` itself is ever computed by prose or by test code: this shipped
+  command is the single implementation, and it fails closed (`runlog error: no Run log for <runId>`,
+  exit 1) when no Run log exists for the requested Run ID, rather than silently reporting `0`.
+  `branch` is optional: when omitted, `reference/round-workflow.md` derives it itself from
+  `common.issue_branch` and verifies it with `git branch --show-current` in the preserved worktree
+  (see `implementationLocation`). Only explicit acceptance carries the derived match forward as
+  `args.priorRun` (`run`, `worktree`, `issue`, `correctionsSpent`, `policyHash`, and `branch` when known)
+  into `reference/round-workflow.md`, which appends `run.resumed` naming the prior Run and worktree
+  instead of starting a fresh worktree, and resumes the spent correction count instead of resetting it.
+  When the prior Run's `policyHash` differs from the effective policy resolved for this Run,
+  `reference/round-workflow.md` appends `policy.changed` with the new hash so the drift is recorded
+  before any Issue work resumes. The Run log is read only to offer that continuation and to derive
+  `correctionsSpent`; it never decides readiness or completion — `frontier.py`, Issue `Status:` lines
+  and `roadmap.py` do.
+- `reference/round-workflow.md` appends every recorded-Run lifecycle event through `runlog.py append
+  <unitId> <runId>` when the caller supplies both. A Run spans one or more rounds, each a separate
+  invocation of this workflow sharing the same `runId`/`unitId`: only the first round (`args.isFirstRound`
+  not explicitly `false`) appends `run.started` (with the repository root, a policy hash, the harness
+  tier and the effective `staleAfterSeconds` in `data`) and, when resuming, `run.resumed` and
+  `policy.changed`; every subsequent round of the same Run passes `args.isFirstRound = false` so these
+  three events are never appended again — a Run log accepts only one `run.started` and rejects a
+  duplicate. Every round, first or not, then appends `round.started`, one `phase.started` /
+  `phase.finished` pair per phase that actually runs (Implement, Review and Critic per Issue, plus the
+  optional Learner phase on the last round when it finds recurring evidence), one
+  `subagent.started` / `subagent.stopped` pair per fresh agent carrying its role result,
+  `review.finding` after the Reviewer returns, `refutation` on every non-accepted Critic verdict,
+  `issue.blocked` when the correction ceiling is spent without acceptance, `issue.done` on successful
+  integration, `run.cancelled` on the first red post-merge gate, and `round.finished`. Only the last round
+  of a Run (`args.isLastRound = true`) appends `run.finished`, once, and only after the optional Learner
+  phase (see below) has already run and recorded its own `phase.started`/`subagent.started`/
+  `subagent.stopped`/`phase.finished` events — `run.finished` remains the final event of a completed Run,
+  never followed by a subagent.
+  The Critic's `subagent.stopped` carries a projection of its verdict, never the verdict unchanged: its
+  `gateResult` is a real `gates.py --json` payload, and `runlog.py append` fails loudly on any
+  `command`/`output`-tokenized field at any depth (its own rule), which a real `gates[].command` and
+  `gates[].output_tail` are. `reference/round-workflow.md`'s `projectCriticResult` keeps `complete`,
+  `criteria`, `gatesVerdict`, `gateFailures`, `refutations`, `requiredFixes` and `decisionsForOperator`
+  as returned, and narrows `gateResult` to only its `verdict` and `requirements` — dropping `gates`
+  entirely — so a genuine gates run never fails the append and the Run log still records only the
+  Critic's role result and reasoning, never command output. Every other role's `subagent.stopped` still
+  carries its result unprojected, and `runlog.py` still rejects it if it ever carries prohibited data.
+  `issue.blocked` records only a Run-log fact: the Issue's `Status:` line stays `ready-for-agent` so
+  `frontier.py` keeps offering it, and only `roadmap.py done` after Critic acceptance ever changes an
+  Issue's authoritative status. Omitting `runId` or `unitId` disables recording entirely and leaves the
+  round behaviorally identical, so a harness with no resolved Run log keeps working.
 - Use `frontier.py --scope <scope> --json` as the only authority for dependency rounds. Exit 1 for a
   cyclic or dangling blocker graph. Parked `draft`, `blocked`, and `needs-operator` Issues are reported
   and skipped.
@@ -68,14 +128,22 @@ Every script provides `--help`, and data-producing paths support `--json`.
   with its evidence and proposed target, as an operator decision: the workflow never writes a candidate
   into `AGENTS.md`, `CONTEXT.md`, a template or policy on its own. Pass `args.isLastRound = true` and
   `args.learnerRunLogs` only for that final frontier round; `learnerRunLogs` is the current Run's own
-  Run-log path(s), normally `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`.
+  Run-log path(s), normally `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`. When the Learner actually
+  runs (recurring evidence found), it is recorded exactly like the Implement, Review and Critic phases —
+  `phase.started`, `subagent.started`, `subagent.stopped` and `phase.finished` — appended after
+  `round.finished` and before `run.finished`, so `run.finished` stays the last event of a completed Run.
+  A skipped Learner phase (no logs, or nothing recurring) records none of those four events.
 
 ## Harness-neutral execution
 
 Use the host harness to ask the operator and spawn agents. Where native workflow scripts, structured
 outputs, parallel agents or worktree isolation are available, use them. Otherwise execute the same
 prompts from the reference files manually and validate their JSON-shaped results before advancing.
-The deterministic scripts and workflow semantics stay identical in every harness.
+The deterministic scripts and workflow semantics stay identical in every harness. The host's command
+runner contract is `runCommand(command, { cwd, input })`: `input`, when supplied, must be written to the
+command's stdin, not appended to the command line. Every recorded Run event goes through
+`runlog.py append <unitId> <runId>` this way, with the event JSON as `input` — a harness that implements
+`runCommand` without stdin support breaks every recorded round, not just this one.
 
 ## References
 
