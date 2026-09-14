@@ -176,16 +176,24 @@ Scenario: The run ends with an offered draft pull request
   interrupted Review/Critic phases, and stronger ordering assertions on the isolated multi-Issue serial
   integration test (exactly one `--no-ff` merge and one gate per Issue, in order, with nothing after the
   red post-merge gate).
-- 2026-09-13 — Pending operator confirmation: `gantry-migration#14`'s acceptance criterion naming
-  `greeting#02` in worktree `W` is currently proven only by the fixture-independent
-  `test_preflight_derives_corrections_spent_from_inflight_refutations_and_resumes_at_the_ceiling` and
-  `test_round_workflow_resume_emits_run_resumed_and_preserves_worktree_and_corrections` tests, whose
-  `resumeq#01`/`resume#01` Issues stand in for `greeting#02` with the same shape (Implement-phase
-  interruption, preserved worktree, offered continuation, `Status: ready-for-agent` retained until Critic
-  acceptance). This is a stand-in, not an accepted substitution: once the `fixture/` tree from
-  `gantry-migration#16` is available on this branch, the fixture's real `greeting#02` scenario should
-  replace this stand-in rather than duplicate it. Surfaced to the operator as an open decision rather than
-  settled here.
+- 2026-09-13 — Resolved the prior entry's open stand-in: the `fixture/` tree from `gantry-migration#16`
+  (as it stands on `gantry/wave-3` at `e546aa8`) is now merged into this branch, and
+  `test_gantry_greeting_offers_and_resumes_a_fixture_interrupted_run_in_its_worktree` proves this Issue's
+  acceptance criterion against the real fixture: it builds an isolated `copy_fixture.py --mode approved`
+  copy, simulates a Run interrupted while the fixture's real `greeting#02` Issue was in the Implement phase
+  in worktree `W`, shows `runlog.py inflight` offering `W`, and resumes `round-workflow.md` in `W` so that
+  `run.resumed` carries the prior Run id and `W` while `greeting#02` keeps `Status: ready-for-agent` (proven
+  against the real Issue file, not a synthetic stand-in). The `resumeq#01`/`resume#01`-based tests remain as
+  additional coverage of the derivation and chained-resume rules, not as a substitute for this criterion.
+- 2026-09-13 — Addressed a second round of adversarial-critic feedback: `runlog.py corrections <unitId>
+  <runId> <issue> [--json]` is now a shipped, tested query — the sole implementation of the documented
+  `correctionsSpent` derivation rule — and `SKILL.md`'s preflight prose and this Issue's tests all invoke it
+  instead of duplicating the rule in prose or in test-local Python; `appendRunEvent` in
+  `round-workflow.md` now runs `runlog.py append` through `runWorkflowCommand`, so a rejected event (for
+  example a prohibited key such as `gateResult.diff`) throws instead of being silently discarded, proven by
+  a test that asserts the thrown error and the missing Run log line; and the 'Recorded Run lifecycle'
+  paragraph now states plainly that `run.started` always opens a recorded Run and `run.resumed` follows it
+  when `args.priorRun` is supplied, matching both the code and `runlog.py`'s own first-event rule.
 - 2026-09-13 — Documented the explicit derivation of a resumed Run's `correctionsSpent` (the prior Run's own
   `run.resumed.data.correctionsSpent`, if any, plus every `refutation` event for the matching Issue that is
   later followed by a `phase.started` `Implement` event — i.e. only refutations whose correction pass
