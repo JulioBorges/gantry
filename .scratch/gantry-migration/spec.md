@@ -166,6 +166,7 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-14 — Implemented the end-of-Run draft pull request offer in the `round-workflow.md` template and updated `SKILL.md` instructions. After the final round, the orchestrator detects if `gh` is available and asks the operator for explicit confirmation before opening a draft pull request containing each completed Issue's criteria and evidence. If declined or unavailable, it gracefully defaults to reporting the Run branch and target branch.
 - 2026-09-14 — Corrected the Run resolution order a hook records through, and the Run-end unmark.
   `guard.py` resolved a payload's session ID ahead of the worktree's current-Run marker, and a
   harness session ID is not a Gantry Run ID: Claude Code sends a UUID `session_id` and OpenCode a

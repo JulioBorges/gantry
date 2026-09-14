@@ -144,6 +144,7 @@ Every script provides `--help`, and data-producing paths support `--json`.
   `phase.started`, `subagent.started`, `subagent.stopped` and `phase.finished` — appended after
   `round.finished` and before `run.finished`, so `run.finished` stays the last event of a completed Run.
   A skipped Learner phase (no logs, or nothing recurring) records none of those four events.
+- After the last round (including the Learner phase), the final `roadmap.py check` and frontier reporting, offer to open a draft pull request from the Run branch to the configured target branch (`policy.git.target`). Generate an English PR body containing each completed Issue's authoritative criteria and Critic evidence. Ask the operator before calling `gh`. Open one draft pull request only on explicit confirmation. If `gh` is unavailable or the operator declines, report the Run branch and configured target as the handoff instead. Never merge, never auto-create a pull request, never create per-Issue pull requests, and never observe provider state. The final English Run report must state the capability-file support tier (`tier`).
 
 ## Harness-neutral execution
 
