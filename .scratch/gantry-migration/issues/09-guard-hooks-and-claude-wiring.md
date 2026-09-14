@@ -1,7 +1,7 @@
 # Guard hooks and Claude Code wiring
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-migration#09`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -16,12 +16,12 @@ Add `.agents/skills/gantry/scripts/guard.py`, the git hooks `.agents/skills/gant
 
 ## Acceptance criteria
 
-- [ ] A Claude Code `PreToolUse` payload for editing `ROADMAP.md` or an Issue `Status:` line returns one denial line naming its rule and refused path, logs `hook.denied`, and a `Read` payload returns allow.
-- [ ] A Claude Code `PreToolUse` payload changing an Issue acceptance-criteria checkbox returns one denial line naming its rule and refused path, and appends a `hook.denied` event for that edit.
-- [ ] A `SubagentStop` payload appends `subagent.stopped`; malformed or capability-incomplete payloads produce a recorded degradation rather than a false completion or a denial without enough fields.
-- [ ] In a real temporary repository with `core.hooksPath` set to `hooks/git/`, tests prove `pre-push` rejects a non-fast-forward push however it is spelled (`--force`, `-f`, `-uf`, `+refspec`, `--mirror`, `--force-with-lease`) and accepts a fast-forward one; `pre-commit` rejects a commit whose staged diff introduces a test-skip pattern however it was staged (`-a`, pathspec, `-i`, `git stage`) and accepts a clean one; each denial names its rule and path and appends `hook.denied`; `guard.py` denies a Bash command containing `--no-verify`, `core.hooksPath`, `--git-dir` or `GIT_DIR=`, allows any other Bash command, and answers every 1 MB payload — including one made of `git ` tokens — in under 200 ms; and all harness hook entries invoke `guard.py` with their event and stdin payload.
-- [ ] The guard implementation only protects and records: status and checkbox authority stays with `roadmap.py`, and the no-hooks workflow prompts still state and Critic-check every protected rule.
-- [ ] The Spec Changelog receives an English entry in the same merge, and `guard.py` passes the standard-library-only import test and its runnable test command.
+- [x] A Claude Code `PreToolUse` payload for editing `ROADMAP.md` or an Issue `Status:` line returns one denial line naming its rule and refused path, logs `hook.denied`, and a `Read` payload returns allow.
+- [x] A Claude Code `PreToolUse` payload changing an Issue acceptance-criteria checkbox returns one denial line naming its rule and refused path, and appends a `hook.denied` event for that edit.
+- [x] A `SubagentStop` payload appends `subagent.stopped`; malformed or capability-incomplete payloads produce a recorded degradation rather than a false completion or a denial without enough fields.
+- [x] In a real temporary repository with `core.hooksPath` set to `hooks/git/`, tests prove `pre-push` rejects a non-fast-forward push however it is spelled (`--force`, `-f`, `-uf`, `+refspec`, `--mirror`, `--force-with-lease`) and accepts a fast-forward one; `pre-commit` rejects a commit whose staged diff introduces a test-skip pattern however it was staged (`-a`, pathspec, `-i`, `git stage`) and accepts a clean one; each denial names its rule and path and appends `hook.denied`; `guard.py` denies a Bash command containing `--no-verify`, `core.hooksPath`, `--git-dir` or `GIT_DIR=`, allows any other Bash command, and answers every 1 MB payload — including one made of `git ` tokens — in under 200 ms; and all harness hook entries invoke `guard.py` with their event and stdin payload.
+- [x] The guard implementation only protects and records: status and checkbox authority stays with `roadmap.py`, and the no-hooks workflow prompts still state and Critic-check every protected rule.
+- [x] The Spec Changelog receives an English entry in the same merge, and `guard.py` passes the standard-library-only import test and its runnable test command.
 
 ## Blocked by
 
