@@ -10,8 +10,11 @@ it needs no change), and, for the last round of a Run, `args.isLastRound` (boole
 final frontier round) and `args.learnerRunLogs` (an array of Run-log JSONL paths, normally just the
 current Run's `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`), so the optional Learner phase below can
 run; `args.models.learn` is optional and falls back to `args.models.critic` when absent.
-The host supplies its command runner as `runCommand(command, { cwd })`; integration cannot proceed
-without it.
+The host supplies its command runner as `runCommand(command, { cwd, input })`; integration cannot
+proceed without it. `input`, when provided, is written to the invoked command's stdin — every recorded
+Run event (`runlog.py append <unitId> <runId> [--state-root <path>]`) is called this way, with the JSON
+event payload passed as `input` rather than as a command-line argument, so a harness that only forwards
+`cwd` and drops `input` silently breaks every recorded round.
 
 ## Recorded Run lifecycle
 
@@ -23,12 +26,15 @@ When the caller also supplies `args.runId` and `args.unitId` (the value of
 and worktree being continued; a later round of the same Run passes `args.isFirstRound = false` so
 `run.started`, `run.resumed` and `policy.changed` are never appended again — a Run log accepts only one
 `run.started` and rejects a duplicate. Every round, first or not, appends `round.started`, one `phase.started` /
-`phase.finished` pair per Implement, Review and Critic phase, one `subagent.started` / `subagent.stopped`
-pair per fresh agent carrying the role result, `review.finding` after the Reviewer returns,
+`phase.finished` pair per phase that actually runs — Implement, Review and Critic for each Issue, plus the
+optional Learner phase (below) on the last round when it finds recurring evidence — one `subagent.started` /
+`subagent.stopped` pair per fresh agent carrying the role result, `review.finding` after the Reviewer returns,
 `refutation` on every non-accepted Critic verdict, `issue.blocked` when the correction ceiling is spent
 without acceptance, `issue.done` on successful integration, `policy.changed` when `args.priorRun.policyHash`
 (the policy hash recorded on the prior Run) differs from the current effective policy hash,
-`run.cancelled` on the first red post-merge gate and `round.finished` / `run.finished` at the end. The
+`run.cancelled` on the first red post-merge gate and `round.finished` / `run.finished` at the end. When the
+Learner phase runs, it is recorded before `run.finished`: `run.finished` remains the Run log's last event
+on a completed Run, never followed by a subagent. The
 Critic's `subagent.stopped` never carries its verdict unchanged: `runlog.py append` rejects any
 `command`, `output` (and similarly-tokenized) field at any nesting level per its own rule, and the
 Critic's `gateResult` is a real `gates.py --json` payload whose `gates[]` entries carry exactly those
@@ -86,7 +92,14 @@ the repository policy. `learner.py <runlog...> --json` groups identical evidence
 Issues or attempts and drafts one lesson candidate per recurring group, each carrying the recurring
 evidence and a proposed target (the Gantry section of `AGENTS.md`, `CONTEXT.md`, or an effective
 template); a problem that occurred on only one Issue or attempt produces no candidate. When the
-extraction finds nothing recurring, or no Run-log path is available, the phase is skipped. The Learner
+extraction finds nothing recurring, or no Run-log path is available, the phase is skipped — no
+`phase.started`/`subagent.started`/`subagent.stopped`/`phase.finished` events are recorded for a
+skipped Learner phase. When the Learner does run, it is recorded like every other phase: `phase.started`,
+`subagent.started`, `subagent.stopped` (carrying the candidates as its result) and `phase.finished`, all
+appended after `round.finished` and before `run.finished`, so `run.finished` stays the Run log's last
+event and no subagent runs after it. `runlog.py` requires an `issue` on every `phase.started`/
+`phase.finished` event; because the Learner is not scoped to one Issue, these events use the reserved
+non-Issue reference `learn#00` rather than a real Issue ref. The Learner
 never writes anything: a lesson candidate is a draft for the operator to accept or discard, surfaced by
 the final report, never auto-injected into `AGENTS.md`, `CONTEXT.md`, a template or policy.
 
@@ -195,6 +208,11 @@ async function appendRunEvent(event, issueRef, phaseName, data) {
 function priorAssignment(issue) {
   return A.priorRun && A.priorRun.issue === issue.ref ? A.priorRun : null
 }
+
+// `runlog.py` requires `issue` on every `phase.started`/`phase.finished` event; the Learn phase is not
+// tied to any single Issue, so it records its phase/subagent events against this reserved, non-Issue
+// reference rather than omitting `issue` (which `runlog.py append` would reject).
+const LEARN_PHASE_ISSUE = 'learn#00'
 
 const isFirstRound = A.isFirstRound !== false
 if (runLogEnabled && isFirstRound) {
@@ -550,10 +568,15 @@ async function learn() {
     return []
   }
   if (!Array.isArray(extracted.candidates) || !extracted.candidates.length) return []
+  await appendRunEvent('phase.started', LEARN_PHASE_ISSUE, 'Learn', {})
+  await appendRunEvent('subagent.started', LEARN_PHASE_ISSUE, 'Learn', { role: 'learner' })
   const learned = await requestRole('learner', learnerPrompt(extracted), {
     label: 'learn', phase: 'Learn', model: A.models.learn ?? A.models.critic, cwd: A.repoRoot,
   })
-  return learned && Array.isArray(learned.candidates) ? learned.candidates : extracted.candidates
+  const candidates = learned && Array.isArray(learned.candidates) ? learned.candidates : extracted.candidates
+  await appendRunEvent('subagent.stopped', LEARN_PHASE_ISSUE, 'Learn', { role: 'learner', result: { candidates } })
+  await appendRunEvent('phase.finished', LEARN_PHASE_ISSUE, 'Learn', {})
+  return candidates
 }
 
 const deliveries = results.filter(Boolean)
@@ -604,10 +627,11 @@ if (integrationStopped) {
   await appendRunEvent('run.cancelled', cancelReason && cancelReason.issue, undefined, {
     round: A.round, reason: cancelReason && cancelReason.reason,
   })
-} else if (A.isLastRound) {
-  await appendRunEvent('run.finished', undefined, undefined, { round: A.round })
 }
 const candidates = A.isLastRound ? await learn() : []
+if (!integrationStopped && A.isLastRound) {
+  await appendRunEvent('run.finished', undefined, undefined, { round: A.round })
+}
 return { round: A.round, date: A.date, results: deliveries, ...(A.isLastRound ? { candidates } : {}) }
 ```
 

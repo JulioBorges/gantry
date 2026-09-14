@@ -166,6 +166,29 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-14 — Addressed a fifth retry round of adversarial-critic feedback on the optional Learner
+  phase and the host command-runner contract. `round-workflow.md`'s `learn()` now records the Learner
+  phase like every other phase — `phase.started`, `subagent.started` (`role: 'learner'`),
+  `subagent.stopped` (carrying the drafted candidates as its result) and `phase.finished` — but only
+  when it actually runs (recurring evidence found); a short-circuited Learner (no Run-log path, or
+  nothing recurring) records none of those four events. Because `runlog.py` requires an `issue` on
+  every `phase.started`/`phase.finished` event and the Learner is not scoped to one Issue, these events
+  use the reserved, non-Issue reference `learn#00`. The workflow's tail was reordered so
+  `const candidates = A.isLastRound ? await learn() : []` runs after `round.finished` but before
+  `run.finished` is appended, so `run.finished` remains the Run log's last event on a completed Run and
+  no subagent runs after it — previously `learn()` ran after `run.finished`, letting a Learner subagent
+  execute after the Run's own recorded completion. `SKILL.md` and `round-workflow.md`'s 'Recorded Run
+  lifecycle' prose no longer scope phase/subagent pairs to only Implement, Review and Critic, and both
+  now state the Learner phase is recorded before `run.finished`. A new workflow integration test,
+  `test_round_workflow_records_the_learner_phase_before_run_finished`, runs the canonical workflow as
+  the last round of a Run with `learnerRunLogs` pointing at a fixture Run log containing two recurring
+  `refutation` events, and asserts the Learn phase's `phase.started`/`subagent.started`/
+  `subagent.stopped` (with a `result`)/`phase.finished` events are present, in order, between
+  `round.finished` and the final `run.finished` event. The host contract prose in both `SKILL.md` and
+  `round-workflow.md` now reads `runCommand(command, { cwd, input })` and states that `input`, when
+  supplied, is written to the invoked command's stdin — every recorded Run event goes through
+  `runlog.py append` this way, so a harness port that drops `input` breaks every recorded round, not
+  only this one.
 - 2026-09-14 — Addressed a fourth retry round of adversarial-critic feedback: the Critic's `subagent.stopped`
   no longer carries its verdict unchanged into the Run log. A Critic proving completion runs a real
   `gates.py --run --diff-base <baseRef> --json` and returns that parsed payload unchanged in

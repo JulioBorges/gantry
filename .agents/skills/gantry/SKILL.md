@@ -74,12 +74,16 @@ Every script provides `--help`, and data-producing paths support `--json`.
   `policy.changed`; every subsequent round of the same Run passes `args.isFirstRound = false` so these
   three events are never appended again — a Run log accepts only one `run.started` and rejects a
   duplicate. Every round, first or not, then appends `round.started`, one `phase.started` /
-  `phase.finished` pair per Implement, Review and Critic phase, one
+  `phase.finished` pair per phase that actually runs (Implement, Review and Critic per Issue, plus the
+  optional Learner phase on the last round when it finds recurring evidence), one
   `subagent.started` / `subagent.stopped` pair per fresh agent carrying its role result,
   `review.finding` after the Reviewer returns, `refutation` on every non-accepted Critic verdict,
   `issue.blocked` when the correction ceiling is spent without acceptance, `issue.done` on successful
   integration, `run.cancelled` on the first red post-merge gate, and `round.finished`. Only the last round
-  of a Run (`args.isLastRound = true`) appends `run.finished`, once, after that round's `round.finished`.
+  of a Run (`args.isLastRound = true`) appends `run.finished`, once, and only after the optional Learner
+  phase (see below) has already run and recorded its own `phase.started`/`subagent.started`/
+  `subagent.stopped`/`phase.finished` events — `run.finished` remains the final event of a completed Run,
+  never followed by a subagent.
   The Critic's `subagent.stopped` carries a projection of its verdict, never the verdict unchanged: its
   `gateResult` is a real `gates.py --json` payload, and `runlog.py append` fails loudly on any
   `command`/`output`-tokenized field at any depth (its own rule), which a real `gates[].command` and
@@ -124,14 +128,22 @@ Every script provides `--help`, and data-producing paths support `--json`.
   with its evidence and proposed target, as an operator decision: the workflow never writes a candidate
   into `AGENTS.md`, `CONTEXT.md`, a template or policy on its own. Pass `args.isLastRound = true` and
   `args.learnerRunLogs` only for that final frontier round; `learnerRunLogs` is the current Run's own
-  Run-log path(s), normally `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`.
+  Run-log path(s), normally `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl`. When the Learner actually
+  runs (recurring evidence found), it is recorded exactly like the Implement, Review and Critic phases —
+  `phase.started`, `subagent.started`, `subagent.stopped` and `phase.finished` — appended after
+  `round.finished` and before `run.finished`, so `run.finished` stays the last event of a completed Run.
+  A skipped Learner phase (no logs, or nothing recurring) records none of those four events.
 
 ## Harness-neutral execution
 
 Use the host harness to ask the operator and spawn agents. Where native workflow scripts, structured
 outputs, parallel agents or worktree isolation are available, use them. Otherwise execute the same
 prompts from the reference files manually and validate their JSON-shaped results before advancing.
-The deterministic scripts and workflow semantics stay identical in every harness.
+The deterministic scripts and workflow semantics stay identical in every harness. The host's command
+runner contract is `runCommand(command, { cwd, input })`: `input`, when supplied, must be written to the
+command's stdin, not appended to the command line. Every recorded Run event goes through
+`runlog.py append <unitId> <runId>` this way, with the event JSON as `input` — a harness that implements
+`runCommand` without stdin support breaks every recorded round, not just this one.
 
 ## References
 

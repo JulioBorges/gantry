@@ -1397,6 +1397,114 @@ Scenario: greet a user
             self.assertEqual(["test commit"], implement_result["commits"])
             self.assertEqual("workflow execution", implement_result["summary"])
 
+    def test_round_workflow_records_the_learner_phase_before_run_finished(self) -> None:
+        # The optional Learner phase, when it actually runs, must be recorded exactly like every other
+        # phase (phase.started / subagent.started / subagent.stopped / phase.finished) and must be
+        # recorded strictly between round.finished and run.finished, so run.finished stays the Run log's
+        # last event and no subagent runs after the Run's own recorded completion.
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "learnround#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True,
+            ).stdout.strip()
+
+            # A prior Run log containing the same refutation evidence text on two different Issues, so
+            # `learner.py` extracts exactly one recurring lesson candidate from it.
+            state_root = Path(state_dir)
+            prior_log = state_root / "fixtures" / "prior-run.jsonl"
+            prior_log.parent.mkdir(parents=True, exist_ok=True)
+            prior_events = [
+                {
+                    "ts": "2026-09-13T00:00:00Z", "run": "prior-run", "event": "refutation",
+                    "issue": "priorx#01", "phase": "Critic", "data": {"message": "criterion 3 has no test"},
+                },
+                {
+                    "ts": "2026-09-13T00:05:00Z", "run": "prior-run", "event": "refutation",
+                    "issue": "priorx#02", "phase": "Critic", "data": {"message": "criterion 3 has no test"},
+                },
+            ]
+            prior_log.write_text(
+                "\n".join(json.dumps(event) for event in prior_events) + "\n", encoding="utf-8",
+            )
+
+            unit_id = "efefefefefef"
+            run_id = "run-learnround-1"
+
+            run = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{"ref": "learnround#01", "path": str(issue.relative_to(root)), "title": "Learn round", "specPath": ".scratch/learnround/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/learnround",
+                    "baseRef": base_ref,
+                    "isolate": False,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-14",
+                    "commandMode": "real",
+                    "runId": run_id,
+                    "unitId": unit_id,
+                    "stateRoot": str(state_root),
+                    "tier": "reference",
+                    "isLastRound": True,
+                    "learnerRunLogs": [str(prior_log)],
+                    "criticResult": {
+                        "criteria": self.critic_evidence(root, issue),
+                    },
+                },
+            )
+
+            self.assertIsNone(run["error"], run["error"])
+            self.assertEqual("done", run["result"]["results"][0]["outcome"])
+            self.assertTrue(run["result"]["candidates"])
+
+            events = self.read_run_log_events(state_root, unit_id, run_id)
+            names = [event["event"] for event in events]
+
+            # run.finished is emitted exactly once and is the very last event in the log.
+            self.assertEqual(1, names.count("run.finished"))
+            self.assertEqual("run.finished", names[-1])
+
+            round_finished_index = names.index("round.finished")
+            run_finished_index = names.index("run.finished")
+
+            learn_phase_events = [
+                event for event in events
+                if event.get("phase") == "Learn"
+            ]
+            learn_event_names = [event["event"] for event in learn_phase_events]
+            self.assertEqual(
+                ["phase.started", "subagent.started", "subagent.stopped", "phase.finished"],
+                learn_event_names,
+            )
+            for event in learn_phase_events:
+                # Every phase.started/phase.finished event requires an `issue` per runlog.py's own
+                # rule; the Learn phase is not scoped to one Issue, so it uses the reserved,
+                # non-Issue reference documented in round-workflow.md.
+                self.assertEqual("learn#00", event["issue"])
+
+            learn_indexes = [events.index(event) for event in learn_phase_events]
+            self.assertTrue(all(round_finished_index < index < run_finished_index for index in learn_indexes))
+
+            subagent_started = next(event for event in learn_phase_events if event["event"] == "subagent.started")
+            self.assertEqual("learner", subagent_started["data"]["role"])
+            subagent_stopped = next(event for event in learn_phase_events if event["event"] == "subagent.stopped")
+            self.assertEqual("learner", subagent_stopped["data"]["role"])
+            self.assertIn("result", subagent_stopped["data"])
+            self.assertTrue(subagent_stopped["data"]["result"]["candidates"])
+
     def test_round_workflow_projects_a_real_gates_json_critic_verdict_before_recording_it(self) -> None:
         # A real Critic runs `gates.py --run --diff-base <baseRef> --json` and returns that payload
         # unchanged in `gateResult`, per its own prompt contract. `gates.py --json`'s real shape carries
