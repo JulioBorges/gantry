@@ -46,6 +46,15 @@ keeps the Run log a record of the Critic's role result and reasoning, never of c
 full verdict (including the untouched `gateResult`) still drives `criticAccepted` and the workflow's own
 structured output. Every other role's result reaches `subagent.stopped` unprojected, and `runlog.py`
 still fails loudly if any of them carries prohibited data.
+Before any agent works in a worktree, the workflow marks that worktree with the Run
+(`runlog.py mark <runId> --cwd <worktree>`, written into the worktree's own git directory): the
+repository root at the start of every round, and each Issue worktree as it is assigned. A git hook
+inherits whatever environment shelled out to `git`, so `GANTRY_RUN_ID` cannot be relied on to reach
+`pre-commit`/`pre-push`; the marker is how they resolve the Run instead, which is what makes their
+`hook.denied` recording a guarantee rather than a best effort. Marks are cleared (`runlog.py unmark`)
+only when the Run itself ends — the last round, or a cancelled one — never between rounds of the same
+Run, and never across worktrees: git keeps one git directory per worktree, so two worktrees of the
+same execution unit running different Runs cannot attribute a denial to each other.
 Preflight resolves `args.runId` and `args.unitId` once per Run and never rereads the log to decide
 readiness or completion — only `frontier.py`, Issue `Status:` lines and `roadmap.py` decide that. When
 `args.priorRun` names the Issue being continued (`args.priorRun.issue`), its preserved worktree, branch
@@ -205,6 +214,30 @@ async function appendRunEvent(event, issueRef, phaseName, data) {
   )
 }
 
+// A git hook inherits the environment of whatever shelled out to `git`, which no harness
+// controls, so `GANTRY_RUN_ID` cannot be relied on to reach `pre-commit`/`pre-push`. Every
+// worktree this Run works in is therefore marked with the Run before any agent runs there
+// (`runlog.py mark`, which writes into that worktree's own git directory); the hooks read it
+// back through `runlog.resolve_hook_run`, which is what makes their `hook.denied` recording a
+// guarantee. The marks are cleared when the Run itself ends, never between rounds.
+const markedWorktrees = new Set()
+
+async function markRunIn(worktree) {
+  if (!runLogEnabled || !worktree || markedWorktrees.has(worktree)) return
+  await runWorkflowCommand(
+    `python3 "${scripts}/runlog.py" mark '${A.runId}' --cwd ${shellQuote(worktree)}${stateRootFlag}`,
+    { cwd: worktree },
+  )
+  markedWorktrees.add(worktree)
+}
+
+async function unmarkRun() {
+  for (const worktree of markedWorktrees) {
+    await runCommand(`python3 "${scripts}/runlog.py" unmark --cwd ${shellQuote(worktree)}`, { cwd: A.repoRoot })
+  }
+  markedWorktrees.clear()
+}
+
 function priorAssignment(issue) {
   return A.priorRun && A.priorRun.issue === issue.ref ? A.priorRun : null
 }
@@ -236,6 +269,7 @@ if (runLogEnabled && isFirstRound) {
   }
 }
 if (runLogEnabled) {
+  await markRunIn(A.repoRoot)
   await appendRunEvent('round.started', undefined, undefined, { round: A.round })
 }
 
@@ -404,8 +438,9 @@ Implement only this Issue. Invoke the \`tdd\` skill and work behavior by behavio
 code → refactor. Keep tests real where the criterion requires a real process, file, repository or command.
 Run \`python3 ${scripts}/gates.py --run --diff-base ${A.baseRef} --cwd "$(pwd)"\` before returning.
 Never edit ROADMAP.md, Status, or criteria checkboxes. Never force-push, and never skip, disable
-or weaken a test. Never bypass the repository git hooks: no \`--no-verify\`, no \`core.hooksPath\`
-override, no \`--git-dir\`/\`GIT_DIR=\`. Commit small changes and leave a clean tree.
+or weaken a test. Never bypass the repository git hooks: no \`--no-verify\` or \`-n\`, no
+\`core.hooksPath\` override in any spelling, no \`--git-dir\`/\`GIT_DIR=\`, no \`GIT_CONFIG_*\`.
+Commit small changes and leave a clean tree.
 Effective Git policy: target ${policy.git.target}, prefix ${policy.git.prefix}.
 ${feedback ? `Fix every item first:\n${feedback.items.map((item, index) => `${index + 1}. ${typeof item === 'string' ? item : `${item.finding} → ${item.fix}`}`).join('\n')}` : ''}
 Return worktree, branch, commits, summary, testsAdded, gatesResult, decisions and blockers as structured output.`
@@ -431,8 +466,9 @@ and requirements. Return that parsed result unchanged in \`gateResult\`; derive 
 Require a clean tree and commits after ${A.baseRef}. Inspect the diff for skipped,
 disabled or mock-replaced tests, TODO/FIXME/not implemented text, Status/checkbox/ROADMAP edits, and scope
 creep. Check \`git reflog\` and the branch history for a forced rewrite; a force-push is a refutation on
-its own. So is any commit or push made with \`--no-verify\` or under a \`core.hooksPath\`/\`--git-dir\`/
-\`GIT_DIR=\` override, and any test-skip pattern that reached HEAD despite the hooks. Verify the Review
+its own. So is any commit or push made with \`--no-verify\`/\`-n\` or under a
+\`core.hooksPath\`/\`--git-dir\`/\`GIT_DIR=\`/\`GIT_CONFIG_*\` override, and any test-skip pattern
+that reached HEAD despite the hooks. Verify the Review
 findings were actually fixed. Do not edit.
 Return complete only for gate-green, clean, fully evidenced work; otherwise ordered requiredFixes,
 refutations, gateResult, gateFailures and decisionsForOperator as structured output.`
@@ -444,6 +480,7 @@ async function implement(issue, feedback, previous) {
   const options = {
     label: `implement:${issue.ref}`, phase: 'Implement', model: A.models.implement, cwd: assigned.worktree,
   }
+  await markRunIn(assigned.worktree)
   await appendRunEvent('phase.started', issue.ref, 'Implement', { worktree: assigned.worktree })
   await appendRunEvent('subagent.started', issue.ref, 'Implement', { role: 'implementer' })
   const result = await requestRole('implementer', implementPrompt(issue, feedback, assigned), options)
@@ -636,6 +673,9 @@ if (integrationStopped) {
 const candidates = A.isLastRound ? await learn() : []
 if (!integrationStopped && A.isLastRound) {
   await appendRunEvent('run.finished', undefined, undefined, { round: A.round })
+}
+if (integrationStopped || A.isLastRound) {
+  await unmarkRun()
 }
 return { round: A.round, date: A.date, results: deliveries, ...(A.isLastRound ? { candidates } : {}) }
 ```

@@ -148,8 +148,8 @@ class NoHooksFallbackTests(unittest.TestCase):
     def test_implementer_prompt_states_every_protected_rule(self) -> None:
         self.assertIn(
             "Never edit ROADMAP.md, Status, or criteria checkboxes. Never force-push, and never skip, disable\n"
-            "or weaken a test. Never bypass the repository git hooks: no \\`--no-verify\\`, no \\`core.hooksPath\\`\n"
-            "override, no \\`--git-dir\\`/\\`GIT_DIR=\\`.",
+            "or weaken a test. Never bypass the repository git hooks: no \\`--no-verify\\` or \\`-n\\`, no\n"
+            "\\`core.hooksPath\\` override in any spelling, no \\`--git-dir\\`/\\`GIT_DIR=\\`, no \\`GIT_CONFIG_*\\`.",
             self.round_workflow,
         )
 
@@ -158,8 +158,9 @@ class NoHooksFallbackTests(unittest.TestCase):
         self.assertIn("skipped,\ndisabled or mock-replaced tests", self.round_workflow)
         self.assertIn("forced rewrite", self.round_workflow)
         self.assertIn(
-            "So is any commit or push made with \\`--no-verify\\` or under a \\`core.hooksPath\\`/\\`--git-dir\\`/\n"
-            "\\`GIT_DIR=\\` override, and any test-skip pattern that reached HEAD despite the hooks.",
+            "So is any commit or push made with \\`--no-verify\\`/\\`-n\\` or under a\n"
+            "\\`core.hooksPath\\`/\\`--git-dir\\`/\\`GIT_DIR=\\`/\\`GIT_CONFIG_*\\` override, and any test-skip pattern\n"
+            "that reached HEAD despite the hooks.",
             self.round_workflow,
         )
 

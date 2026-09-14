@@ -1397,6 +1397,68 @@ Scenario: greet a user
             self.assertEqual(["test commit"], implement_result["commits"])
             self.assertEqual("workflow execution", implement_result["summary"])
 
+    def test_round_workflow_marks_the_worktree_with_the_run_before_any_agent_and_clears_it_at_the_end(self) -> None:
+        """The marker is what makes a git hook's `hook.denied` recording a guarantee."""
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "marked#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+
+            state_root = Path(state_dir)
+            unit_id = "cdcdcdcdcdcd"
+            run_id = "run-marked-1"
+            marker = root / ".git" / "gantry" / "current-run.json"
+
+            def invoke(is_first_round: bool, is_last_round: bool, round_number: int) -> dict:
+                return self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": round_number,
+                        "issues": [{"ref": "marked#01", "path": str(issue.relative_to(root)), "title": "Marked", "specPath": ".scratch/marked/spec.md"}],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": "gantry/marked",
+                        "baseRef": base_ref,
+                        "isolate": False,
+                        "correctionBudget": 2,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                        "paths": {},
+                        "date": "2026-09-14",
+                        "commandMode": "real",
+                        "runId": run_id,
+                        "unitId": unit_id,
+                        "stateRoot": str(state_root),
+                        "tier": "reference",
+                        "isFirstRound": is_first_round,
+                        "isLastRound": is_last_round,
+                        "criticResult": {"criteria": self.critic_evidence(root, issue)},
+                    },
+                )
+
+            first = invoke(True, False, 1)
+            self.assertIsNone(first["error"], first["error"])
+            mark_calls = [call for call in first["commandCalls"] if "runlog.py" in call["command"] and " mark " in call["command"]]
+            self.assertTrue(mark_calls, first["commandCalls"])
+            self.assertIn(str(root), mark_calls[0]["command"])
+            self.assertIn(run_id, mark_calls[0]["command"])
+            implement_call = next(call for call in first["calls"] if call["label"].startswith("implement:"))
+            self.assertLess(mark_calls[0]["sequence"], implement_call["sequence"], "the worktree is marked before any agent works in it")
+
+            self.assertTrue(marker.is_file(), "a Run that continues into another round keeps its marker")
+            self.assertEqual(run_id, json.loads(marker.read_text(encoding="utf-8"))["run"])
+
+            last = invoke(False, True, 2)
+            self.assertIsNone(last["error"], last["error"])
+            self.assertFalse(marker.exists(), "the marker is cleared when the Run ends")
+
     def test_round_workflow_records_the_learner_phase_before_run_finished(self) -> None:
         # The optional Learner phase, when it actually runs, must be recorded exactly like every other
         # phase (phase.started / subagent.started / subagent.stopped / phase.finished) and must be

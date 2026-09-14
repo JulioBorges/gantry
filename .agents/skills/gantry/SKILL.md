@@ -97,6 +97,13 @@ Every script provides `--help`, and data-producing paths support `--json`.
   `frontier.py` keeps offering it, and only `roadmap.py done` after Critic acceptance ever changes an
   Issue's authoritative status. Omitting `runId` or `unitId` disables recording entirely and leaves the
   round behaviorally identical, so a harness with no resolved Run log keeps working.
+- Before any agent works in a worktree, the round workflow marks it with the Run — `runlog.py mark
+  <runId> --cwd <worktree>`, stored in that worktree's own git directory — and clears it with
+  `runlog.py unmark` when the Run ends, never between rounds. The tracked git hooks
+  (`hooks/git/pre-commit`, `hooks/git/pre-push`) read that marker when the environment they inherit
+  carries no `GANTRY_RUN_ID`, which is what makes a denial inside a Run always recorded as
+  `hook.denied`; git keeps one git directory per worktree, so concurrent worktrees of one execution
+  unit never attribute a denial to each other's Run.
 - Use `frontier.py --scope <scope> --json` as the only authority for dependency rounds. Exit 1 for a
   cyclic or dangling blocker graph. Parked `draft`, `blocked`, and `needs-operator` Issues are reported
   and skipped.
