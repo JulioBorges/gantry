@@ -21,6 +21,7 @@ import datetime
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -74,11 +75,14 @@ BASH_TOOLS = {"bash", "shell", "exec"}
 ISSUE_FILE_RE = re.compile(r"^\d{2,}-[a-z0-9-]+\.md$")
 STATUS_LINE_RE = re.compile(r"(?m)^Status:\s*(\S+)")
 CHECKBOX_LINE_RE = re.compile(r"(?m)^\s*-\s\[[ xX]\]")
+CHECKBOX_FULL_LINE_RE = re.compile(r"(?m)^\s*-\s\[[ xX]\].*$")
 CHECKED_CHECKBOX_RE = re.compile(r"(?m)^\s*-\s\[[xX]\]")
 PUSH_RE = re.compile(r"\bgit\b[^&|;]*\bpush\b")
 FORCE_FLAG_RE = re.compile(r"(--force(-with-lease)?\b|(?:^|\s)-f\b)")
 FORCE_REFSPEC_RE = re.compile(r"(?:^|\s)\+\S")
 COMMIT_RE = re.compile(r"\bgit\b[^&|;]*\bcommit\b")
+COMMIT_SEGMENT_RE = re.compile(r"\bgit\b[^&|;]*\bcommit\b[^&|;]*")
+GIT_ADD_SEGMENT_RE = re.compile(r"\bgit\b[^&|;]*\badd\b[^&|;]*")
 TEST_SKIP_PATTERNS = [
     re.compile(pattern)
     for pattern in (
@@ -225,6 +229,161 @@ def staged_diff_skip_match(cwd: Path) -> str | None:
     return None
 
 
+def tracked_worktree_skip_match(cwd: Path) -> str | None:
+    """First tracked file (staged or unstaged) whose diff against HEAD adds a test-skip pattern.
+
+    Used only when a commit invocation may bypass a plain `--cached` check -- a
+    `git add`-then-commit shape or `-a`/`--all`/`-A` on the commit itself -- since
+    `git diff HEAD` folds in unstaged changes that `git diff --cached` alone would miss.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "HEAD", "--unified=0"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    current_file: str | None = None
+    for line in result.stdout.splitlines():
+        if line.startswith("+++ "):
+            current_file = line[6:] if line.startswith("+++ b/") else line[4:]
+            continue
+        if line.startswith("+++"):
+            continue
+        if line.startswith("+"):
+            added = line[1:]
+            if any(pattern.search(added) for pattern in TEST_SKIP_PATTERNS):
+                return current_file
+    return None
+
+
+def list_untracked_files(cwd: Path) -> list[str]:
+    """Every untracked path, best-effort; an empty list on any git failure."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+    files: list[str] = []
+    for line in result.stdout.splitlines():
+        if line.startswith("?? "):
+            files.append(line[3:].strip().strip('"'))
+    return files
+
+
+def file_has_skip_pattern(path: Path) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return any(pattern.search(line) for line in text.splitlines() for pattern in TEST_SKIP_PATTERNS)
+
+
+def extract_git_add_targets(command: str) -> tuple[list[str], bool] | None:
+    """The files named by the first `git add` segment in `command`, and whether it adds everything.
+
+    Returns `None` when the command has no `git add` segment at all.
+    """
+    match = GIT_ADD_SEGMENT_RE.search(command)
+    if not match:
+        return None
+    try:
+        tokens = shlex.split(match.group(0))
+    except ValueError:
+        tokens = match.group(0).split()
+    if "add" not in tokens:
+        return None
+    rest = tokens[tokens.index("add") + 1 :]
+    add_all = False
+    targets: list[str] = []
+    for token in rest:
+        if token in (".", "-A", "--all"):
+            add_all = True
+            continue
+        if token.startswith("-"):
+            continue
+        targets.append(token)
+    return targets, add_all
+
+
+def commit_uses_all_flag(command: str) -> bool:
+    """True when the `git commit` segment of `command` passes `-a`, `-A`, `--all`, or a combined
+    short flag containing one of those letters (e.g. `-am`)."""
+    match = COMMIT_SEGMENT_RE.search(command)
+    if not match:
+        return False
+    try:
+        tokens = shlex.split(match.group(0))
+    except ValueError:
+        tokens = match.group(0).split()
+    for token in tokens:
+        if token in ("-a", "-A", "--all"):
+            return True
+        if token.startswith("-") and not token.startswith("--") and len(token) > 1 and ("a" in token[1:] or "A" in token[1:]):
+            return True
+    return False
+
+
+def untracked_skip_match(cwd: Path, targets: list[str], add_all: bool) -> str | None:
+    """First untracked file named by `targets` (or any untracked file, when `add_all`) with a skip pattern."""
+    untracked = list_untracked_files(cwd)
+    if add_all:
+        candidates = untracked
+    else:
+        target_set = set(targets)
+        candidates = [
+            relpath
+            for relpath in untracked
+            if relpath in target_set or any(relpath.startswith(target.rstrip("/") + "/") for target in targets)
+        ]
+    for relpath in candidates:
+        if file_has_skip_pattern(cwd / relpath):
+            return relpath
+    return None
+
+
+def apply_edits(original: str, arguments: dict) -> str | None:
+    """Apply Edit/MultiEdit-style `old_string` -> `new_string` edits to `original`, in order.
+
+    Returns `None` when an edit is malformed or its `old_string` is not literally present --
+    the same case in which the real tool call would itself fail -- so callers fall back to
+    the coarser text-based check instead of trusting a simulation that could not have happened.
+    """
+    edits = arguments.get("edits")
+    if not isinstance(edits, list):
+        old = arguments.get("old_string", arguments.get("oldString"))
+        new = arguments.get("new_string", arguments.get("newString"))
+        if not isinstance(old, str) or not isinstance(new, str):
+            return None
+        edits = [{"old_string": old, "new_string": new}]
+    text = original
+    for edit in edits:
+        if not isinstance(edit, dict):
+            return None
+        old = edit.get("old_string", edit.get("oldString"))
+        new = edit.get("new_string", edit.get("newString"))
+        if not isinstance(old, str) or not isinstance(new, str):
+            return None
+        if old not in text:
+            return None
+        text = text.replace(old, new, 1)
+    return text
+
+
 def decide(payload: dict, cwd: Path) -> Decision:
     """Evaluate one tool-invocation payload against the protected rule set."""
     if not isinstance(payload, dict):
@@ -241,9 +400,9 @@ def decide(payload: dict, cwd: Path) -> Decision:
         if basename == "ROADMAP.md":
             return Decision(False, "roadmap-protected", path)
         if ISSUE_FILE_RE.match(basename):
+            target = Path(path)
+            target = target if target.is_absolute() else cwd / target
             if normalized_name in {"write", "multiedit"}:
-                target = Path(path)
-                target = target if target.is_absolute() else cwd / target
                 # The draft exemption only ever applies to *creating* a new Issue file.
                 # Once the target exists, its Status/checkbox fields are already under
                 # protection, and the new content must fall through to the same
@@ -251,6 +410,23 @@ def decide(payload: dict, cwd: Path) -> Decision:
                 # never exempted just because the new content, read alone, looks draft-safe.
                 if not target.exists() and is_draft_safe(extract_new_text(arguments)):
                     return Decision(True)
+            if normalized_name in {"edit", "multiedit"} and target.exists():
+                # Compare the whole file before/after applying the edit in memory, so a
+                # value-only edit (e.g. 'ready-for-agent' -> 'done', or '[ ]' -> '[x]'
+                # without the '- ' scaffolding) is caught even though neither its
+                # old_string nor its new_string alone spells 'Status:' or a full checkbox line.
+                try:
+                    original = target.read_text(encoding="utf-8")
+                except OSError:
+                    original = None
+                if original is not None:
+                    updated = apply_edits(original, arguments)
+                    if updated is not None:
+                        if STATUS_LINE_RE.findall(original) != STATUS_LINE_RE.findall(updated):
+                            return Decision(False, "issue-status-protected", path)
+                        if CHECKBOX_FULL_LINE_RE.findall(original) != CHECKBOX_FULL_LINE_RE.findall(updated):
+                            return Decision(False, "issue-checkbox-protected", path)
+                        return Decision(True)
             changed = extract_text(arguments)
             if STATUS_LINE_RE.search(changed):
                 return Decision(False, "issue-status-protected", path)
@@ -266,6 +442,13 @@ def decide(payload: dict, cwd: Path) -> Decision:
             return Decision(False, "no-force-push", command.strip()[:200])
         if COMMIT_RE.search(command):
             matched_file = staged_diff_skip_match(cwd)
+            if not matched_file:
+                add_targets = extract_git_add_targets(command)
+                if add_targets is not None or commit_uses_all_flag(command):
+                    matched_file = tracked_worktree_skip_match(cwd)
+                if not matched_file and add_targets is not None:
+                    targets, add_all = add_targets
+                    matched_file = untracked_skip_match(cwd, targets, add_all)
             if matched_file:
                 return Decision(False, "no-test-skip-commit", matched_file)
         return Decision(True)

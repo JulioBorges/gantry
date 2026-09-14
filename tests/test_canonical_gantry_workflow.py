@@ -1316,6 +1316,7 @@ Slice: `legacy#07`
             "pathlib",
             "re",
             "runlog",
+            "shlex",
             "shutil",
             "subprocess",
             "sys",

@@ -104,6 +104,32 @@ hooks[{json.dumps(event)}]({json.dumps(payload)}, {{}}).then(
             self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
             self.assertIn("resolved", allowed.stdout)
 
+    def test_tool_execute_before_uses_opencodes_own_declared_payload_fields(self) -> None:
+        """Proven against the plugin's own capability payload_fields: `tool`, `args`, `sessionID`."""
+        self.assertEqual(["tool", "args", "sessionID"], self.capabilities["payload_fields"])
+        with tempfile.TemporaryDirectory() as temp:
+            project_dir = Path(temp)
+            denied = self.run_hook(
+                project_dir,
+                "tool.execute.before",
+                {
+                    "tool": "edit",
+                    "sessionID": "sess-opencode-1",
+                    "args": {"filePath": "ROADMAP.md", "oldString": "a", "newString": "b"},
+                },
+            )
+            self.assertEqual(1, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("rejected", denied.stdout)
+            self.assertIn("roadmap-protected", denied.stdout)
+
+            allowed = self.run_hook(
+                project_dir,
+                "tool.execute.before",
+                {"tool": "read", "args": {"filePath": "ROADMAP.md"}},
+            )
+            self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+            self.assertIn("resolved", allowed.stdout)
+
 
 class CodexHookWiringTests(unittest.TestCase):
     def test_placeholder_file_exists_and_grants_no_authority(self) -> None:

@@ -250,6 +250,92 @@ class GuardHookTests(unittest.TestCase):
             events = [json.loads(line) for line in (state / unit / "runs" / f"{run}.jsonl").read_text(encoding="utf-8").splitlines()]
             self.assertEqual(1, len([event for event in events if event["event"] == "hook.denied"]))
 
+    def test_denies_value_only_status_edit_on_an_existing_issue(self) -> None:
+        """old_string/new_string that never spell 'Status:' must still be caught by comparing the file."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text(
+                "Type: issue\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] Some criterion\n",
+                encoding="utf-8",
+            )
+
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    "old_string": "ready-for-agent",
+                    "new_string": "done",
+                },
+            }
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("issue-status-protected", denied.stdout)
+            self.assertIn("10-new.md", denied.stdout)
+
+    def test_denies_value_only_checkbox_edit_on_an_existing_issue(self) -> None:
+        """old_string/new_string missing the leading '- ' scaffolding must still be caught."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text(
+                "Type: issue\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] Some criterion\n",
+                encoding="utf-8",
+            )
+
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    "old_string": "[ ] Some criterion",
+                    "new_string": "[x] Some criterion",
+                },
+            }
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("issue-checkbox-protected", denied.stdout)
+
+    def test_allows_a_value_only_edit_that_does_not_touch_status_or_checkboxes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            issues_dir = root / ".scratch" / "sample" / "issues"
+            issues_dir.mkdir(parents=True)
+            issue_path = issues_dir / "10-new.md"
+            issue_path.write_text(
+                "Type: issue\nStatus: ready-for-agent\n\n## Comments\n\nold note\n",
+                encoding="utf-8",
+            )
+
+            payload = {
+                "session_id": "sess-1",
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": ".scratch/sample/issues/10-new.md",
+                    "old_string": "old note",
+                    "new_string": "new note",
+                },
+            }
+            allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+
     # -- subagent + degradation --------------------------------------------------------------
 
     def test_subagent_stop_appends_event_and_malformed_payload_still_degrades_safely(self) -> None:
@@ -415,6 +501,90 @@ class GuardHookTests(unittest.TestCase):
             subprocess.run(["git", "add", "app_test.py"], cwd=root, check=True)
             allowed_commit = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=commit_payload)
             self.assertEqual(0, allowed_commit.returncode)
+
+    def test_denies_git_add_then_commit_of_an_unstaged_skip_file(self) -> None:
+        """'git add <file> && git commit' must be checked against the working tree, not just the index."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            (root / "app_test.py").write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            # Deliberately never actually run `git add`: guard.py must not trust the index alone.
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git add app_test.py && git commit -m x"}}
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("no-test-skip-commit", denied.stdout)
+            self.assertIn("app_test.py", denied.stdout)
+
+    def test_allows_git_add_then_commit_of_a_clean_unstaged_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            (root / "app_test.py").write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git add app_test.py && git commit -m x"}}
+            allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+
+    def test_denies_commit_dash_a_of_a_tracked_but_unstaged_skip_edit(self) -> None:
+        """'git commit -am' must be checked against unstaged tracked changes too, not just --cached."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            test_file = root / "app_test.py"
+            test_file.write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "app_test.py"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "add test"], cwd=root, check=True)
+
+            # Now modify the tracked file without staging the change.
+            test_file.write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    @unittest.skip('later')\n    def test_x(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git commit -am x"}}
+            denied = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertIn("no-test-skip-commit", denied.stdout)
+            self.assertIn("app_test.py", denied.stdout)
+
+    def test_allows_commit_dash_a_of_a_clean_tracked_unstaged_edit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            run = self.seed_run(root, state)
+
+            test_file = root / "app_test.py"
+            test_file.write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "app_test.py"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "add test"], cwd=root, check=True)
+
+            test_file.write_text(
+                "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n    def test_y(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": "git commit -am x"}}
+            allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=payload)
+            self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
 
     def test_allows_committing_guards_own_source_despite_skip_pattern_literals(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
