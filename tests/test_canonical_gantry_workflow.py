@@ -218,10 +218,16 @@ const pipeline = async (items, ...steps) => {{
 }};
 const phase = () => {{}};
 const log = () => {{}};
-const result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'runCommand', source)(
-  args, agent, parallel, pipeline, phase, log, runCommand,
-);
-process.stdout.write(JSON.stringify({{ result, calls, commandCalls }}));
+let result = null;
+let error = null;
+try {{
+  result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'runCommand', source)(
+    args, agent, parallel, pipeline, phase, log, runCommand,
+  );
+}} catch (err) {{
+  error = err && err.message ? err.message : String(err);
+}}
+process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
 """
         result = subprocess.run(
             ["node", "--input-type=module", "--eval", driver],
@@ -1325,11 +1331,11 @@ Spec: `.scratch/planned/spec.md`
     def test_preflight_derives_corrections_spent_from_inflight_refutations_and_resumes_at_the_ceiling(self) -> None:
         # Covers SKILL.md's documented derivation rule: `runlog.py inflight` reports only `run`, `issue`,
         # `phase` and `worktree` (plus Run-level metadata) — never `correctionsSpent` or `branch` — so this
-        # proves preflight must derive `correctionsSpent` per `derive_corrections_spent` (this Run's
-        # `run.resumed.data.correctionsSpent`, if any, plus every `refutation` for the matched Issue that is
-        # later followed by a `phase.started` `Implement` event, i.e. a refutation whose correction pass
-        # actually started), and that `branch` may be omitted because `reference/round-workflow.md`'s
-        # `implementationLocation` derives it itself.
+        # proves preflight must derive `correctionsSpent` by invoking the shipped `runlog.py corrections
+        # <unitId> <runId> <issue> --json` query (this Run's `run.resumed.data.correctionsSpent`, if any,
+        # plus every `refutation` for the matched Issue that is later followed by a `phase.started`
+        # `Implement` event, i.e. a refutation whose correction pass actually started), and that `branch`
+        # may be omitted because `reference/round-workflow.md`'s `implementationLocation` derives it itself.
         with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
             root = Path(temp)
             self.init_repo(root)
@@ -1400,9 +1406,9 @@ Spec: `.scratch/planned/spec.md`
                 self.assertNotIn("correctionsSpent", match)
                 self.assertNotIn("branch", match)
 
-                # Apply the actual derivation helper (SKILL.md's documented rule) to the match's own Run log.
-                prior_run_events = self.read_run_log_events(state_root, unit_id, prior_run_id)
-                corrections_spent = self.derive_corrections_spent(prior_run_events, match["issue"])
+                # Invoke the shipped `runlog.py corrections` query (SKILL.md's documented preflight
+                # step) against the match's own Run log, rather than a test-local derivation helper.
+                corrections_spent = self.run_corrections_command(state_root, unit_id, match["run"], match["issue"])
                 self.assertEqual(2, corrections_spent)
 
                 run = self.run_workflow(
@@ -1483,23 +1489,202 @@ Spec: `.scratch/planned/spec.md`
             finally:
                 subprocess.run(["git", "worktree", "remove", "--force", str(issue_worktree)], cwd=root, check=False)
 
-    def derive_corrections_spent(self, events: list[dict], issue_ref: str) -> int:
-        """Apply SKILL.md's documented derivation rule to one Run's own event log."""
-        resumed = next((event for event in events if event["event"] == "run.resumed"), None)
-        base = resumed["data"].get("correctionsSpent", 0) if resumed else 0
-        started_corrections = 0
-        for index, event in enumerate(events):
-            if event["event"] != "refutation" or event.get("issue") != issue_ref:
-                continue
-            later = events[index + 1:]
-            if any(
-                later_event["event"] == "phase.started"
-                and later_event.get("issue") == issue_ref
-                and later_event.get("phase") == "Implement"
-                for later_event in later
-            ):
-                started_corrections += 1
-        return base + started_corrections
+    def test_gantry_greeting_offers_and_resumes_a_fixture_interrupted_run_in_its_worktree(self) -> None:
+        # Covers AC1 with the real `fixture/` tree from gantry-migration#16 (not a synthetic stand-in):
+        # a Run interrupted while `greeting#02` was in the Implement phase in worktree W causes the next
+        # `gantry greeting` invocation to offer continuation in W via `runlog.py inflight`; choosing it
+        # appends `run.resumed` with the prior Run id and W, retains spent correction attempts, and keeps
+        # `greeting#02` at `Status: ready-for-agent` until Critic acceptance.
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp) / "fixture-copy"
+            build = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "fixture" / "tools" / "copy_fixture.py"),
+                 "--mode", "approved", "--skill-dir", str(SKILL_DIR), "--dest", str(root)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(0, build.returncode, build.stderr)
+
+            issue = root / ".scratch" / "greeting" / "issues" / "02-greeting-cli.md"
+            before_issue = issue.read_bytes()
+
+            issue_branch = "gantry/greeting-02"
+            issue_worktree = Path(f"{root}.gantry-greeting-02")
+            subprocess.run(["git", "worktree", "add", "--quiet", "-b", issue_branch, str(issue_worktree), "HEAD"], cwd=root, check=True)
+
+            state_root = Path(state_dir)
+            unit_id = "112233445566"
+            prior_run_id = "run-greeting-prior"
+            now_run_id = "run-greeting-now"
+
+            try:
+                # A genuinely interrupted Run: greeting#02 reached the Implement phase in worktree W and
+                # nothing else — no phase.finished, run.cancelled, or run.finished.
+                self.append_runlog_event(state_root, unit_id, prior_run_id, {
+                    "ts": "2026-09-13T09:00:00Z", "run": prior_run_id, "event": "run.started",
+                    "data": {"repositoryRoot": str(root), "policyHash": "greetingpolicy", "tier": "reference", "staleAfterSeconds": 900},
+                })
+                self.append_runlog_event(state_root, unit_id, prior_run_id, {
+                    "ts": "2026-09-13T09:01:00Z", "run": prior_run_id, "event": "phase.started",
+                    "issue": "greeting#02", "phase": "Implement", "data": {"worktree": str(issue_worktree)},
+                })
+
+                # The next `gantry greeting` invocation queries `runlog.py inflight` and offers W.
+                inflight = subprocess.run(
+                    [sys.executable, str(SCRIPTS / "runlog.py"), "inflight", unit_id, "--state-root", str(state_root), "--json"],
+                    text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(0, inflight.returncode, inflight.stderr)
+                payload = json.loads(inflight.stdout)
+                self.assertEqual(1, len(payload["inflight"]))
+                match = payload["inflight"][0]
+                self.assertEqual("greeting#02", match["issue"])
+                self.assertEqual("Implement", match["phase"])
+                self.assertEqual(str(issue_worktree), match["worktree"])
+
+                corrections_spent = self.run_corrections_command(state_root, unit_id, match["run"], match["issue"])
+                self.assertEqual(0, corrections_spent)
+
+                # Choosing to continue in W resumes round-workflow. The Critic refutes, so this proves
+                # `greeting#02` stays `ready-for-agent` while the Run records the continuation.
+                run = self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": 1,
+                        "issues": [{"ref": "greeting#02", "path": str(issue.relative_to(root)), "title": "Greeting CLI", "specPath": ".scratch/greeting/spec.md"}],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "branch": "gantry/greeting",
+                        "baseRef": "HEAD",
+                        "isolate": True,
+                        "correctionBudget": 2,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                        "paths": {},
+                        "date": "2026-09-13",
+                        "commandMode": "real",
+                        "runId": now_run_id,
+                        "unitId": unit_id,
+                        "stateRoot": str(state_root),
+                        "tier": "reference",
+                        "issueBranch": issue_branch,
+                        "issueWorktree": str(issue_worktree),
+                        "priorRun": {
+                            "run": match["run"], "worktree": match["worktree"], "issue": match["issue"],
+                            "correctionsSpent": corrections_spent, "policyHash": match["policyHash"],
+                        },
+                        "criticResult": {
+                            "complete": False, "criteria": [], "gatesVerdict": "fail",
+                            "gateResult": {"verdict": "fail"}, "gateFailures": ["still not proven"],
+                            "refutations": ["cli.py prints to stderr"], "requiredFixes": ["fix cli.py"],
+                            "decisionsForOperator": [],
+                        },
+                    },
+                )
+
+                delivery = run["result"]["results"][0]
+                self.assertEqual("refuted", delivery["outcome"])
+                self.assertEqual(str(issue_worktree), delivery["worktree"])
+
+                events = self.read_run_log_events(state_root, unit_id, now_run_id)
+                self.assertEqual("run.started", events[0]["event"])
+                resumed = next(event for event in events if event["event"] == "run.resumed")
+                self.assertEqual(prior_run_id, resumed["data"]["priorRun"])
+                self.assertEqual(str(issue_worktree), resumed["data"]["worktree"])
+                self.assertEqual("greeting#02", resumed["data"]["issue"])
+                refutation = next(event for event in events if event["event"] == "refutation")
+                self.assertIn("cli.py prints to stderr", refutation["data"]["refutations"])
+
+                # Status authority stays in the Issue file: greeting#02 keeps Status: ready-for-agent
+                # until the Critic accepts it, and `frontier.py` still reports it as workable.
+                self.assertEqual(before_issue, issue.read_bytes())
+                self.assertIn(b"Status: ready-for-agent", issue.read_bytes())
+                frontier = subprocess.run(
+                    [sys.executable, str(SCRIPTS / "frontier.py"), "--scope", "greeting",
+                     "--scratch", ".scratch", "--json"],
+                    cwd=root, text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(0, frontier.returncode, frontier.stderr)
+                frontier_payload = json.loads(frontier.stdout)
+                self.assertIn("greeting#02", [ref for round_ in frontier_payload["rounds"] for ref in round_])
+                self.assertEqual({}, frontier_payload["parked"])
+            finally:
+                subprocess.run(["git", "worktree", "remove", "--force", str(issue_worktree)], cwd=root, check=False)
+
+    def run_corrections_command(self, state_root: Path, unit_id: str, run_id: str, issue_ref: str) -> int:
+        """Invoke the shipped `runlog.py corrections` query preflight must call (SKILL.md's rule)."""
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "runlog.py"), "corrections", unit_id, run_id, issue_ref,
+             "--state-root", str(state_root), "--json"],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        return json.loads(result.stdout)["correctionsSpent"]
+
+    def test_append_run_event_fails_loudly_when_runlog_rejects_a_prohibited_key(self) -> None:
+        # Covers feedback item 2: `appendRunEvent` must check the exit code of `runlog.py append` and
+        # fail loudly instead of silently discarding a rejected event. `gateResult` permits additional
+        # properties in the Critic result schema, so a `gateResult.diff` field passes role-result
+        # validation but is rejected by `runlog.py`'s own prohibited-key check — this proves the failure
+        # surfaces as a thrown error, not a silently missing line in the Run log.
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "recordfail#01", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+
+            state_root = Path(state_dir)
+            unit_id = "abcdefabcdef"
+            run_id = "run-recordfail-1"
+
+            run = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 1,
+                    "issues": [{"ref": "recordfail#01", "path": str(issue.relative_to(root)), "title": "Record failure", "specPath": ".scratch/recordfail/spec.md"}],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": "gantry/recordfail",
+                    "baseRef": base_ref,
+                    "isolate": False,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-13",
+                    "commandMode": "real",
+                    "runId": run_id,
+                    "unitId": unit_id,
+                    "stateRoot": str(state_root),
+                    "tier": "reference",
+                    "criticResult": {
+                        "criteria": self.critic_evidence(root, issue),
+                        # `gateResult` permits additionalProperties, so this passes result.py's schema,
+                        # but `diff` is a prohibited key at every nesting level in `runlog.py`'s own Run
+                        # log validation.
+                        "gateResult": {"verdict": "pass", "diff": "leaked diff content"},
+                    },
+                },
+            )
+
+            self.assertIsNone(run["result"])
+            self.assertIsNotNone(run["error"])
+            self.assertIn("workflow command failed", run["error"])
+            self.assertIn("runlog.py", run["error"])
+
+            # The rejected event never reaches the log: no subagent.stopped line for the Critic
+            # phase exists, even though the phase.started/subagent.started pair that preceded it do.
+            events = self.read_run_log_events(state_root, unit_id, run_id)
+            self.assertIn("run.started", [event["event"] for event in events])
+            critic_events = [event for event in events if event.get("phase") == "Critic"]
+            self.assertIn("phase.started", [event["event"] for event in critic_events])
+            self.assertIn("subagent.started", [event["event"] for event in critic_events])
+            self.assertNotIn("subagent.stopped", [event["event"] for event in critic_events])
 
     def test_round_workflow_chained_resume_accumulates_corrections_spent_across_runs(self) -> None:
         # Covers feedback item 3: a chain of three Runs, each resuming the last, where the documented
@@ -1544,8 +1729,7 @@ Spec: `.scratch/planned/spec.md`
                 })
                 # No phase.finished, run.cancelled, or run.finished: Run1 is interrupted mid-correction.
 
-                run1_events = self.read_run_log_events(state_root, unit_id, run1_id)
-                run1_corrections = self.derive_corrections_spent(run1_events, "chained#01")
+                run1_corrections = self.run_corrections_command(state_root, unit_id, run1_id, "chained#01")
                 self.assertEqual(1, run1_corrections)
 
                 # Run2 resumes Run1, carrying the derived correctionsSpent forward explicitly, and its
@@ -1609,7 +1793,7 @@ Spec: `.scratch/planned/spec.md`
                 self.assertEqual(run1_id, resumed2["data"]["priorRun"])
                 self.assertEqual("chained#01", resumed2["data"]["issue"])
 
-                run2_corrections = self.derive_corrections_spent(run2_events, "chained#01")
+                run2_corrections = self.run_corrections_command(state_root, unit_id, run2_id, "chained#01")
                 self.assertEqual(2, run2_corrections)
                 blocked2 = next(event for event in run2_events if event["event"] == "issue.blocked")
                 self.assertEqual(2, blocked2["data"]["corrections"])

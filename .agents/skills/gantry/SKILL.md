@@ -41,14 +41,16 @@ Every script provides `--help`, and data-producing paths support `--json`.
   phase and its preserved worktree; preflight offers the operator continuation there before doing anything
   else. `runlog.py inflight` reports only `run`, `issue`, `phase`, `worktree`, `repositoryRoot`,
   `policyHash`, `tier` and `staleAfterSeconds` — it does not report `correctionsSpent` or `branch`, so
-  preflight derives them before building `args.priorRun`: read the match's own Run log
-  (`~/.gantry/state/<unitId>/runs/<match.run>.jsonl`, or `--state-root` when overridden) and set
-  `correctionsSpent` to the sum of two counts: (1) the `run.resumed.data.correctionsSpent` recorded in
+  preflight derives them before building `args.priorRun` by invoking the shipped query
+  `runlog.py corrections <unitId> <match.run> <match.issue> --json`, which reads the match's own Run log
+  (`~/.gantry/state/<unitId>/runs/<match.run>.jsonl`, or `--state-root` when overridden) and returns
+  `correctionsSpent` as the sum of two counts: (1) the `run.resumed.data.correctionsSpent` recorded in
   that same Run log, or `0` when the log has no `run.resumed` event; plus (2) the number of `refutation`
   events in that log whose `issue` equals `match.issue` and that are each followed, later in the log, by
   a `phase.started` event for `Implement` on that same Issue — i.e. only refutations whose correction
-  pass actually started count toward the spent budget. `branch` is optional: when omitted,
-  `reference/round-workflow.md` derives it itself from
+  pass actually started count toward the spent budget. Neither this derivation rule nor `correctionsSpent`
+  itself is ever computed by prose or by test code: this shipped command is the single implementation.
+  `branch` is optional: when omitted, `reference/round-workflow.md` derives it itself from
   `common.issue_branch` and verifies it with `git branch --show-current` in the preserved worktree
   (see `implementationLocation`). Only explicit acceptance carries the derived match forward as
   `args.priorRun` (`run`, `worktree`, `issue`, `correctionsSpent`, `policyHash`, and `branch` when known)
