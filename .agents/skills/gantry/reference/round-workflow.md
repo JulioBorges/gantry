@@ -11,8 +11,9 @@ without it.
 
 When the caller also supplies `args.runId` and `args.unitId` (the value of
 `runlog.py unit-id --cwd <repoRoot>`), this workflow appends every lifecycle event through
-`runlog.py append <unitId> <runId>`: `run.started` (or `run.resumed` when `args.priorRun` names the
-Run and worktree being continued) opens the recorded Run, then `round.started`, one `phase.started` /
+`runlog.py append <unitId> <runId>`: `run.started` always opens the recorded Run first (this Run log's
+required first event, per `runlog.py`'s own rule), and `run.resumed` follows immediately after when
+`args.priorRun` names the Run and worktree being continued, then `round.started`, one `phase.started` /
 `phase.finished` pair per Implement, Review and Critic phase, one `subagent.started` / `subagent.stopped`
 pair per fresh agent carrying the validated role result, `review.finding` after the Reviewer returns,
 `refutation` on every non-accepted Critic verdict, `issue.blocked` when the correction ceiling is spent
@@ -131,7 +132,7 @@ async function appendRunEvent(event, issueRef, phaseName, data) {
     ...(phaseName ? { phase: phaseName } : {}),
     ...(data !== undefined ? { data } : {}),
   }
-  await runCommand(
+  await runWorkflowCommand(
     `python3 "${scripts}/runlog.py" append '${A.unitId}' '${A.runId}'${stateRootFlag}`,
     { cwd: A.repoRoot, input: JSON.stringify(payload) },
   )
@@ -294,8 +295,8 @@ async function criticAccepted(verdict, issue) {
   return observedIndexes.size === expectedIndexes.length
 }
 
-async function runWorkflowCommand(command) {
-  const result = await runCommand(command, { cwd: A.repoRoot })
+async function runWorkflowCommand(command, options) {
+  const result = await runCommand(command, { cwd: A.repoRoot, ...(options || {}) })
   if (!result || result.exitCode !== 0) {
     throw new Error(`workflow command failed: ${command}`)
   }
