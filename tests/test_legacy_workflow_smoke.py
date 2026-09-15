@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_DIR = REPO_ROOT / ".agents" / "skills" / "asdlc"
+SKILL_DIR = REPO_ROOT / ".agents" / "skills" / "gantry"
 SCRIPTS = SKILL_DIR / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
@@ -289,8 +289,31 @@ const source = {json.dumps(source)};
 const args = {json.dumps(args)};
 const researchFormat = {json.dumps(research_format)};
 const calls = [];
-const agent = async (prompt, options) => {{
-  calls.push({{ prompt, label: options.label }});
+const commandCalls = [];
+const runCommand = async (command, options = {{}}) => {{
+  commandCalls.push({{ command, cwd: options.cwd || args.repoRoot }});
+  if (command.includes('/spec.py')) return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
+  if (command.includes('/result.py')) return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
+  if (command.includes('/common.py')) return {{ exitCode: 0, stdout: JSON.stringify({{ issueBranch: args.issueBranch || args.branch }}) }};
+  if (command === 'git branch --show-current') return {{ exitCode: 0, stdout: args.issueBranch || args.branch }};
+  if (command.includes('/acceptance.py')) {{
+    return {{
+      exitCode: 0,
+      stdout: JSON.stringify({{
+        complete: true,
+        criteria: [{{ index: 1, text: 'criterion', checked: false }}],
+      }}),
+    }};
+  }}
+  if (command.includes('/gates.py')) return {{ exitCode: 0, stdout: JSON.stringify({{ verdict: 'pass', requirements: [] }}) }};
+  if (command.includes('/roadmap.py')) return {{ exitCode: 0, stdout: '{{"verdict":"pass"}}' }};
+  if (command.includes('/runlog.py')) return {{ exitCode: 0, stdout: '' }};
+  return {{ exitCode: 0, stdout: '' }};
+}};
+const prompt = async () => 'no';
+const agent = async (promptText, options) => {{
+  calls.push({{ prompt: promptText, label: options.label }});
+  if (options.label.startsWith('requirement-critic')) return {{ blocking: [], findings: [] }};
   if (options.label === 'plan') return {{ filesWritten: [], issues: [], roadmapAdditions: [], openDecisions: [] }};
   if (options.label.startsWith('critique')) return {{ acceptable: true, problems: [], frontierErrors: [] }};
   if (options.label === 'research:format') return JSON.stringify(researchFormat);
@@ -302,7 +325,9 @@ const agent = async (prompt, options) => {{
   }};
   if (options.label.startsWith('review:')) return {{ blocking: [], nonBlocking: [], summary: 'no findings' }};
   if (options.label.startsWith('critic:')) return {{
-    complete: true, criteria: [], gatesVerdict: 'pass', gateFailures: [],
+    complete: true,
+    criteria: [{{ index: 1, text: 'criterion', met: true, evidence: 'ok' }}],
+    gatesVerdict: 'pass', gateResult: {{ verdict: 'pass' }}, gateFailures: [],
     refutations: [], requiredFixes: [], decisionsForOperator: [],
   }};
   return null;
@@ -319,10 +344,16 @@ const pipeline = async (items, ...steps) => {{
 }};
 const phase = () => {{}};
 const log = () => {{}};
-const result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', source)(
-  args, agent, parallel, pipeline, phase, log,
-);
-process.stdout.write(JSON.stringify({{ result, calls }}));
+let result = null;
+let error = null;
+try {{
+  result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'runCommand', 'prompt', source)(
+    args, agent, parallel, pipeline, phase, log, runCommand, prompt,
+  );
+}} catch (err) {{
+  error = err && err.message ? err.message : String(err);
+}}
+process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
 """
         result = subprocess.run(
             ["node", "--input-type=module", "--eval", driver],
@@ -331,7 +362,10 @@ process.stdout.write(JSON.stringify({{ result, calls }}));
             check=False,
         )
         self.assertEqual(0, result.returncode, result.stderr)
-        return json.loads(result.stdout)
+        data = json.loads(result.stdout)
+        if data.get("error"):
+            self.fail(f"workflow threw error: {data['error']}")
+        return data
 
     def prompt_for(self, calls: list[dict], label: str) -> str:
         for call in calls:
@@ -339,18 +373,97 @@ process.stdout.write(JSON.stringify({{ result, calls }}));
                 return call["prompt"]
         self.fail(f"workflow did not invoke {label}")
 
+    def test_asdlc_retired_and_harness_skills_resolve_canonical_pack(self) -> None:
+        self.assertFalse((REPO_ROOT / ".agents" / "skills" / "asdlc").exists())
+        skills = [
+            REPO_ROOT / ".agents" / "skills" / "gantry",
+            REPO_ROOT / ".agents" / "skills" / "gantry-setup",
+            REPO_ROOT / ".agents" / "skills" / "gantry-dashboard",
+        ]
+        for skill in skills:
+            self.assertTrue(skill.is_dir())
+            skill_md = skill / "SKILL.md"
+            self.assertTrue(skill_md.is_file())
+            text = skill_md.read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("---\n"))
+            frontmatter = text.split("---", 2)[1]
+            self.assertIn(f"name: {skill.name}", frontmatter)
+            self.assertIn("description:", frontmatter)
+
+        for harness in (".claude", ".cursor", ".opencode", ".gemini"):
+            harness_skills = REPO_ROOT / harness / "skills"
+            self.assertTrue(harness_skills.exists(), f"missing {harness}/skills")
+            names = sorted([item.name for item in harness_skills.iterdir() if not item.name.startswith(".")])
+            self.assertEqual(["gantry", "gantry-dashboard", "gantry-setup"], names)
+            for name in names:
+                target = harness_skills / name
+                self.assertTrue(target.is_dir())
+                self.assertTrue((target / "SKILL.md").is_file())
+
     def test_workflow_templates_receive_paths_in_args_without_repository_literals(self) -> None:
         prohibited = ("gantry-v4", "slice-index", "the Gantry repository")
-        for path in (
-            SKILL_DIR / "SKILL.md",
-            SKILL_DIR / "reference" / "plan-workflow.md",
-            SKILL_DIR / "reference" / "round-workflow.md",
-        ):
-            text = path.read_text(encoding="utf-8")
-            self.assertFalse(
-                any(literal in text for literal in prohibited),
-                f"{path.relative_to(REPO_ROOT)} contains a repository-specific literal",
-            )
+        for skill_dir in sorted(REPO_ROOT.glob(".agents/skills/gantry*")):
+            for path in sorted(skill_dir.rglob("*")):
+                if path.is_file() and not path.name.endswith((".pyc", ".pyo", ".pyd")):
+                    text = path.read_text(encoding="utf-8", errors="ignore")
+                    self.assertFalse(
+                        any(literal in text for literal in prohibited),
+                        f"{path.relative_to(REPO_ROOT)} contains a prohibited literal",
+                    )
+
+    def test_no_policy_smoke_runs_canonical_workflow_on_this_repository(self) -> None:
+        self.assertFalse((REPO_ROOT / ".gantry" / "config.json").exists())
+
+        policy = resolve_policy(REPO_ROOT)
+        self.assertEqual(".scratch/{slug}/spec.md", policy["artifacts"]["specs"])
+        self.assertEqual(".scratch/{slug}/issues", policy["artifacts"]["issues"])
+        self.assertEqual("docs/adr", policy["artifacts"]["adrs"])
+        self.assertEqual("docs/adr", policy["artifacts"]["decisions"])
+        self.assertEqual("CONTEXT.md", policy["artifacts"]["context"])
+        self.assertEqual("docs/agents/issue-tracker.md", policy["artifacts"]["issueTracker"])
+        self.assertEqual("main", policy["git"]["target"])
+        self.assertEqual("gantry/", policy["git"]["prefix"])
+
+        paths = resolve_workflow_paths(REPO_ROOT, "gantry-migration")
+        self.assertEqual(REPO_ROOT / ".scratch" / "gantry-migration" / "issues", paths["issueDir"])
+        self.assertEqual(REPO_ROOT / "CONTEXT.md", paths["context"])
+        self.assertEqual(REPO_ROOT / "docs" / "adr", paths["adrs"])
+        self.assertEqual(REPO_ROOT / "docs" / "agents" / "issue-tracker.md", paths["issueTracker"])
+
+        frontier = self.frontier_json(REPO_ROOT, "gantry-migration", include_parked=False)
+        self.assertIn("gantry-migration#18", frontier["selected"])
+
+        issue_path = REPO_ROOT / ".scratch" / "gantry-migration" / "issues" / "18-retire-asdlc-and-switch-harness-links.md"
+        parsed_issue = self.acceptance_json(REPO_ROOT, issue_path)
+        self.assertEqual("gantry-migration#18", parsed_issue["ref"])
+        self.assertEqual("ready-for-agent", parsed_issue["status"])
+
+        round_args = {
+            "round": 6,
+            "models": {"implement": "test-implement", "review": "test-review", "critic": "test-critic"},
+            "branch": "gantry/wave-6",
+            "baseRef": "51b4d6d",
+            "isolate": False,
+            "correctionBudget": 2,
+            "skillDir": str(SKILL_DIR),
+            "repoRoot": str(REPO_ROOT),
+            "policy": policy,
+            "paths": {name: str(path) for name, path in paths.items()},
+            "date": "2026-09-14",
+            "issues": [parsed_issue],
+        }
+        round_result = self.run_workflow("round-workflow.md", round_args)
+        self.assertEqual(1, len(round_result["result"]["results"]))
+        self.assertEqual("gantry-migration#18", round_result["result"]["results"][0]["ref"])
+        self.assertEqual("done", round_result["result"]["results"][0]["outcome"])
+
+        implement_prompt = self.prompt_for(round_result["calls"], "implement:gantry-migration#18")
+        self.assertIn(str(paths["context"]), implement_prompt)
+        self.assertIn(str(paths["adrs"]), implement_prompt)
+        self.assertIn("gantry-migration#18", implement_prompt)
+
+        critic_prompt = self.prompt_for(round_result["calls"], "critic:gantry-migration#18#1")
+        self.assertIn(f"acceptance.py {REPO_ROOT}/{parsed_issue['path']} --json", critic_prompt)
 
     def test_scripts_import_only_standard_library_or_pack_modules(self) -> None:
         allowed = {
@@ -362,13 +475,22 @@ process.stdout.write(JSON.stringify({{ result, calls }}));
             "dataclasses",
             "datetime",
             "difflib",
+            "hashlib",
+            "http",
             "json",
             "os",
             "pathlib",
             "re",
+            "runlog",
+            "shlex",
             "shutil",
+            "skipscan",
             "subprocess",
             "sys",
+            "tempfile",
+            "threading",
+            "time",
+            "typing",
         }
         for script in sorted(SCRIPTS.glob("*.py")):
             tree = ast.parse(script.read_text(encoding="utf-8"), filename=str(script))
