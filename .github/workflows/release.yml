@@ -1,0 +1,81 @@
+name: Release
+run-name: Release ${{ inputs.version }} from ${{ inputs.commit }}
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Stable version already merged in package.json (e.g. 0.1.1)'
+        required: true
+        type: string
+      commit:
+        description: 'Full 40-character commit SHA already merged into main'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.repository == 'JulioBorges/gantry' && github.ref == 'refs/heads/main' && github.actor == 'JulioBorges' && github.triggering_actor == 'JulioBorges'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: npm-release
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_COMMIT: ${{ inputs.commit }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.10'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Validate release identity and ancestry
+        run: |
+          node scripts/github-release.mjs validate
+          git merge-base --is-ancestor "$RELEASE_COMMIT" origin/main
+          test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
+          if git show-ref --verify --quiet "refs/tags/v$RELEASE_VERSION"; then
+            test "$(git rev-list -n 1 "v$RELEASE_VERSION")" = "$RELEASE_COMMIT"
+          fi
+      - run: npm install --global npm@11.19.1 --ignore-scripts
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: make test
+      - run: npm run test:package
+      - run: python3 .agents/skills/gantry/scripts/roadmap.py check
+      - run: python3 .agents/skills/gantry/scripts/frontier.py --scope all
+      - name: Pack verified source
+        run: |
+          test -z "$(git status --porcelain)"
+          mkdir -p "$RUNNER_TEMP/release"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/release"
+      - name: Check registry for safe retries
+        id: registry
+        run: node scripts/github-release.mjs registry >> "$GITHUB_OUTPUT"
+      - name: Publish verified tarball with OIDC provenance
+        if: steps.registry.outputs.published == 'false'
+        run: npm publish "$RUNNER_TEMP/release/julioborges-gantry-$RELEASE_VERSION.tgz" --ignore-scripts --access public --provenance --registry https://registry.npmjs.org/
+      - name: Verify published integrity
+        run: node scripts/github-release.mjs verify
+      - name: Create immutable version tag and GitHub Release
+        run: |
+          if ! git show-ref --verify --quiet "refs/tags/v$RELEASE_VERSION"; then
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/v$RELEASE_VERSION" -f "sha=$RELEASE_COMMIT"
+          fi
+          if ! gh release view "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY"; then
+            gh release create "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Gantry v$RELEASE_VERSION" --generate-notes
+          fi
+      - name: Upload release tarball
+        run: gh release upload "v$RELEASE_VERSION" "$RUNNER_TEMP/release/julioborges-gantry-$RELEASE_VERSION.tgz" --repo "$GITHUB_REPOSITORY" --clobber

@@ -3,6 +3,10 @@
 **Turn an approved Spec into verified software deliveries inside your coding
 harness.**
 
+[![CI](https://github.com/JulioBorges/gantry/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JulioBorges/gantry/actions/workflows/ci.yml)
+[![Release](https://github.com/JulioBorges/gantry/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/JulioBorges/gantry/actions/workflows/release.yml)
+[![npm version](https://img.shields.io/npm/v/%40julioborges%2Fgantry)](https://www.npmjs.com/package/@julioborges/gantry)
+[![GitHub release](https://img.shields.io/github/v/release/JulioBorges/gantry)](https://github.com/JulioBorges/gantry/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](#requirements)
 [![Agent Skills](https://img.shields.io/badge/Agent-Skills-orange.svg)](#installation)
@@ -46,9 +50,8 @@ claiming support for a particular integration. See [PRD §13](PRD.md#13-harness-
 for harness support and fixture requirements. A declared tier does not prove every harness version
 has been exercised.
 
-The npm installer is configured locally as `@julioborges/gantry` version `0.1.0`;
-publication is a separate release step. Use the GitHub installation below until
-an npm release is available.
+The npm installer is published as `@julioborges/gantry`. The npm badge above
+shows the published version; new releases require maintainer authorization.
 
 ## Requirements
 
@@ -83,7 +86,7 @@ Select all three skills and your harness in the installer:
 You can also copy or symlink the three directories into
 `<repo>/.agents/skills/` or `~/.agents/skills/`. The repository copy wins.
 
-Once the npm package is published, its bundled installer supports:
+The npm package includes a bundled installer:
 
 ```bash
 npx @julioborges/gantry add
@@ -385,6 +388,11 @@ Use [GitHub Issues](https://github.com/JulioBorges/gantry/issues) to describe a
 reproducible problem or propose a change. Delivery Issues used by Gantry itself
 remain local Markdown artifacts.
 
+All changes go through a PR; `main` requires passing CI and maintainer review.
+Only [JulioBorges](https://github.com/JulioBorges) reviews and merges contributions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the fork workflow, required gates,
+and the documented self-review exception for maintainer PRs.
+
 Before changing the pack, read `PRD.md`, `CONTEXT.md`, `docs/adr/`, and `AGENTS.md`.
 Keep documentation and generated artifacts in English. Explain behavior changes
 and include validation evidence in your pull request.
@@ -409,28 +417,19 @@ verify with `roadmap.py check`.
 
 ### Publishing to npm
 
-The package is configured for public publication as `@julioborges/gantry`, initially version `0.1.0`.
-Only the installer, three skill directories, README and license are included; Python caches,
-project Issues, fixtures, local configuration and runtime state are excluded.
+Releases use the manually authorized [Release workflow](.github/workflows/release.yml).
+A version bump goes through a PR, then JulioBorges dispatches publication from
+`main` for the exact merged commit and approves the `npm-release` environment.
+The workflow reruns gates, publishes the verified tarball using npm OIDC with
+provenance, verifies registry integrity, and creates the immutable version tag
+and GitHub Release. Merging a PR does not automatically publish.
 
-```bash
-npm ci
-npm run test:package
-npm pack --dry-run
-# After approving the release and authenticating with an account allowed to publish the scope:
-make release
-```
-
-`make release` verifies the npm account before installing locked dependencies with `npm ci` and publishing the current version from
-`package.json` to npm. Update that version before publishing a subsequent release.
-`prepublishOnly` first checks `npm whoami` against npmjs.org and refuses publication unless the
-authenticated account is exactly `julioborges`. Authentication and network failures block publication.
-This applies to both `make release` and direct `npm publish`; npm's registry permissions remain the
-authority, and lifecycle hooks can be bypassed with npm options.
-After authorization, it runs the repository test suite and the tarball installation test once before publication.
-The tarball test executes `npx` and installs all three skills in a temporary project using the packed
-artifact. See [npm's package metadata documentation](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/)
-for the `bin`, `files` and `publishConfig` settings. No automatic publication is configured.
+See the [maintainer release runbook](docs/maintainers/releases.md) for versioning,
+authorization, npm trusted publisher setup, and recovery after partial failures.
+The package includes only the installer, three skill directories, README and
+license; project Issues, fixtures, caches, local configuration and runtime state
+are excluded. Local `make release` retains its npm account check, but GitHub
+Actions is the normal publication path.
 
 ## License
 

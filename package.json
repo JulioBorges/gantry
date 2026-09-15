@@ -27,7 +27,7 @@
   ],
   "scripts": {
     "test": "make test",
-    "test:package": "node --test tests/npm-package.test.mjs tests/npm-author.test.mjs",
+    "test:package": "node --test tests/npm-package.test.mjs tests/npm-author.test.mjs tests/github-release.test.mjs",
     "pack:check": "npm run test:package",
     "prepublishOnly": "node scripts/ensure-npm-author.mjs && npm test && npm run test:package"
   },
