@@ -1,7 +1,7 @@
 # Spec: Gantry skill pack — migrating `asdlc` into `gantry`
 
 Type: spec
-Status: ready-for-agent
+Status: done
 Map: `ROADMAP.md` (spec 01)
 Source: `PRD.md` §4–§14, `CONTEXT.md`, `docs/adr/0003`, `docs/adr/0004`
 Created: 2026-09-12
@@ -45,24 +45,24 @@ This spec is the migration: `asdlc` becomes the three skills of the pack (`gantr
 
 ### Definition of Done
 
-- [ ] `.agents/skills/gantry/`, `.agents/skills/gantry-setup/` and `.agents/skills/gantry-dashboard/` each contain a `SKILL.md` with the frontmatter the three harnesses accept; `.agents/skills/asdlc/` is gone; `ls .claude/skills .cursor/skills .opencode/skills .gemini/skills` lists the three skills.
-- [ ] `grep -r "gantry-v4\|slice-index\|the Gantry repository" .agents/skills/gantry*` returns nothing; repository-specific inputs come from `.gantry/config.json` or pack defaults, and the workflow runs on this repository with no policy file present.
-- [ ] `spec.py --check` fails a spec missing `## Contract`, names the missing section, and passes a spec whose `## Delivery contract` heading is mapped to `## Contract` in `templates.headingMap`.
-- [ ] The plan workflow runs the Requirement Critic before slicing; on the fixture spec with an injected ambiguous Definition of Done item, the run stops before any issue file is written and the report quotes the blocking finding.
-- [ ] `budget.py <issue> --model <id>` prints the estimated tokens, the assumed window and the share; an issue listing files whose size exceeds the share is reported over budget and the plan critic's result quotes the number.
-- [ ] `result.py --role critic < result.json` exits 1 and prints `criteria` as the missing field when the result lacks it, and exits 0 on a valid result; the round workflow re-asks once on failure and then records `critic_failed`.
-- [ ] On the fixture, `gates.py --run --diff-base <base> --json` resolves the configured RFC 6901 mappings and reports `verdict: fail` with the new finding when a delivery adds a linter finding, `verdict: fail` with the finding under `aggravated` when the matching finding changes from `warning` to `error`, `resolved` for a finding present only on the base, and `verdict: pass` with the finding listed under `preexisting` when the delivery only carries a finding already present on the base at the same or lower severity. A duplicate normalized identity in either command output yields `verdict: fail`, exit 1 and an `invalid` entry naming the base or delivery source.
-- [ ] A run on the fixture leaves `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl` whose first event is `run.started` with the repository root, policy hash, tier and effective `staleAfterSeconds`, and whose last is `run.finished`; `runlog.py inflight <unit-id>` lists the issue, phase and worktree of an interrupted run.
-- [ ] `guard.py PreToolUse` with a Claude Code payload editing `ROADMAP.md` or an issue's `Status:` line answers deny and logs `hook.denied`; the same payload for a `Read` answers allow; a `SubagentStop` payload appends `subagent.stopped`.
-- [ ] `gantry-setup` merges `hooks/claude-code.settings.json` into `.claude/settings.json` idempotently: running it twice produces the same file, and keys it did not write are preserved byte for byte.
-- [ ] `dashboard.py` shows two runs from two different `unit-id`s with their issues in the right phase columns, and applies the `staleAfterSeconds` snapshot from each `run.started` event: a run is stale only when its last event is older than that value. The effective value is the positive integer in policy or the `900`-second default, and a later `policy.changed` does not affect an existing run.
-- [ ] The Learner reads a run log containing the same refutation on two issues and one refutation on a single issue, and produces exactly one lesson candidate, with its evidence and proposed target; nothing under `AGENTS.md` changes.
-- [ ] At the end of a run the orchestrator offers the draft run pull request; with a stub `gh` on `PATH` the body contains each issue's criteria and evidence, and with no `gh` the report names the branch instead.
-- [ ] `gantry-setup` shows the full proposed `.gantry/config.json` and writes it only after confirmation; on a repository that already has one it offers merge, overwrite or abort; the `AGENTS.md` section is added between `<!-- gantry:begin -->` and `<!-- gantry:end -->` with the rest of the file byte-identical.
-- [ ] `cleanup.py --plan` lists only worktrees and branches of issues with `Status: done` whose branch is merged into the run branch, and `cleanup.py --yes` removes exactly the listed items.
-- [ ] `capabilities/claude-code.json`, `capabilities/opencode.json` and `capabilities/codex.json` exist with every field named in the Architecture, and the run report states the tier read from them.
-- [ ] `fixture/` runs the whole loop in Claude Code from `gantry greeting` to an offered draft pull request, and `fixture/README.md` records the run log path and the tier.
-- [ ] Spec updated in the same merge as any behaviour change.
+- [x] `.agents/skills/gantry/`, `.agents/skills/gantry-setup/` and `.agents/skills/gantry-dashboard/` each contain a `SKILL.md` with the frontmatter the three harnesses accept; `.agents/skills/asdlc/` is gone; `ls .claude/skills .cursor/skills .opencode/skills .gemini/skills` lists the three skills.
+- [x] `grep -r "gantry-v4\|slice-index\|the Gantry repository" .agents/skills/gantry*` returns nothing; repository-specific inputs come from `.gantry/config.json` or pack defaults, and the workflow runs on this repository with no policy file present.
+- [x] `spec.py --check` fails a spec missing `## Contract`, names the missing section, and passes a spec whose `## Delivery contract` heading is mapped to `## Contract` in `templates.headingMap`.
+- [x] The plan workflow runs the Requirement Critic before slicing; on the fixture spec with an injected ambiguous Definition of Done item, the run stops before any issue file is written and the report quotes the blocking finding.
+- [x] `budget.py <issue> --model <id>` prints the estimated tokens, the assumed window and the share; an issue listing files whose size exceeds the share is reported over budget and the plan critic's result quotes the number.
+- [x] `result.py --role critic < result.json` exits 1 and prints `criteria` as the missing field when the result lacks it, and exits 0 on a valid result; the round workflow re-asks once on failure and then records `critic_failed`.
+- [x] On the fixture, `gates.py --run --diff-base <base> --json` resolves the configured RFC 6901 mappings and reports `verdict: fail` with the new finding when a delivery adds a linter finding, `verdict: fail` with the finding under `aggravated` when the matching finding changes from `warning` to `error`, `resolved` for a finding present only on the base, and `verdict: pass` with the finding listed under `preexisting` when the delivery only carries a finding already present on the base at the same or lower severity. A duplicate normalized identity in either command output yields `verdict: fail`, exit 1 and an `invalid` entry naming the base or delivery source.
+- [x] A run on the fixture leaves `~/.gantry/state/<unit-id>/runs/<run-id>.jsonl` whose first event is `run.started` with the repository root, policy hash, tier and effective `staleAfterSeconds`, and whose last is `run.finished`; `runlog.py inflight <unit-id>` lists the issue, phase and worktree of an interrupted run.
+- [x] `guard.py PreToolUse` with a Claude Code payload editing `ROADMAP.md` or an issue's `Status:` line answers deny and logs `hook.denied`; the same payload for a `Read` answers allow; a `SubagentStop` payload appends `subagent.stopped`.
+- [x] `gantry-setup` merges `hooks/claude-code.settings.json` into `.claude/settings.json` idempotently: running it twice produces the same file, and keys it did not write are preserved byte for byte.
+- [x] `dashboard.py` shows two runs from two different `unit-id`s with their issues in the right phase columns, and applies the `staleAfterSeconds` snapshot from each `run.started` event: a run is stale only when its last event is older than that value. The effective value is the positive integer in policy or the `900`-second default, and a later `policy.changed` does not affect an existing run.
+- [x] The Learner reads a run log containing the same refutation on two issues and one refutation on a single issue, and produces exactly one lesson candidate, with its evidence and proposed target; nothing under `AGENTS.md` changes.
+- [x] At the end of a run the orchestrator offers the draft run pull request; with a stub `gh` on `PATH` the body contains each issue's criteria and evidence, and with no `gh` the report names the branch instead.
+- [x] `gantry-setup` shows the full proposed `.gantry/config.json` and writes it only after confirmation; on a repository that already has one it offers merge, overwrite or abort; the `AGENTS.md` section is added between `<!-- gantry:begin -->` and `<!-- gantry:end -->` with the rest of the file byte-identical.
+- [x] `cleanup.py --plan` lists only worktrees and branches of issues with `Status: done` whose branch is merged into the run branch, and `cleanup.py --yes` removes exactly the listed items.
+- [x] `capabilities/claude-code.json`, `capabilities/opencode.json` and `capabilities/codex.json` exist with every field named in the Architecture, and the run report states the tier read from them.
+- [x] `fixture/` runs the whole loop in Claude Code from `gantry greeting` to an offered draft pull request, and `fixture/README.md` records the run log path and the tier.
+- [x] Spec updated in the same merge as any behaviour change.
 
 ### Regression Guardrails
 
@@ -166,6 +166,7 @@ Scenario: The run ends with an offered draft pull request
 
 ## Changelog
 
+- 2026-09-15 — Validated all 18 Definition of Done criteria across completed issues (gantry-migration#01 through #18) and test suites; marked all Definition of Done items completed and updated spec status to done.
 - 2026-09-14 — Retired the legacy `asdlc` skill after the canonical pack passed the Claude Code reference-tier proof. Removed `.agents/skills/asdlc/` and verified that `.claude/skills`, `.cursor/skills`, `.opencode/skills`, and `.gemini/skills` resolve to the three canonical pack skills (`gantry`, `gantry-setup`, and `gantry-dashboard`) with accepted `SKILL.md` frontmatter. Eliminated migration-only repository literals from `.agents/skills/gantry*`, verified the no-policy smoke path on this repository, and confirmed all fixture proof and feature-owner test suites pass (roadmap authority, unchanged legacy Issue parsing, no-hooks fallback semantics, serialized integration, and offered draft pull request behavior). Explicitly confirmed that no execution engine, database, MCP service, automatic cleanup, automatic merge, or automatic lesson injection was introduced.
 - 2026-09-14 — Verified the canonical pack in Claude Code’s reference tier using isolated copies generated by `fixture/tools/copy_fixture.py`. The unplanned copy successfully reached the planning-approval stop, wrote draft Issues, and left the roadmap unchanged. The approved copy completed all rounds sequentially, mutating its own Issue statuses and roadmap through `roadmap.py` after Critic acceptance, and finally offered a draft pull request. The proof confirmed that no engine, database, MCP service, automatic cleanup, automatic merge, or automatic lesson injection was used.
 - 2026-09-14 — Implemented the end-of-Run draft pull request offer in the `round-workflow.md` template and updated `SKILL.md` instructions. After the final round, the orchestrator detects if `gh` is available and asks the operator for explicit confirmation before opening a draft pull request containing each completed Issue's criteria and evidence. If declined or unavailable, it gracefully defaults to reporting the Run branch and target branch.

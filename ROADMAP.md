@@ -36,8 +36,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **18 / 18** |
-| Specs completed | **1 / 1** |
+| Issues completed | **18 / 21** |
+| Specs completed | **1 / 2** |
 | Execution waves | **7** |
 
 ## Specs
@@ -51,7 +51,7 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 
 | # | Spec | Status | Blocked by | Ordered after | Touches | Delivers |
 |---|---|---|---|---|---|---|
-| 01 | `gantry-migration` | **approved — slicing pending** | — | — | everything | `asdlc` becomes the three skills; repository policy; `spec.py`, `budget.py`, `result.py`, `runlog.py`, `guard.py`, `cleanup.py`, `dashboard.py`; differential `gates.py`; Requirement Critic and Learner phases; draft run PR; capability files; `fixture/`; reference tier proven on Claude Code |
+| 01 | `gantry-migration` | **done** | — | — | everything | `asdlc` becomes the three skills; repository policy; `spec.py`, `budget.py`, `result.py`, `runlog.py`, `guard.py`, `cleanup.py`, `dashboard.py`; differential `gates.py`; Requirement Critic and Learner phases; draft run PR; capability files; `fixture/`; reference tier proven on Claude Code |
 | 02 | `opencode-tier` | planned next | 01 | — | `hooks/opencode.*`, `capabilities/opencode.json`, `gantry-setup` (harness detection), `SKILL.md` harness notes, `fixture/README.md` | supported tier: OpenCode plugin wiring for `guard.py`, per-role agents, `result.py` on the critical path, sequential or parallel rounds, fixture run recorded |
 | 03 | `guard-hooks-2` | idea | 01 | 02 (one more harness to wire the new rules into) | `scripts/guard.py`, `scripts/budget.py`, `hooks/*`, round-workflow prompts | second wave of guard invariants: test-skip patterns in the diff at `Stop`, scope guard (edits outside the issue's declared paths → ask), compaction-per-phase signal fed back into the budget default |
 | 04 | `gate-presets` | idea | 01 | — | `templates/policy-examples/`, `gates.py` mapping edge cases, a second fixture (`fixture-ts/`) | example policy snippets (not adapters) for eslint, ruff, dependency-cruiser and import-linter; a second fixture in TypeScript |
@@ -61,6 +61,7 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 08 | `codex-tier` | idea, waiting on Codex | 01 | external: Codex subagent model selection stable | `hooks/codex.hooks.json`, `capabilities/codex.json`, `SKILL.md` harness notes | compatible tier: `hooks.json`, hand-driven chain, detection of per-role model support |
 | 09 | `run-history` | idea | 01 | 02 (more than one run to compare) | `scripts/dashboard.py`, dashboard static assets, `scripts/runlog.py` queries | read-only per-run page in the dashboard (phase timeline, corrections, refutations) and comparison of runs over the same scope |
 | 10 | `windows-validation` | idea, waiting on a machine | 06 | external: a Windows machine | `install.sh`, `guard.py` path handling, `fixture/README.md` | fixture run on Windows (paths, symlinks, hooks); support declared only after the run is recorded |
+| 11 | `caveman-setup` | **approved** | 01 | — | `gantry-setup`, portable policy, coordinating instructions, plan and round workflows, tests and documentation | optional environment-installed Caveman lite for agent messages and summaries; explicit repository opt-in; user-managed installation; once-per-Run fallback warning; artifacts and verification preserved |
 
 ### Spec waves (structural)
 
@@ -69,7 +70,7 @@ Computed from *Blocked by* only, the same way issue waves are computed from `## 
 | Wave | Specs | Meaning |
 |---|---|---|
 | A | 01 | everything else builds on the migration |
-| B | 02, 03, 04, 05, 06, 07, 08, 09 | unblocked the moment 01 is done; the order among them is preference, not dependency |
+| B | 02, 03, 04, 05, 06, 07, 08, 09, 11 | unblocked the moment 01 is done; the order among them is preference, not dependency |
 | C | 10 | needs the installer from 06 (and a machine) |
 
 ### Intended order (one spec at a time)
@@ -103,10 +104,13 @@ and 05, so they are written after a few real run logs exist, not before.
 
 ## Where work can start
 
-Spec 01 is approved and unplanned: run `/asdlc gantry-migration` to slice it. The planner should make the
-first issue the removal of repository-specific hardcoding from the skill (`slice-index`, "the Gantry
-repository"), because every later issue is verified by a critic that would otherwise look for files that no
-longer exist.
+Spec 11 (`caveman-setup`) and its three-Issue breakdown are approved. Start with `caveman-setup#01`;
+after it completes, `#02` (planning agents) and `#03` (round agents) can proceed concurrently. Their
+shared coordinating instructions belong to `#01`; each later Issue owns its role-specific workflow.
+The feature is ready for implementation, and no implementation has started as part of publication.
+
+Spec 01 is done. The next planned spec is Spec 02 (`opencode-tier`), which is unblocked now that 01 is
+complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel candidate.
 
 ## Progress by spec
 
@@ -115,6 +119,7 @@ longer exist.
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
 | 01 | `gantry-migration` | 18/18 | 0–6 |
+| 11 | `caveman-setup` | 0/3 | 5–6 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -180,5 +185,17 @@ of the others, and an issue never waits on anything in its own wave or a later o
 
 - [x] **`gantry-migration#18`** — Retire ASDLC after canonical proof
   <br>↳ blocked by: gantry-migration#17
+
+### Wave 7 — 0/1 done
+
+- [ ] **`caveman-setup#01`** — Configure Caveman in setup and use it in the coordinating agent
+  <br>↳ blocked by: gantry-migration#10, gantry-migration#02
+
+### Wave 6 — 0/2 done
+
+- [ ] **`caveman-setup#02`** — Apply Caveman lite to planning agents
+  <br>↳ blocked by: caveman-setup#01
+- [ ] **`caveman-setup#03`** — Apply Caveman lite to round agents
+  <br>↳ blocked by: caveman-setup#01
 
 <!-- END GENERATED: issue checklist -->
