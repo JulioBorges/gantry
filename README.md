@@ -418,10 +418,16 @@ npm ci
 npm run test:package
 npm pack --dry-run
 # After approving the release and authenticating with an account allowed to publish the scope:
-npm publish
+make release
 ```
 
-`prepublishOnly` runs the repository test suite and the tarball installation test before publication.
+`make release` verifies the npm account before installing locked dependencies with `npm ci` and publishing the current version from
+`package.json` to npm. Update that version before publishing a subsequent release.
+`prepublishOnly` first checks `npm whoami` against npmjs.org and refuses publication unless the
+authenticated account is exactly `julioborges`. Authentication and network failures block publication.
+This applies to both `make release` and direct `npm publish`; npm's registry permissions remain the
+authority, and lifecycle hooks can be bypassed with npm options.
+After authorization, it runs the repository test suite and the tarball installation test once before publication.
 The tarball test executes `npx` and installs all three skills in a temporary project using the packed
 artifact. See [npm's package metadata documentation](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/)
 for the `bin`, `files` and `publishConfig` settings. No automatic publication is configured.

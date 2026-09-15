@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripVTControlCharacters } from 'node:util';
 import test from 'node:test';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -38,7 +39,7 @@ test('published tarball installs all three skills through npx', () => {
     assert.equal(run('npx', ['--no-install', 'gantry', '--version'], temp).trim(), manifest.version);
     assert.match(run('npx', ['--no-install', 'gantry', '--help'], temp), /gantry add/);
     const listing = run('npx', ['--no-install', 'gantry', 'add', '--list'], temp);
-    assert.match(listing, /Found 3 skills/);
+    assert.match(stripVTControlCharacters(listing), /Found 3 skills/);
     run('npx', ['--no-install', 'gantry', 'add', '--agent', 'codex', '--yes'], temp);
     for (const skill of ['gantry', 'gantry-setup', 'gantry-dashboard']) {
       const installed = join(temp, '.agents/skills', skill, 'SKILL.md');

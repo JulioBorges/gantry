@@ -15,6 +15,7 @@
   "bin": {"gantry": "bin/gantry.mjs"},
   "files": [
     "bin/gantry.mjs",
+    "scripts/ensure-npm-author.mjs",
     ".agents/skills/gantry",
     ".agents/skills/gantry-setup",
     ".agents/skills/gantry-dashboard",
@@ -26,9 +27,9 @@
   ],
   "scripts": {
     "test": "make test",
-    "test:package": "node --test tests/npm-package.test.mjs",
+    "test:package": "node --test tests/npm-package.test.mjs tests/npm-author.test.mjs",
     "pack:check": "npm run test:package",
-    "prepublishOnly": "npm test && npm run test:package"
+    "prepublishOnly": "node scripts/ensure-npm-author.mjs && npm test && npm run test:package"
   },
   "dependencies": {"skills": "1.5.26"},
   "publishConfig": {"access": "public", "registry": "https://registry.npmjs.org/"}
