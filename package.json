@@ -1,6 +1,6 @@
 {
   "name": "@julioborges/gantry",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "Install the Gantry harness-neutral agentic SDLC skill pack.",
   "type": "commonjs",
   "license": "Apache-2.0",
