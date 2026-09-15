@@ -1,7 +1,7 @@
 # Claude Code reference-tier end-to-end proof
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-migration#17`
 Spec: `.scratch/gantry-migration/spec.md`
 Created: 2026-09-13
@@ -16,11 +16,11 @@ Created: 2026-09-13
 
 ## Acceptance criteria
 
-- [ ] In Claude Code, `python3 fixture/tools/copy_fixture.py --mode unplanned --skill-dir <canonical-gantry-skill-dir> --dest <tmp>/gantry-plan`, then opening `<tmp>/gantry-plan` and invoking the `gantry greeting` skill, reaches the planning-approval stop after structural validation and Requirement Critic, writes Issue files with `Status: draft`, leaves `ROADMAP.md` unchanged, and records the Run-log path and reference tier.
-- [ ] In a separate Claude Code session, `python3 fixture/tools/copy_fixture.py --mode approved --skill-dir <canonical-gantry-skill-dir> --dest <tmp>/gantry-rounds`, then opening `<tmp>/gantry-rounds` and invoking the `gantry greeting` skill, completes its approved rounds and reaches the explicit draft-pull-request offer without reusing the first copy’s Git or Run-log state.
-- [ ] `fixture/README.md` records both exact commands, the two Run-log paths, the `reference` tier, the planning-stop observation, and the draft-pull-request offer body’s per-Issue criteria and Critic evidence in English.
-- [ ] The proof records that the valid unplanned copy reaches its operator-approval stop with draft Issues and an unchanged `ROADMAP.md`, while only the approved-copy execution mutates its own Issue status and roadmap through `roadmap.py` after Critic acceptance.
-- [ ] The Spec Changelog receives an English entry in the same merge, and the final proof report confirms no engine, database, MCP service, automatic cleanup, automatic merge, or automatic lesson injection was used.
+- [x] In Claude Code, `python3 fixture/tools/copy_fixture.py --mode unplanned --skill-dir <canonical-gantry-skill-dir> --dest <tmp>/gantry-plan`, then opening `<tmp>/gantry-plan` and invoking the `gantry greeting` skill, reaches the planning-approval stop after structural validation and Requirement Critic, writes Issue files with `Status: draft`, leaves `ROADMAP.md` unchanged, and records the Run-log path and reference tier.
+- [x] In a separate Claude Code session, `python3 fixture/tools/copy_fixture.py --mode approved --skill-dir <canonical-gantry-skill-dir> --dest <tmp>/gantry-rounds`, then opening `<tmp>/gantry-rounds` and invoking the `gantry greeting` skill, completes its approved rounds and reaches the explicit draft-pull-request offer without reusing the first copy’s Git or Run-log state.
+- [x] `fixture/README.md` records both exact commands, the two Run-log paths, the `reference` tier, the planning-stop observation, and the draft-pull-request offer body’s per-Issue criteria and Critic evidence in English.
+- [x] The proof records that the valid unplanned copy reaches its operator-approval stop with draft Issues and an unchanged `ROADMAP.md`, while only the approved-copy execution mutates its own Issue status and roadmap through `roadmap.py` after Critic acceptance.
+- [x] The Spec Changelog receives an English entry in the same merge, and the final proof report confirms no engine, database, MCP service, automatic cleanup, automatic merge, or automatic lesson injection was used.
 
 ## Blocked by
 

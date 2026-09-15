@@ -2,7 +2,7 @@
 
 Type: spec
 Status: ready-for-agent
-Map: `fixture/README.md`
+Map: `ROADMAP.md`
 Source: Gantry reference fixture
 Created: 2026-09-13
 
@@ -23,10 +23,11 @@ small repository to run against instead of the pack's own repository.
 - `tests/test_greeting.py` covers both the happy path and the blank-name rejection.
 - `tools/lint.py` is the fixture's own standard-library linter, declared as the
   differential quality gate in `.gantry/config.json`.
+- `pyproject.toml` is a manifest used by the `pytest` gate to run the tests.
 
 ### Constraints
 
-- The project imports only the Python standard library.
+- The project (`greeting.py`, `cli.py`, `tests/test_greeting.py`) imports only the Python standard library.
 - `cli.py` prints exactly one line to stdout on success and exits 0.
 - `cli.py` prints a usage message to stderr and exits 2 when not given exactly one
   argument.
@@ -35,23 +36,37 @@ small repository to run against instead of the pack's own repository.
 
 ### Definition of Done
 
-- [ ] `greet` returns `"Hello, <name>!"` for a trimmed, non-empty name.
+- [ ] `greet` returns `"Hello, <name>!"` for a name (e.g. `greet("  Ada  ")` returns `"Hello, Ada!"` because the input must be stripped of whitespace before interpolation).
 - [ ] `greet` raises `ValueError` for a blank or whitespace-only name.
-- [ ] `cli.py <name>` prints the greeting and exits 0.
+- [ ] `python3 cli.py Ada` (run from the repository root) prints `"Hello, Ada!"\n` to stdout and exits 0.
+- [ ] `python3 cli.py` prints a usage message to stderr and exits 2.
+- [ ] `python3 cli.py "   "` prints a usage message to stderr and exits 2.
 
 ### Regression Guardrails
 
 - `greet` never returns a message without the trailing exclamation mark.
-- `cli.py` never prints more than one line on success.
+- `cli.py` never prints more than one line to stdout on success.
 
 ### Scenarios
 
 ```gherkin
 Scenario: A friendly greeting is printed for a valid name
   Given the greeting CLI and the name "Ada"
-  When the operator runs cli.py with that name
+  When the operator runs python3 cli.py with that name
   Then the CLI prints "Hello, Ada!" to stdout
   And the CLI exits 0
+
+Scenario: Missing argument fails
+  Given the greeting CLI
+  When the operator runs python3 cli.py with no arguments
+  Then the CLI prints a usage message to stderr
+  And the CLI exits 2
+
+Scenario: Blank argument fails
+  Given the greeting CLI
+  When the operator runs python3 cli.py with "   "
+  Then the CLI prints a usage message to stderr
+  And the CLI exits 2
 ```
 
 ## Out of Scope
