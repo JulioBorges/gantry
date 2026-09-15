@@ -21,6 +21,7 @@ coverage/
 
 # Caches
 __pycache__/
+.pytest_cache/
 .cache/
 .eslintcache
 .vitest/
@@ -69,6 +70,8 @@ lerna-debug.log*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+.claude/worktrees/
 
 # Notes
 # This file deliberately does NOT ignore `**/[Bb]in/*`. The previous Visual Studio / .NET
