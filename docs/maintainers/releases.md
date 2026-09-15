@@ -1,9 +1,10 @@
 # Maintainer release runbook
 
 Only `JulioBorges` reviews, merges, and authorizes publication. Releases are
-manually dispatched from `main`; the workflow checks both the initiating and
-rerunning actor, revalidates an exact merged commit, and uses the protected
-`npm-release` environment. No release runs on fork PRs, PR closure, or tag pushes.
+triggered by pushing a `vX.Y.Z` tag; the workflow derives the version from that
+tag, checks both the initiating and rerunning actor, verifies the tagged commit
+is already merged in `main`, and uses the protected `npm-release` environment.
+No release runs on fork PRs, PR closure, or branch pushes.
 
 ## Prepare a version through a PR
 
@@ -27,30 +28,38 @@ gh pr create --base main --title "Prepare release 0.1.1" --body "Version bump an
 
 Use semantic versioning: patch for compatible fixes, minor for compatible new
 behavior, major for breaking changes. This workflow publishes stable `x.y.z`
-versions only. Do not create the version tag locally. Review and squash-merge
+versions only. The tag must match package.json and package-lock.json; a mismatch
+fails rather than editing the version during publication. Review and squash-merge
 the PR after `CI gates` passes, using the documented owner review override for
 your own PR. There is no override for mandatory CI or direct pushes.
 
 ## Authorize publication
 
-After merging, copy the full SHA of the merged commit from GitHub. Review its
-CI results and dispatch the release with that exact SHA:
+After merging, review the merged commit's CI results. Fetch current `main`,
+confirm the version, and push an annotated tag at the exact merged commit:
 
 ```bash
-gh workflow run release.yml --ref main -f version=0.1.1 -f commit=<full-merged-commit-sha>
+git fetch origin main
+git show origin/main:package.json
+# Replace 0.1.1 with the version already merged in package.json.
+git tag -a v0.1.1 origin/main -m "Gantry v0.1.1"
+git push origin refs/tags/v0.1.1
 gh run list --workflow release.yml
 ```
 
-Approve the `npm-release` deployment as JulioBorges in GitHub Actions. The
-environment permits only `main`, requires your review, and disallows admin
-bypass. Self-review is permitted because you are the sole maintainer; manual
-dispatch plus environment approval are the publication authorization.
+The tag push automatically starts Release. Approve the `npm-release` deployment
+as JulioBorges in GitHub Actions. The environment permits only version tags
+matching `v*`, requires your review, and disallows admin bypass. Self-review is
+permitted because you are the sole maintainer; tag creation plus environment
+approval are the publication authorization. Lightweight and annotated tags are
+supported; the workflow resolves both to the underlying commit. Only JulioBorges
+may create version tags, and no actor can update or delete them.
 
 The workflow verifies version/lockfile agreement, ancestry in `main`, tag
 identity, tests, the real tarball installer, audit, roadmap, DAG, and clean
 source. It packs that commit and publishes the tarball with npm OIDC provenance.
-It then verifies registry SHA-512 integrity before creating `v<version>` and the
-GitHub Release with generated notes and the tarball asset. Version tags cannot
+It then verifies registry SHA-512 integrity before creating the GitHub Release
+for the existing tag, with generated notes and the tarball asset. Version tags cannot
 be updated or deleted. CI and Release actions are pinned to commit SHAs;
 Dependabot proposes updates for manual review.
 
@@ -63,7 +72,8 @@ Do not use local publication for the normal release process.
 ## Recovery
 
 npm publication and GitHub Releases are not an atomic transaction. If publication
-succeeds but tag/release creation fails, rerun the same workflow with the same
+succeeds but GitHub Release creation fails, use **Re-run all jobs** on the original
+tag-triggered run. Do not delete or recreate the tag. The same tag retains the
 version and commit. The registry check accepts an existing version only when
 its integrity exactly matches the newly packed tarball. It refuses mismatched
 bytes, authentication errors, outages, or a tag pointing at another commit.
@@ -78,6 +88,10 @@ Required check: `CI gates`, emitted by GitHub Actions. Keep mandatory gates in
 the ruleset with **no bypass actors**. The separate review/merge ruleset allows
 only JulioBorges to merge through a PR and includes the self-review exception.
 Keep JulioBorges as the sole upstream writer; grant contributors no write roles.
+The release environment deployment policy must allow tags `v*` (type `tag`),
+not the `main` branch, because environment policies match the event ref. A
+separate tag-creation ruleset allows only JulioBorges to create `v*` tags; the
+immutable-tag ruleset has no bypass actors.
 
 Configure npm's trusted publisher for `@julioborges/gantry`:
 

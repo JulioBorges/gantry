@@ -4,7 +4,7 @@
 harness.**
 
 [![CI](https://github.com/JulioBorges/gantry/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JulioBorges/gantry/actions/workflows/ci.yml)
-[![Release](https://github.com/JulioBorges/gantry/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/JulioBorges/gantry/actions/workflows/release.yml)
+[![Release](https://github.com/JulioBorges/gantry/actions/workflows/release.yml/badge.svg)](https://github.com/JulioBorges/gantry/actions/workflows/release.yml)
 [![npm version](https://img.shields.io/npm/v/%40julioborges%2Fgantry)](https://www.npmjs.com/package/@julioborges/gantry)
 [![GitHub release](https://img.shields.io/github/v/release/JulioBorges/gantry)](https://github.com/JulioBorges/gantry/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -421,11 +421,11 @@ verify with `roadmap.py check`.
 ### Publishing to npm
 
 Releases use the manually authorized [Release workflow](.github/workflows/release.yml).
-A version bump goes through a PR, then JulioBorges dispatches publication from
-`main` for the exact merged commit and approves the `npm-release` environment.
+A version bump goes through a PR, then JulioBorges pushes a tag such as `v0.1.1`
+for the merged commit and approves the `npm-release` environment. The workflow
+derives the version from the tag and requires matching package and lockfile versions.
 The workflow reruns gates, publishes the verified tarball using npm OIDC with
-provenance, verifies registry integrity, and creates the immutable version tag
-and GitHub Release. Merging a PR does not automatically publish.
+provenance, verifies registry integrity, and creates the GitHub Release for the immutable tag. Merging a PR does not automatically publish.
 
 See the [maintainer release runbook](docs/maintainers/releases.md) for versioning,
 authorization, npm trusted publisher setup, and recovery after partial failures.

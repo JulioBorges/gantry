@@ -5,6 +5,13 @@ import { pathToFileURL } from 'node:url';
 
 const packageName = '@julioborges/gantry';
 
+export function versionFromTag(tag) {
+  if (!/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag || '') || tag !== tag.trim()) {
+    throw new Error('Release tag must be vX.Y.Z with a stable semantic version.');
+  }
+  return tag.slice(1);
+}
+
 export function validateRelease(version, commit, manifest, lock) {
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version || '')) {
     throw new Error('Release requires a stable x.y.z version without a v prefix.');
@@ -32,11 +39,14 @@ export async function registryState(version, tarball, request = fetch) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const version = process.env.RELEASE_VERSION;
+    const mode = process.argv[2];
+    const version = mode === 'identity' ? versionFromTag(process.env.RELEASE_TAG) : process.env.RELEASE_VERSION;
     validateRelease(version, process.env.RELEASE_COMMIT,
       JSON.parse(readFileSync('package.json')), JSON.parse(readFileSync('package-lock.json')));
-    const mode = process.argv[2];
-    if (mode !== 'validate') {
+    if (mode === 'identity') {
+      console.log(`RELEASE_VERSION=${version}`);
+      console.log(`RELEASE_COMMIT=${process.env.RELEASE_COMMIT}`);
+    } else if (mode !== 'validate') {
       if (!['registry', 'verify'].includes(mode)) throw new Error('Unknown release check.');
       const tarball = readFileSync(join(process.env.RUNNER_TEMP, 'release', `julioborges-gantry-${version}.tgz`));
       const published = await registryState(version, tarball);
