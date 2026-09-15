@@ -60,8 +60,44 @@ def render_issue_checklist(issues: dict[str, Issue], levels: dict[str, int], num
     return "\n".join(output).lstrip("\n") + "\n"
 
 
+def delivery_levels(text: str, issues: dict[str, Issue]) -> dict[str, int]:
+    """Preserve completed wave membership; schedule other Issues after history.
+
+    The roadmap supplies historical placement only. Authoritative Issue status,
+    never a cached checkbox or heading count, determines whether a wave is complete.
+    """
+    issue_levels(issues)  # Validate cycles before resolving historical placement.
+    block = BLOCK_RE["issue checklist"].search(text)
+    frozen: dict[str, int] = {}
+    if block:
+        sections = re.split(r"^### Wave (\d+)[^\n]*\n", block.group(2), flags=re.MULTILINE)
+        for index in range(1, len(sections), 2):
+            wave = int(sections[index])
+            refs = re.findall(r"^- \[[ xX]\] \*\*`([^`]+)`\*\*", sections[index + 1], re.MULTILINE)
+            if refs and all(ref in issues and issues[ref].done for ref in refs):
+                for ref in refs:
+                    if ref in frozen:
+                        raise ValueError(f"completed Issue {ref} appears in multiple waves")
+                    frozen[ref] = wave
+    floor = max(frozen.values(), default=-1) + 1
+    levels = dict(frozen)
+
+    def place(ref: str) -> int:
+        if ref not in levels:
+            blockers = [place(blocker) + 1 for blocker in issues[ref].blocked_by if blocker in issues]
+            levels[ref] = max([floor, *blockers])
+        return levels[ref]
+
+    for ref in sorted(issues):
+        place(ref)
+    for ref, issue in issues.items():
+        if any(levels[blocker] >= levels[ref] for blocker in issue.blocked_by if blocker in issues):
+            raise ValueError(f"dependencies of {ref} conflict with completed wave history")
+    return levels
+
+
 def render_roadmap(text: str, issues: dict[str, Issue], root: Path, *, scratch: Path | None = None) -> str:
-    levels = issue_levels(issues)
+    levels = delivery_levels(text, issues)
     numbers = spec_numbers(scratch) if scratch else policy_spec_numbers(root)
     done_issues, total_issues, done_specs, total_specs = counts(issues)
     blocks = {

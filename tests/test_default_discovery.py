@@ -1,41 +1,37 @@
 #!/usr/bin/env python3
-"""Regression coverage for the repository's default unittest command."""
+"""Exercise default discovery in an isolated package, without suite recursion."""
 from __future__ import annotations
 
-import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PROBE_ENV = "_GANTRY_DEFAULT_DISCOVERY_PROBE"
 
 
-if os.environ.get(PROBE_ENV):
-
-    class DefaultDiscoveryProbe(unittest.TestCase):
-        def test_default_discovery_probe(self) -> None:
-            self.assertTrue(True)
-
-
-else:
-
-    class DefaultUnittestDiscoveryTests(unittest.TestCase):
-        def test_default_discovery_executes_a_test(self) -> None:
+class DefaultUnittestDiscoveryTests(unittest.TestCase):
+    def test_default_discovery_executes_a_test(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tests = root / "tests"
+            tests.mkdir()
+            # Removing the real package marker must break this test.
+            shutil.copyfile(REPO_ROOT / "tests" / "__init__.py", tests / "__init__.py")
+            (tests / "test_discovery.py").write_text(
+                "import unittest\n"
+                "class DiscoveryTest(unittest.TestCase):\n"
+                "    def test_default_discovery_probe(self):\n"
+                "        self.assertEqual(2 + 2, 4)\n",
+                encoding="utf-8",
+            )
             result = subprocess.run(
                 [sys.executable, "-m", "unittest", "discover", "-v"],
-                cwd=REPO_ROOT,
-                env={**os.environ, PROBE_ENV: "1"},
-                text=True,
-                capture_output=True,
-                check=False,
+                cwd=root, text=True, capture_output=True, check=False, timeout=30,
             )
-
             output = result.stdout + result.stderr
             self.assertEqual(0, result.returncode, output)
             self.assertIn("test_default_discovery_probe", output)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            self.assertIn("Ran 1 test", output)

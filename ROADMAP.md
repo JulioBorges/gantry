@@ -23,7 +23,10 @@ sets `Status: done`, ticks the checkbox here and refreshes every counter in one 
 reports any drift and must be clean.
 
 When a blocker changes or an issue is added, run `roadmap.py waves`: the wave layout is derived from the
-blocker graph and is never edited by hand. The script refuses a graph with a cycle.
+blocker graph and is never edited by hand. Completed waves retain their existing Issue membership and
+numbers, verified against authoritative Issue status. Other Issues are scheduled after the last completed
+wave, with dependencies in earlier waves. The script refuses cycles and dependencies that conflict with
+completed history. `frontier.py` still derives executable rounds from current Issue state.
 
 The **Specs** table below is edited by hand, and only by the operator: a spec moves to *planned* when its
 `spec.md` exists and passes the structural check, to *approved* when the operator approves its slicing,
@@ -38,7 +41,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 |---|---|
 | Issues completed | **18 / 21** |
 | Specs completed | **1 / 2** |
-| Execution waves | **7** |
+| Execution waves | **9** |
 
 ## Specs
 
@@ -119,7 +122,7 @@ complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel 
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
 | 01 | `gantry-migration` | 18/18 | 0–6 |
-| 11 | `caveman-setup` | 0/3 | 5–6 |
+| 11 | `caveman-setup` | 0/3 | 7–8 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -191,7 +194,7 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [ ] **`caveman-setup#01`** — Configure Caveman in setup and use it in the coordinating agent
   <br>↳ blocked by: gantry-migration#10, gantry-migration#02
 
-### Wave 6 — 0/2 done
+### Wave 8 — 0/2 done
 
 - [ ] **`caveman-setup#02`** — Apply Caveman lite to planning agents
   <br>↳ blocked by: caveman-setup#01
