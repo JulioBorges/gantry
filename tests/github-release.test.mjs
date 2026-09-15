@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { registryState, validateRelease, versionFromTag } from '../scripts/github-release.mjs';
+import { registryState, validateRelease, versionFromTag, waitForPublished } from '../scripts/github-release.mjs';
 
 const version = '0.1.1';
 const manifest = { name: '@julioborges/gantry', version };
@@ -41,4 +41,39 @@ test('version comes from a stable v-prefixed tag and rejects malformed or prerel
     assert.throws(() => versionFromTag(tag), /Release tag/);
   }
   assert.throws(() => validateRelease(versionFromTag('v0.1.2'), commit, manifest, lock), /must match/);
+});
+
+test('post-publication verification waits for registry propagation, then checks exact integrity', async () => {
+  const tarball = Buffer.from('verified release');
+  const integrity = `sha512-${createHash('sha512').update(tarball).digest('base64')}`;
+  let calls = 0;
+  const delays = [];
+  const request = async () => ++calls < 3
+    ? { status: 404 }
+    : { status: 200, ok: true, json: async () => ({ ...manifest, dist: { integrity } }) };
+  assert.equal(await waitForPublished(version, tarball, {
+    request, attempts: 3, delayMs: 10, sleep: async ms => delays.push(ms),
+  }), true);
+  assert.equal(calls, 3);
+  assert.deepEqual(delays, [10, 10]);
+});
+
+test('propagation timeout is bounded and integrity or registry errors are never accepted', async () => {
+  let calls = 0;
+  await assert.rejects(waitForPublished(version, Buffer.from('release'), {
+    request: async () => { calls++; return { status: 404 }; },
+    attempts: 3, delayMs: 0, sleep: async () => {},
+  }), /missing.*after 3 checks/);
+  assert.equal(calls, 3);
+  for (const response of [
+    { status: 403, ok: false },
+    { status: 503, ok: false },
+    { status: 200, ok: true, json: async () => ({ ...manifest, dist: { integrity: 'wrong' } }) },
+  ]) {
+    let delays = 0;
+    await assert.rejects(waitForPublished(version, Buffer.from('release'), {
+      request: async () => response, sleep: async () => delays++,
+    }));
+    assert.equal(delays, 0);
+  }
 });

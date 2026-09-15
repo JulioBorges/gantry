@@ -71,6 +71,15 @@ Do not use local publication for the normal release process.
 
 ## Recovery
 
+npm can return a successful publication before the package becomes readable.
+Post-publication verification polls only missing-package (HTTP 404) responses,
+up to 31 checks spaced 10 seconds apart (five minutes of waiting, plus request
+latency). Every successful response must match the tarball SHA-512 integrity.
+Registry/authentication errors and mismatched integrity fail immediately; they
+never authorize continuing. The pre-publication registry check remains strict
+and does not use this propagation wait.
+
+
 npm publication and GitHub Releases are not an atomic transaction. If publication
 succeeds but GitHub Release creation fails, use **Re-run all jobs** on the original
 tag-triggered run. Do not delete or recreate the tag. The same tag retains the
