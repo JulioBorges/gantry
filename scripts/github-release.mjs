@@ -37,6 +37,19 @@ export async function registryState(version, tarball, request = fetch) {
   return true;
 }
 
+export async function waitForPublished(version, tarball, {
+  request = fetch,
+  attempts = 31,
+  delayMs = 10_000,
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+} = {}) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (await registryState(version, tarball, request)) return true;
+    if (attempt < attempts) await sleep(delayMs);
+  }
+  throw new Error(`Published package is missing from the registry after ${attempts} checks.`);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const mode = process.argv[2];
@@ -49,8 +62,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     } else if (mode !== 'validate') {
       if (!['registry', 'verify'].includes(mode)) throw new Error('Unknown release check.');
       const tarball = readFileSync(join(process.env.RUNNER_TEMP, 'release', `julioborges-gantry-${version}.tgz`));
-      const published = await registryState(version, tarball);
-      if (mode === 'verify' && !published) throw new Error('Published package is missing from the registry.');
+      const published = mode === 'verify'
+        ? await waitForPublished(version, tarball)
+        : await registryState(version, tarball);
       console.log(`published=${published}`);
     }
   } catch (error) {
