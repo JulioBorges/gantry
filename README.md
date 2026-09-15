@@ -6,7 +6,7 @@ Gantry turns an approved spec into verified, roadmap-tracked deliveries from ins
 
 Named after the [gantry crane](https://en.wikipedia.org/wiki/Gantry_crane): it does not lift the cargo itself — it provides the rails so every piece lands in the right place.
 
-> **Project status:** design agreed, implementation in progress. The pack evolves the `asdlc` skill in `.agents/skills/asdlc/`, which already runs the core loop in this repository. Support for a harness is announced only after the fixture exercises it; see [`PRD.md`](./PRD.md) §13.
+> **Project status:** canonical pack implemented in `.agents/skills/gantry/` (`gantry`, `gantry-setup`, `gantry-dashboard`). Support for a harness is announced only after the fixture exercises it; see [`PRD.md`](./PRD.md) §13.
 
 ---
 
