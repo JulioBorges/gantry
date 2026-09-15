@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression tests for portable ASDLC policy and issue parsing."""
+"""Regression tests for portable Gantry policy and issue parsing."""
 from __future__ import annotations
 
 import sys
@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "asdlc" / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "gantry" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from common import parse_issue, resolve_policy  # noqa: E402

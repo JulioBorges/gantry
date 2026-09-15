@@ -5,7 +5,7 @@ description: Conversational repository setup. The sole writer of repository poli
 
 # Gantry Setup
 
-You are the sole conversational writer of the Gantry repository policy.
+You are the sole conversational writer of repository policy.
 
 1. **Present Decisions**: Present each artifact, template, check, Git, and hook decision to the operator.
    - For each decision, provide its benefit, trade-off, default, and confirmation.

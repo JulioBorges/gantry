@@ -159,5 +159,5 @@ Documentation should be updated when:
 
 1. Check relevant guide above
 2. See [Playwright Troubleshooting](./playwright-troubleshooting.md)
-3. Check project issues in `.scratch/*/issues/` (created per spec by the `asdlc`/`gantry` skill)
+3. Check project issues in `.scratch/*/issues/` (created per spec by the `gantry` skill)
 4. Review team CONTEXT.md for additional context

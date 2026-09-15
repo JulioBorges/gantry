@@ -2,8 +2,7 @@
 
 Read before working on Gantry itself: [`PRD.md`](PRD.md) (what the skill pack is and does), [`CONTEXT.md`](CONTEXT.md)
 (the glossary — use its terms: Issue not PBI, Spec not Living Spec, Run not pipeline) and [`docs/adr/`](docs/adr/)
-(standing decisions; ADR-0004 explains why Gantry is a skill pack and not an engine). The pack is being built from the
-`asdlc` skill in `.agents/skills/asdlc/`; until the migration lands, `asdlc` is the skill that runs this workflow.
+(standing decisions; ADR-0004 explains why Gantry is a skill pack and not an engine). The Gantry pack provides the workflow skills in `.agents/skills/` (`gantry`, `gantry-setup`, `gantry-dashboard`).
 
 ## Agent skills
 
@@ -52,7 +51,7 @@ open.
 running
 
 ```
-python3 .agents/skills/asdlc/scripts/roadmap.py done <spec-slug>#NN
+python3 .agents/skills/gantry/scripts/roadmap.py done <spec-slug>#NN
 ```
 
 which does all three required edits at once — and nothing else does them:
@@ -73,7 +72,7 @@ Rules that keep the roadmap trustworthy:
   and the roadmap is stale; regenerate the roadmap.
 - **Never tick an item on another agent's behalf** or because a report claims it is done. Verify the
   acceptance criteria against the delivered revision first.
-- **The blocker graph must stay a DAG.** `python3 .agents/skills/asdlc/scripts/frontier.py --scope all`
+- **The blocker graph must stay a DAG.** `python3 .agents/skills/gantry/scripts/frontier.py --scope all`
   must report zero errors; a new `Blocked by` line that closes a cycle is a defect in the breakdown, not a
   scheduling problem.
 - If work reveals that an issue needs to be split, merged, or added, say so rather than silently editing
