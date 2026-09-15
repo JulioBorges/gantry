@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { registryState, validateRelease } from '../scripts/github-release.mjs';
+import { registryState, validateRelease, versionFromTag } from '../scripts/github-release.mjs';
 
 const version = '0.1.1';
 const manifest = { name: '@julioborges/gantry', version };
@@ -32,4 +32,13 @@ test('retry accepts identical published bytes and rejects an occupied version wi
   const request = async () => ({ ok: true, status: 200, json: async () => ({ ...manifest, dist: { integrity } }) });
   assert.equal(await registryState(version, tarball, request), true);
   await assert.rejects(registryState(version, Buffer.from('other release'), request), /differs/);
+});
+
+test('version comes from a stable v-prefixed tag and rejects malformed or prerelease tags', () => {
+  assert.equal(versionFromTag('v0.1.1'), '0.1.1');
+  assert.equal(versionFromTag('v10.20.30'), '10.20.30');
+  for (const tag of ['0.1.1', 'v01.1.1', 'v0.1.1-beta.1', 'v0.1.1+build', 'v0.1', 'v0.1.1\n', 'v0.1.1;echo bad', undefined]) {
+    assert.throws(() => versionFromTag(tag), /Release tag/);
+  }
+  assert.throws(() => validateRelease(versionFromTag('v0.1.2'), commit, manifest, lock), /must match/);
 });
