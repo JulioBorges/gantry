@@ -13,6 +13,9 @@ git switch -c release/0.1.1 origin/main
 npm version 0.1.1 --no-git-tag-version
 # Update user-facing documentation and describe the changes in the PR.
 npm ci --ignore-scripts
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements-dev.txt
 make test
 npm run test:package
 npm audit --audit-level=high

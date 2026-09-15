@@ -400,6 +400,9 @@ and include validation evidence in your pull request.
 Run the Python suite from the repository root:
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements-dev.txt
 make test
 ```
 

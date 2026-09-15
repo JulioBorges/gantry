@@ -25,6 +25,9 @@ git remote add upstream https://github.com/JulioBorges/gantry.git
 git fetch upstream
 git switch -c feat/my-change upstream/main
 npm ci --ignore-scripts
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements-dev.txt
 make test
 npm run test:package
 npm audit --audit-level=high
