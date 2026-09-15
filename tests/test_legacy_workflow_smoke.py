@@ -431,12 +431,13 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
         self.assertEqual(REPO_ROOT / "docs" / "agents" / "issue-tracker.md", paths["issueTracker"])
 
         frontier = self.frontier_json(REPO_ROOT, "gantry-migration", include_parked=False)
-        self.assertIn("gantry-migration#18", frontier["selected"])
-
         issue_path = REPO_ROOT / ".scratch" / "gantry-migration" / "issues" / "18-retire-asdlc-and-switch-harness-links.md"
         parsed_issue = self.acceptance_json(REPO_ROOT, issue_path)
         self.assertEqual("gantry-migration#18", parsed_issue["ref"])
-        self.assertEqual("ready-for-agent", parsed_issue["status"])
+        if parsed_issue["status"] == "ready-for-agent":
+            self.assertIn("gantry-migration#18", frontier["selected"])
+        else:
+            self.assertEqual("done", parsed_issue["status"])
 
         round_args = {
             "round": 6,
