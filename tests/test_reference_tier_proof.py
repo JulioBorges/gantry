@@ -16,6 +16,8 @@ class ReferenceTierProofTests(unittest.TestCase):
         self.assertIn("reference", readme)
         self.assertIn("run-20260914T214531Z-19a5fb.jsonl", readme)
         self.assertIn("run-20260914T214012Z-plan12.jsonl", readme)
+        self.assertIn("ee61815efea9", readme)
+        self.assertIn("bc054eb612dc", readme)
         self.assertIn("- [x]", readme)
         
         # Planning-stop observation

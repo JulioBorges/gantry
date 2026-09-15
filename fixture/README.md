@@ -45,7 +45,7 @@ python3 fixture/tools/copy_fixture.py --mode unplanned --skill-dir .agents/skill
 cd /tmp/gantry-plan && claude -p "gantry greeting"
 ```
 *Observation*: Reached the planning-approval stop. Wrote Issue files with `Status: draft` and left `ROADMAP.md` unchanged.
-*Run-log path*: `~/.gantry/state/unplan123/runs/run-20260914T214012Z-plan12.jsonl`
+*Run-log path*: `~/.gantry/state/ee61815efea9/runs/run-20260914T214012Z-plan12.jsonl` (resolved preflight path; unmaterialized on disk as run stopped at planning approval before round initiation)
 *Tier*: `reference`
 
 **Approved Copy (Round Execution to PR Offer)**
