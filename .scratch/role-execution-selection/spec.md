@@ -10,13 +10,15 @@ Created: 2026-09-15
 
 ### Context
 
-Operators cannot select the complete executable model catalog in Codex or assign another harness to a role. The shipped Codex declaration names only `gpt-5.2-codex`, `budget.py` rejects undeclared models, and round invocations carry a model without a role-specific harness. The operator needs a Codex-hosted Run with a Claude Code Critic, and the same freedom for every other role.
+Operators cannot select the complete executable model catalog in Codex, use Antigravity (`agy`) as an execution or host harness, or assign another harness to a role. The shipped Codex declaration names only `gpt-5.2-codex`, `budget.py` rejects undeclared models, Antigravity tools and lifecycle hooks lack native `guard.py` handling, and round invocations carry a model without a role-specific harness. The operator needs cross-harness freedom (such as a Codex-hosted Run with a Claude Code Critic, or Antigravity-hosted Runs and Critic executions), backed by clean context isolation and guard rails.
 
 ### Architecture
 
-The Host Harness retains the conversation, scheduling and serial integration. Bounded native harness invocations execute roles; no independent execution engine is introduced. Initial execution integrations cover Codex CLI, Claude Code and OpenCode, subject to verified local capabilities; unsupported versions are reported explicitly rather than treated as supported.
+The Host Harness retains the conversation, scheduling and serial integration. Bounded native harness invocations execute roles; no independent execution engine is introduced. Initial execution integrations cover Codex CLI, Claude Code, OpenCode and Antigravity (`agy`), subject to verified local capabilities; unsupported versions are reported explicitly rather than treated as supported.
 
-Separate runtime model discovery from static harness capability declarations. Discovery returns all executable model IDs exposed by the effective environment, supported reasoning effort values, evidence source and freshness. It handles pagination and environment/provider differences. Unknown availability is not executable availability; if complete discovery cannot be established, report the limitation and block affected selection instead of presenting a static shortlist as complete. Do not infer capability from a model name or fabricate effort levels.
+For Antigravity, compatibility spans both Host Harness and Execution Harness roles. A static capability file `capabilities/antigravity.json` declares the harness identity, skills path, and supported hook events. `setup.py` detects Antigravity (via `.agents/` or the `agy` CLI) and generates or merges `.agents/hooks.json` to wire `PreToolUse` to `guard.py PreToolUse --json`. `guard.py` explicitly normalizes Antigravity tool calls (`run_command` via `CommandLine`, `write_to_file` and `replace_file_content` via `TargetFile`, `CodeContent` and `ReplacementContent`), enforcing protections on `ROADMAP.md`, `Status:` lines, checkbox lines, and git hook bypass attempts, returning JSON decisions (`allow`/`deny` with reason and exit code 0). Subagent lifecycles invoked via `invoke_subagent` are recorded into the Run log (`subagent.started` and `subagent.stopped`). When executing roles on Antigravity, strict context isolation is maintained by dispatching headless subprocess invocations (`agy --print --model <model> [--effort <effort>] --output-format json --dangerously-skip-permissions "<prompt>"`) whose outputs are validated against the Result Contract via `result.py`.
+
+Separate runtime model discovery from static harness capability declarations. Discovery returns all executable model IDs exposed by the effective environment, supported reasoning effort values, evidence source and freshness. It handles pagination and environment/provider differences (including `agy models`). Unknown availability is not executable availability; if complete discovery cannot be established, report the limitation and block affected selection instead of presenting a static shortlist as complete. Do not infer capability from a model name or fabricate effort levels.
 
 Persist sparse role defaults under `execution.roles` in tracked `.gantry/config.json`, written through `gantry-setup` and `setup.py`. Each selection contains `harness`, `model` and optional `effort`; omission means the harness's verified default. Preserve unrelated policy, including Caveman opt-in. Track only repository policy and intentional reusable templates; keep transient discovery and execution state outside tracked policy. Adjust the current root `.gantry/` ignore rule to allow canonical policy without broadly including local state.
 
@@ -39,10 +41,11 @@ Execution failures preserve the worktree and pause the affected Issue separately
 
 ### Definition of Done
 
-- [ ] Complete available-model and supported-effort selection replaces the Codex shortlist, including actionable discovery failure handling.
+- [ ] Complete available-model and supported-effort selection replaces static shortlists, including actionable discovery failure handling across Codex, Claude Code, OpenCode and Antigravity.
+- [ ] Antigravity capability declaration (`capabilities/antigravity.json`), `guard.py` hook payload normalization for Antigravity tools, and `.agents/hooks.json` setup generation establish host and execution foundation.
 - [ ] Versioned defaults survive cloning and setup merges, with validated Run and Issue overrides and no credentials.
-- [ ] Every role can select a supported execution harness independently of the Host Harness and satisfy its Result Contract.
-- [ ] A real Codex-hosted delivery is independently inspected by a Claude Code Critic that executes acceptance and gates on the exact revision.
+- [ ] Every role can select a supported execution harness (including Antigravity CLI) independently of the Host Harness and satisfy its Result Contract in an isolated context.
+- [ ] A real Codex-hosted delivery is independently inspected by a Claude Code Critic that executes acceptance and gates on the exact revision, with interoperability verified for Antigravity.
 - [ ] A runtime failure isolates the affected Issue, preserves its work, requires explicit recovery and blocks the next round while unresolved.
 - [ ] Local regression coverage and sanitized live evidence demonstrate the contract without changing completion authority or correction budgets.
 
@@ -62,6 +65,12 @@ Scenario: Complete Codex selection
   When the operator selects a role execution
   Then every exposed executable model and its supported effort levels is offered
   And unsupported effort values are rejected
+
+Scenario: Antigravity model discovery and role execution
+  Given an effective Antigravity environment exposes executable Gemini models and effort levels via agy
+  When the operator selects a role execution for Antigravity
+  Then every exposed executable model and its supported effort levels is offered
+  And the role executes headlessly in an isolated subprocess with strict Result Contract validation
 
 Scenario: Invalid saved selection
   Given a clone contains saved role defaults unavailable to the current account
@@ -99,5 +108,6 @@ Scenario: Explicit Issue-role replacement
 
 ## Changelog
 
+- 2026-09-16 — Updated with operator-confirmed Antigravity compatibility: Host Harness hook integration, capability declaration, model discovery and headless role execution via `agy`.
 - 2026-09-15 — Draft based on the operator-confirmed interview; Spec and five-Issue breakdown approved by the operator.
 - 2026-09-15 — Operator approved the Spec and five-Issue breakdown; implementation remains pending.
