@@ -12,7 +12,7 @@ Created: 2026-09-15
 
 ## What to build
 
-Dispatch bounded role invocations to Codex CLI, Claude Code or OpenCode while the Host Harness retains coordination; unsupported installed versions are explicitly rejected.
+Dispatch bounded role invocations to Codex CLI, Claude Code, OpenCode or Antigravity (`agy --print`) while the Host Harness retains coordination; normalize Antigravity tools and hooks in `guard.py`; unsupported installed versions are explicitly rejected.
 
 ### Files to read
 
@@ -20,10 +20,13 @@ Dispatch bounded role invocations to Codex CLI, Claude Code or OpenCode while th
 - `.agents/skills/gantry/reference/round-workflow.md`
 - `.agents/skills/gantry/scripts/result.py`
 - `.agents/skills/gantry/scripts/runlog.py`
+- `.agents/skills/gantry/scripts/guard.py`
+- `.agents/skills/gantry/capabilities/antigravity.json`
 
 ## Acceptance criteria
 
-- [ ] Contract tests exercise every role and derived-role mapping with independent harness/model/effort selection and canonical assigned working directories.
+- [ ] Contract tests exercise every role and derived-role mapping with independent harness/model/effort selection (including Antigravity `agy` CLI dispatch) and canonical assigned working directories.
+- [ ] `guard.py` normalizes Antigravity tool calls (`run_command`, `write_to_file`, `replace_file_content`) and records subagent events (`invoke_subagent`), returning JSON allow/deny decisions with exit 0.
 - [ ] External results pass result.py validation; missing or invalid results retain existing protocol-failure semantics.
 - [ ] Critic invocation verifies the delivered revision and independently runs acceptance and gates; permission or tool limitations fail visibly rather than accepting a summary.
 - [ ] Selection identity is recorded honestly and native/configured automatic model fallback is disabled or detected and rejected.

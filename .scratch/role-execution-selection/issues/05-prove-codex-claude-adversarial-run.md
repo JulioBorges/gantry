@@ -12,7 +12,7 @@ Created: 2026-09-15
 
 ## What to build
 
-Exercise the completed flow in the real fixture and publish sanitized reproducible evidence plus operator instructions.
+Exercise the completed flow in the real fixture and publish sanitized reproducible evidence plus operator instructions, demonstrating cross-harness execution and Antigravity interoperability via `agy`.
 
 ### Files to read
 
@@ -24,6 +24,7 @@ Exercise the completed flow in the real fixture and publish sanitized reproducib
 ## Acceptance criteria
 
 - [ ] A live Codex-hosted fixture records a Claude Code Critic independently reading the exact delivery revision and executing acceptance and gates, with a schema-valid result.
+- [ ] Automated fixture and contract tests demonstrate Antigravity role dispatch and hook interception interoperability alongside the live proof.
 - [ ] Evidence identifies installed versions, selections, revision, verification outcomes and limitations without secrets; simulated tests are clearly distinguished from live proof.
 - [ ] A known unmet fixture criterion is refuted, and its corrected delivery is accepted only after independent verification.
 - [ ] Recovery demonstration shows explicit Issue-role replacement or retry with preserved work and budgets; local deterministic tests also cover parallel failure isolation.

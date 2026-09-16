@@ -12,20 +12,21 @@ Created: 2026-09-15
 
 ## What to build
 
-Extend setup and preflight so tracked execution defaults and temporary overrides produce a validated effective selection for every role.
+Extend setup and preflight so tracked execution defaults and temporary overrides produce a validated effective selection for every role (including `antigravity`), and provision Antigravity lifecycle hooks via `.agents/hooks.json`.
 
 ### Files to read
 
 - `.agents/skills/gantry-setup/SKILL.md`
 - `.agents/skills/gantry/scripts/setup.py`
 - `.agents/skills/gantry/scripts/common.py`
+- `.agents/skills/gantry/capabilities/antigravity.json`
 - `tests/test_gantry_setup.py`
 
 ## Acceptance criteria
 
-- [ ] Setup preview and merge tests persist execution.roles in .gantry/config.json while preserving unrelated policy, hooks and Caveman settings.
+- [ ] Setup preview and merge tests persist execution.roles in .gantry/config.json while preserving unrelated policy, hooks and Caveman settings, and configure .agents/hooks.json when Antigravity is detected.
 - [ ] Git ignore tests show canonical root policy is trackable while transient state and credentials remain excluded.
-- [ ] Preflight tests demonstrate precedence, explicit defaults and derived-role inheritance, and start no implementation when a selected combination fails authentication or execution validation.
+- [ ] Preflight tests demonstrate precedence, explicit defaults and derived-role inheritance (including Antigravity with Gemini models), and start no implementation when a selected combination fails authentication or execution validation.
 - [ ] Model strength guidance is advisory; a valid cross-family selection is not blocked by a guessed ranking.
 
 ## Blocked by
