@@ -26,8 +26,11 @@ def clean_ansi(text: str) -> str:
     return ANSI_ESCAPE_RE.sub("", text).replace("\r", "")
 
 
-def parse_agy_models_output(raw_output: str) -> list[dict[str, Any]]:
-    """Parse stdout from `agy models` into a structured list of model dicts."""
+def parse_agy_models_output(
+    raw_output: str,
+    metadata_lookup: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Parse stdout from `agy models` into a structured list of model dicts without inventing windows."""
     cleaned = clean_ansi(raw_output)
     models: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -46,31 +49,21 @@ def parse_agy_models_output(raw_output: str) -> list[dict[str, Any]]:
             continue
         seen.add(model_id)
 
-        # Detect effort hints from name or ID
-        effort: str | None = None
-        supported_efforts: list[str] = []
-        name_lower = display_name.lower()
-        if "(high)" in name_lower or "-high" in model_id:
-            effort = "high"
-            supported_efforts = ["low", "medium", "high"]
-        elif "(medium)" in name_lower or "-medium" in model_id:
-            effort = "medium"
-            supported_efforts = ["low", "medium", "high"]
-        elif "(low)" in name_lower or "-low" in model_id:
-            effort = "low"
-            supported_efforts = ["low", "medium", "high"]
-        elif "(thinking)" in name_lower:
-            supported_efforts = ["low", "medium", "high"]
-
         entry: dict[str, Any] = {
             "id": model_id,
             "name": display_name,
-            "contextWindow": 1000000 if "gemini" in model_id else 200000,
         }
-        if effort:
-            entry["effort"] = effort
-        if supported_efforts:
-            entry["supportedEfforts"] = supported_efforts
+
+        # Attach verified context metadata or effort if declared/verified
+        if metadata_lookup and model_id in metadata_lookup:
+            meta = metadata_lookup[model_id]
+            if isinstance(meta, dict):
+                if "contextWindow" in meta:
+                    entry["contextWindow"] = meta["contextWindow"]
+                if "supportedEfforts" in meta:
+                    entry["supportedEfforts"] = meta["supportedEfforts"]
+                if "effort" in meta:
+                    entry["effort"] = meta["effort"]
 
         models.append(entry)
 
@@ -109,7 +102,15 @@ def discover_antigravity_models(runner: Callable[..., subprocess.CompletedProces
         err = proc.stderr.strip() or proc.stdout.strip()
         raise DiscoveryError(f"Missing discovery: agy models returned exit code {proc.returncode}: {err}")
 
-    models = parse_agy_models_output(proc.stdout)
+    cap_file = Path(__file__).resolve().parents[1] / "capabilities" / "antigravity.json"
+    metadata_lookup = {}
+    if cap_file.exists():
+        try:
+            metadata_lookup = json.loads(cap_file.read_text(encoding="utf-8")).get("models", {})
+        except Exception:
+            pass
+
+    models = parse_agy_models_output(proc.stdout, metadata_lookup=metadata_lookup)
     if not models:
         raise DiscoveryError("Missing discovery: agy models returned an empty model list")
     return models
@@ -124,33 +125,32 @@ def discover_models(harness: str, runner: Callable[..., Any] | None = None) -> l
     if h == "antigravity":
         return discover_antigravity_models(runner=runner)
     elif h == "claude-code":
-        # Check claude binary or static discovery probe
         claude_path = shutil.which("claude")
         if not claude_path:
-            # Fall back to shipped models with verified window
-            cap_file = Path(__file__).resolve().parents[1] / "capabilities" / "claude-code.json"
-            if cap_file.exists():
-                cap = json.loads(cap_file.read_text(encoding="utf-8"))
-                return [{"id": m, "contextWindow": d["contextWindow"], "supportedEfforts": ["low", "medium", "high"]}
-                        for m, d in cap.get("models", {}).items()]
-            raise DiscoveryError("Missing discovery: claude CLI not found and no capability declaration")
-        # If claude exists
-        return [
-            {"id": "claude-opus-4-5", "name": "Claude Opus 4.5", "contextWindow": 200000, "supportedEfforts": ["low", "medium", "high"]},
-            {"id": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5", "contextWindow": 200000, "supportedEfforts": ["low", "medium", "high"]},
-        ]
+            raise DiscoveryError("Missing discovery: claude CLI not found in PATH")
+        cap_file = Path(__file__).resolve().parents[1] / "capabilities" / "claude-code.json"
+        if cap_file.exists():
+            cap = json.loads(cap_file.read_text(encoding="utf-8"))
+            return [{"id": m, "contextWindow": d["contextWindow"]} for m, d in cap.get("models", {}).items()]
+        raise DiscoveryError("Missing discovery: claude capability declaration missing")
     elif h == "opencode":
+        opencode_path = shutil.which("opencode")
+        if not opencode_path:
+            raise DiscoveryError("Missing discovery: opencode CLI not found in PATH")
         cap_file = Path(__file__).resolve().parents[1] / "capabilities" / "opencode.json"
         if cap_file.exists():
             cap = json.loads(cap_file.read_text(encoding="utf-8"))
             return [{"id": m, "contextWindow": d["contextWindow"]} for m, d in cap.get("models", {}).items()]
-        raise DiscoveryError("Missing discovery: opencode not found")
+        raise DiscoveryError("Missing discovery: opencode capability declaration missing")
     elif h == "codex":
+        codex_path = shutil.which("codex")
+        if not codex_path:
+            raise DiscoveryError("Missing discovery: codex CLI not found in PATH")
         cap_file = Path(__file__).resolve().parents[1] / "capabilities" / "codex.json"
         if cap_file.exists():
             cap = json.loads(cap_file.read_text(encoding="utf-8"))
             return [{"id": m, "contextWindow": d["contextWindow"]} for m, d in cap.get("models", {}).items()]
-        raise DiscoveryError("Missing discovery: codex not found")
+        raise DiscoveryError("Missing discovery: codex capability declaration missing")
 
     raise DiscoveryError(f"Missing discovery: unhandled harness {harness}")
 

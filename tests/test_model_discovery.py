@@ -27,7 +27,10 @@ gemini-3.8-flash-low      Gemini 3.8 Flash (Low)
 gemini-3.1-pro-high       Gemini 3.1 Pro (High)
 claude-sonnet-4-6         Claude Sonnet 4.6 (Thinking)
 """
-        models = discovery.parse_agy_models_output(raw_output)
+        metadata_lookup = {
+            "gemini-3.8-flash-high": {"contextWindow": 1000000, "effort": "high", "supportedEfforts": ["low", "medium", "high"]}
+        }
+        models = discovery.parse_agy_models_output(raw_output, metadata_lookup=metadata_lookup)
         model_ids = [m["id"] for m in models]
         self.assertIn("gemini-3.8-flash-high", model_ids)
         self.assertIn("gemini-3.1-pro-high", model_ids)

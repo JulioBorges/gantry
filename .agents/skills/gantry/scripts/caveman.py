@@ -75,7 +75,6 @@ def check_availability(harness: str | None = None, root: Path | None = None) -> 
             root_path / ".claude" / "skills" / "caveman" / "SKILL.md",
             home / ".claude" / "skills" / "caveman" / "SKILL.md",
             home / ".agents" / "skills" / "caveman" / "SKILL.md",
-            home / ".gemini" / "config" / "skills" / "caveman" / "SKILL.md",
         ])
 
     for candidate in candidate_paths:

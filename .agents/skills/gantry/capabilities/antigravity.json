@@ -1,5 +1,5 @@
 {
-  "tier": "supported",
+  "tier": "compatible",
   "hooks": true,
   "structured_output": true,
   "worktree_isolation": true,
