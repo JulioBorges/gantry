@@ -9,7 +9,7 @@
   "hook_events": ["PreToolUse"],
   "payload_fields": ["tool_name", "tool_input", "session_id"],
   "models": {
-    "gemini-2.5-pro": {"contextWindow": 1000000},
-    "gemini-2.5-flash": {"contextWindow": 1000000}
+    "gemini-3.8-flash-medium": {"contextWindow": 1000000},
+    "gemini-3.1-pro-high": {"contextWindow": 1000000}
   }
 }
