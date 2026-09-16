@@ -39,9 +39,9 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **18 / 21** |
-| Specs completed | **1 / 2** |
-| Execution waves | **9** |
+| Issues completed | **18 / 26** |
+| Specs completed | **1 / 3** |
+| Execution waves | **12** |
 
 ## Specs
 
@@ -65,6 +65,7 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 09 | `run-history` | idea | 01 | 02 (more than one run to compare) | `scripts/dashboard.py`, dashboard static assets, `scripts/runlog.py` queries | read-only per-run page in the dashboard (phase timeline, corrections, refutations) and comparison of runs over the same scope |
 | 10 | `windows-validation` | idea, waiting on a machine | 06 | external: a Windows machine | `install.sh`, `guard.py` path handling, `fixture/README.md` | fixture run on Windows (paths, symlinks, hooks); support declared only after the run is recorded |
 | 11 | `caveman-setup` | **approved** | 01 | — | `gantry-setup`, portable policy, coordinating instructions, plan and round workflows, tests and documentation | optional environment-installed Caveman lite for agent messages and summaries; explicit repository opt-in; user-managed installation; once-per-Run fallback warning; artifacts and verification preserved |
+| 12 | `role-execution-selection` | **approved** | 01 | — | runtime model discovery, context budget, setup policy, plan and round workflows, Run Log, fixture proof | complete executable model catalog; versioned role defaults; cross-harness roles; explicit Issue recovery; real Codex-hosted Claude Code Critic proof |
 
 ### Spec waves (structural)
 
@@ -73,7 +74,7 @@ Computed from *Blocked by* only, the same way issue waves are computed from `## 
 | Wave | Specs | Meaning |
 |---|---|---|
 | A | 01 | everything else builds on the migration |
-| B | 02, 03, 04, 05, 06, 07, 08, 09, 11 | unblocked the moment 01 is done; the order among them is preference, not dependency |
+| B | 02, 03, 04, 05, 06, 07, 08, 09, 11, 12 | unblocked the moment 01 is done; the order among them is preference, not dependency |
 | C | 10 | needs the installer from 06 (and a machine) |
 
 ### Intended order (one spec at a time)
@@ -123,6 +124,7 @@ complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel 
 |---|---|---|---|
 | 01 | `gantry-migration` | 18/18 | 0–6 |
 | 11 | `caveman-setup` | 0/3 | 7–8 |
+| 12 | `role-execution-selection` | 0/5 | 7–11 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -189,16 +191,34 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-migration#18`** — Retire ASDLC after canonical proof
   <br>↳ blocked by: gantry-migration#17
 
-### Wave 7 — 0/1 done
+### Wave 7 — 0/2 done
 
 - [ ] **`caveman-setup#01`** — Configure Caveman in setup and use it in the coordinating agent
   <br>↳ blocked by: gantry-migration#10, gantry-migration#02
+- [ ] **`role-execution-selection#01`** — Select from a complete executable model catalog _(no blockers)_
 
-### Wave 8 — 0/2 done
+### Wave 8 — 0/3 done
 
 - [ ] **`caveman-setup#02`** — Apply Caveman lite to planning agents
   <br>↳ blocked by: caveman-setup#01
 - [ ] **`caveman-setup#03`** — Apply Caveman lite to round agents
   <br>↳ blocked by: caveman-setup#01
+- [ ] **`role-execution-selection#02`** — Start a Run from validated repository role defaults
+  <br>↳ blocked by: role-execution-selection#01
+
+### Wave 9 — 0/1 done
+
+- [ ] **`role-execution-selection#03`** — Execute any role in a selected native harness
+  <br>↳ blocked by: role-execution-selection#02
+
+### Wave 10 — 0/1 done
+
+- [ ] **`role-execution-selection#04`** — Recover an unavailable Issue role without interrupting independent work
+  <br>↳ blocked by: role-execution-selection#03
+
+### Wave 11 — 0/1 done
+
+- [ ] **`role-execution-selection#05`** — Demonstrate a Codex-hosted Run with an independent Claude Code Critic
+  <br>↳ blocked by: role-execution-selection#04
 
 <!-- END GENERATED: issue checklist -->

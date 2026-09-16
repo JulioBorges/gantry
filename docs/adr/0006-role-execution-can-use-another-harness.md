@@ -1,0 +1,5 @@
+# Role execution may use a harness different from the Host Harness
+
+The operator may select a harness, model and supported reasoning effort independently for each role, including a Claude Code Critic in a Codex-hosted Run. The Host Harness retains the operator conversation, workflow coordination and integration, while bounded native harness invocations execute roles under the same Result Contracts and verification requirements. This extends the host-only role assumption without replacing ADR-0004's skill pack with an independent engine.
+
+We choose this over model-only selection because an independently verifying Critic from another model family is an operator requirement; model diversity alone is not evidence of better review quality. The cost is environment-specific discovery, preflight validation and explicit recovery: unavailable executions pause affected work instead of silently switching models. Role defaults are versioned repository policy under `.gantry/`, with credentials and transient state kept outside that policy.

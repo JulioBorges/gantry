@@ -28,6 +28,14 @@ _Avoid_: Living Spec, PRD (the product-level document a spec may be derived from
 An explicitly supported ability of a harness, such as running guard hooks on tool events, spawning a subagent with a chosen model, or isolating a subagent in its own worktree, that determines which Gantry guarantees hold in that harness.
 _Avoid_: Assumed support, universal guarantee
 
+**Available Role Models**:
+The complete set of models the current execution environment can actually run for a Gantry role, together with their available reasoning effort levels. Availability is specific to that environment, not implied by a general model catalog.
+_Avoid_: Static model shortlist, all published models
+
+**Role Execution Selection**:
+The operator's choice of harness, model and supported reasoning effort for a Gantry role. The selected harness may differ from the Host Harness that holds the Run's operator conversation.
+_Avoid_: Model-only selection, changing the Host Harness
+
 **Workflow Script**:
 A deterministic, dependency-free script that is the sole authority on a workflow question: which work is ready, what a delivery must prove, whether the repository's gates pass, and when an issue becomes done. Agents call it; they never re-decide what it decided.
 _Avoid_: Helper, suggestion, LLM judgement
@@ -179,4 +187,3 @@ _Avoid_: Exit code alone, tool-specific adapter
 **Dirty Working Tree**:
 A relevant checkout containing uncommitted or untracked changes that have not been explicitly classified for a Gantry execution and therefore cannot serve as an implicit baseline.
 _Avoid_: issue changes, approved baseline
-
