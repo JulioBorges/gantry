@@ -16,11 +16,18 @@ You are the sole conversational writer of repository policy.
    - Enables recording by default.
    - Asks before denial hooks.
 
-3. **Constraints**:
+3. **Caveman Lite Option**:
+   - Offer Caveman lite as a recommended, explicitly confirmed repository preference (`"caveman": true`).
+   - Explain conversational scope (messages and summaries only; specs, issues, code, contracts, and exact errors retain full detail), user-managed installation, fallback to normal behavior, and variable savings.
+   - If declined or skipped, resolve to disabled (`"caveman": false`).
+   - When confirmed and Caveman is not installed, guide user with host-harness installation command (`npx skills add caveman` for Claude Code; clone into `~/.gemini/config/skills/caveman` or `.agents/skills/caveman` for Antigravity; `.agents/skills/caveman` for OpenCode/Codex). Gantry runs no installer and changes no global agent configuration.
+   - After user reports installation, verify host-harness discovery and readability using `python3 .agents/skills/gantry/scripts/caveman.py check --harness <harness>`.
+
+4. **Constraints**:
    - Creates no engine, database, MCP service, or automatic cleanup.
    - All setup-generated policy, prompts, and marked content must be English.
 
-4. **Applying the Policy**:
+5. **Applying the Policy**:
    Once the operator confirms the settings, construct the JSON configuration and pipe it to `setup.py`:
    
    ```bash

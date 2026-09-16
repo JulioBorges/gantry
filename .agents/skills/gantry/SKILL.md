@@ -28,6 +28,13 @@ Before a Run, resolve these values once and pass them as `args` to every referen
    `<repoRoot>/.gantry/config.json` when present. A missing repository policy is valid.
 4. `paths` comes from `common.resolve_workflow_paths(repoRoot, scopeSlug)`. Prompts receive paths, not
    repository-specific literals.
+5. `caveman` comes from resolving repository preference `policy["caveman"]` and host availability
+   via `caveman.resolve_activation(policy, harness=hostHarness, root=repoRoot, warned=args.cavemanWarned)`.
+   When active, the coordinating agent uses concise phrasing for conversational messages and summaries,
+   while all Specs, Issues, documentation, PR descriptions, Result Contracts, exact commands, exact
+   errors and acceptance criteria retain full detail. If enabled in policy but unavailable in the host
+   environment, emit at most one actionable warning per Run with installation guidance and continue with
+   normal behavior; a disabled preference does not load the skill.
 
 Run the standard-library workflow scripts as `python3 <skillDir>/scripts/<script>.py`. `common.py` provides
 the shared Markdown parser and policy resolution; its `--json` path prints the resolved portable runtime.

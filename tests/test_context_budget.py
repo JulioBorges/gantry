@@ -217,6 +217,73 @@ Do not read `src/incidental.txt`; it is only an example.""",
             self.assertEqual("over_budget", payload["verdict"])
             self.assertGreater(payload["estimatedTokens"], payload["budgetTokens"])
 
+    def test_discovered_model_with_verified_metadata_passes_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / ".git").mkdir()
+            issue = self.write_issue(root, "No additional files are required.")
+            catalog_file = root / "catalog.json"
+            catalog_file.write_text(json.dumps({
+                "models": {
+                    "discovered-custom-model": {
+                        "harness": "custom-harness",
+                        "contextWindow": 500000,
+                    }
+                }
+            }), encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable, str(BUDGET), str(issue),
+                    "--model", "discovered-custom-model",
+                    "--catalog", str(catalog_file),
+                    "--json",
+                ],
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(500000, payload["contextWindow"])
+            self.assertEqual("custom-harness", payload["harness"])
+            self.assertEqual("within_budget", payload["verdict"])
+
+    def test_discovered_model_missing_context_metadata_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / ".git").mkdir()
+            issue = self.write_issue(root, "No additional files are required.")
+            catalog_file = root / "catalog.json"
+            catalog_file.write_text(json.dumps({
+                "models": {
+                    "discovered-without-window": {
+                        "harness": "custom-harness",
+                    }
+                }
+            }), encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable, str(BUDGET), str(issue),
+                    "--model", "discovered-without-window",
+                    "--catalog", str(catalog_file),
+                    "--json",
+                ],
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(1, result.returncode)
+            payload = json.loads(result.stdout)
+            self.assertIn("configuration error", payload["error"])
+            self.assertIn("metadata", payload["error"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()
+

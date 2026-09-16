@@ -39,7 +39,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **18 / 26** |
+| Issues completed | **20 / 26** |
 | Specs completed | **1 / 3** |
 | Execution waves | **12** |
 
@@ -123,8 +123,8 @@ complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel 
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
 | 01 | `gantry-migration` | 18/18 | 0–6 |
-| 11 | `caveman-setup` | 0/3 | 7–8 |
-| 12 | `role-execution-selection` | 0/5 | 7–11 |
+| 11 | `caveman-setup` | 1/3 | 7–8 |
+| 12 | `role-execution-selection` | 1/5 | 7–11 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -191,11 +191,11 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-migration#18`** — Retire ASDLC after canonical proof
   <br>↳ blocked by: gantry-migration#17
 
-### Wave 7 — 0/2 done
+### Wave 7 — 2/2 done
 
-- [ ] **`caveman-setup#01`** — Configure Caveman in setup and use it in the coordinating agent
+- [x] **`caveman-setup#01`** — Configure Caveman in setup and use it in the coordinating agent
   <br>↳ blocked by: gantry-migration#10, gantry-migration#02
-- [ ] **`role-execution-selection#01`** — Select from a complete executable model catalog _(no blockers)_
+- [x] **`role-execution-selection#01`** — Select from a complete executable model catalog _(no blockers)_
 
 ### Wave 8 — 0/3 done
 

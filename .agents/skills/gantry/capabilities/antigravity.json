@@ -1,0 +1,15 @@
+{
+  "tier": "supported",
+  "hooks": true,
+  "structured_output": true,
+  "worktree_isolation": true,
+  "per_role_model": true,
+  "parallel_round": true,
+  "skills_path": ".agents/skills",
+  "hook_events": ["PreToolUse"],
+  "payload_fields": ["tool_name", "tool_input", "session_id"],
+  "models": {
+    "gemini-2.5-pro": {"contextWindow": 1000000},
+    "gemini-2.5-flash": {"contextWindow": 1000000}
+  }
+}

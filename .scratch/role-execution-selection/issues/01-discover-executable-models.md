@@ -1,7 +1,7 @@
 # Select from a complete executable model catalog
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `role-execution-selection#01`
 Spec: `.scratch/role-execution-selection/spec.md`
 Created: 2026-09-15
@@ -23,9 +23,9 @@ Deliver model and effort discovery usable during role selection across supported
 
 ## Acceptance criteria
 
-- [ ] Paginated environment-specific catalog tests offer every executable model and only supported effort values across supported harnesses (including `agy models`); missing discovery produces an explicit blocking diagnostic.
-- [ ] A discovered model absent from shipped declarations passes budget estimation with verified context metadata; missing metadata fails closed.
-- [ ] Catalog provenance and freshness are exposed without credentials, and changing the effective provider/account invalidates stale availability.
+- [x] Paginated environment-specific catalog tests offer every executable model and only supported effort values across supported harnesses (including `agy models`); missing discovery produces an explicit blocking diagnostic.
+- [x] A discovered model absent from shipped declarations passes budget estimation with verified context metadata; missing metadata fails closed.
+- [x] Catalog provenance and freshness are exposed without credentials, and changing the effective provider/account invalidates stale availability.
 
 ## Blocked by
 

@@ -33,6 +33,7 @@ class PolicyResolutionTests(unittest.TestCase):
             self.assertEqual(2, defaults["budget"]["corrections"])
             self.assertEqual(0.15, defaults["budget"]["contextShare"])
             self.assertEqual(900, defaults["dashboard"]["staleAfterSeconds"])
+            self.assertFalse(defaults["caveman"])
 
             config = root / ".gantry" / "config.json"
             config.parent.mkdir()

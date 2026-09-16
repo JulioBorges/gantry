@@ -204,6 +204,9 @@ class GantrySetupTests(unittest.TestCase):
         self.assertIn("enables recording by default", content.lower() or content)
         self.assertIn("asks before denial hooks", content.lower() or content)
         self.assertIn("preserves pack defaults when skipped", content.lower() or content)
+        self.assertIn("caveman lite", content.lower())
+        self.assertIn("user-managed installation", content.lower())
+        self.assertIn("fallback", content.lower())
 
 if __name__ == "__main__":
     unittest.main()
