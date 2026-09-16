@@ -1,7 +1,7 @@
 # Configure Caveman in setup and use it in the coordinating agent
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `caveman-setup#01`
 Spec: `.scratch/caveman-setup/spec.md`
 Created: 2026-09-15
@@ -25,14 +25,14 @@ Offer Caveman lite as a recommended, explicitly confirmed repository preference.
 
 ## Acceptance criteria
 
-- [ ] Setup explains conversational scope, user-managed installation, fallback and variable savings; declining or skipping a new preference resolves to disabled.
-- [ ] The existing setup writer persists one explicitly confirmed repository preference, preserves unrelated settings and existing preferences on repeated setup, and supports explicit disabling.
-- [ ] Installation guidance uses a verified upstream skill-only command appropriate to the host harness; Gantry runs no installer, vendors no skill and changes no global agent configuration.
-- [ ] After reported installation, setup verifies host-harness discovery and readability rather than relying on the user's claim or a package-manager exit code.
-- [ ] Run preflight re-evaluates availability, applies external Caveman lite to the coordinating agent when supported, and makes resolved preference, activation scope and warning state available to both reference workflows without storing machine availability or paths in repository policy.
-- [ ] Unavailable or unsupported activation continues normally with at most one actionable warning per Run and no false activation claim; a disabled preference does not load the skill.
-- [ ] Fixture and setup transcript tests verify confirmation, persistence, environment changes, coordinating-agent instructions, fallback and warning deduplication without installing Caveman globally or calling a paid model.
-- [ ] Documentation describes opt-in, manual installation and fallback; artifacts, exact commands/errors, contracts and approval rules retain required content.
+- [x] Setup explains conversational scope, user-managed installation, fallback and variable savings; declining or skipping a new preference resolves to disabled.
+- [x] The existing setup writer persists one explicitly confirmed repository preference, preserves unrelated settings and existing preferences on repeated setup, and supports explicit disabling.
+- [x] Installation guidance uses a verified upstream skill-only command appropriate to the host harness; Gantry runs no installer, vendors no skill and changes no global agent configuration.
+- [x] After reported installation, setup verifies host-harness discovery and readability rather than relying on the user's claim or a package-manager exit code.
+- [x] Run preflight re-evaluates availability, applies external Caveman lite to the coordinating agent when supported, and makes resolved preference, activation scope and warning state available to both reference workflows without storing machine availability or paths in repository policy.
+- [x] Unavailable or unsupported activation continues normally with at most one actionable warning per Run and no false activation claim; a disabled preference does not load the skill.
+- [x] Fixture and setup transcript tests verify confirmation, persistence, environment changes, coordinating-agent instructions, fallback and warning deduplication without installing Caveman globally or calling a paid model.
+- [x] Documentation describes opt-in, manual installation and fallback; artifacts, exact commands/errors, contracts and approval rules retain required content.
 
 ## Blocked by
 

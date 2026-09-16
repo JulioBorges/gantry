@@ -76,15 +76,56 @@ def declared_models(capabilities_dir: Path) -> dict[str, tuple[str, int]]:
     return models
 
 
-def estimate(issue_path: Path, model: str, root: Path, capabilities_dir: Path) -> dict:
+def resolve_model_metadata(
+    model: str,
+    capabilities_dir: Path,
+    catalog_path: Path | None = None,
+) -> tuple[str, int]:
+    """Resolve model harness and context window from capabilities or discovered catalog."""
+    models = declared_models(capabilities_dir)
+    if model in models:
+        return models[model]
+
+    if catalog_path and catalog_path.is_file():
+        try:
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ConfigurationError(f"invalid catalog JSON in {catalog_path}: {exc}") from exc
+
+        raw_models = catalog.get("models", {})
+        details = None
+        harness = catalog.get("harness", "discovered")
+        if isinstance(raw_models, dict) and model in raw_models:
+            details = raw_models[model]
+        elif isinstance(raw_models, list):
+            for m in raw_models:
+                if isinstance(m, dict) and m.get("id") == model:
+                    details = m
+                    break
+
+        if details is not None:
+            window = details.get("contextWindow")
+            if not isinstance(window, int) or isinstance(window, bool) or window <= 0:
+                raise ConfigurationError(f"missing verified context metadata for model {model!r}")
+            harness = details.get("harness", harness)
+            return (harness, window)
+
+    raise ConfigurationError(f"unknown model ID: {model!r}")
+
+
+def estimate(
+    issue_path: Path,
+    model: str,
+    root: Path,
+    capabilities_dir: Path,
+    catalog_path: Path | None = None,
+) -> dict:
     """Build the deterministic initial-package estimate for one Issue."""
     issue = parse_issue(issue_path)
     spec_path = artifact_path(root, "specs", issue.spec).resolve()
     if not spec_path.is_file():
         raise ConfigurationError(f"parent Spec does not exist: {spec_path.relative_to(root)}")
-    models = declared_models(capabilities_dir)
-    if model not in models:
-        raise ConfigurationError(f"unknown model ID: {model!r}")
+    harness, window = resolve_model_metadata(model, capabilities_dir, catalog_path)
     policy = resolve_policy(root)
     share = policy.get("budget", {}).get("contextShare")
     if not isinstance(share, (int, float)) or isinstance(share, bool) or not 0 < share <= 1:
@@ -101,7 +142,6 @@ def estimate(issue_path: Path, model: str, root: Path, capabilities_dir: Path) -
         for path in ordered
     ]
     byte_count = sum(entry["bytes"] for entry in files)
-    harness, window = models[model]
     estimated_tokens = byte_count / 4
     budget_tokens = window * share
     over_budget = estimated_tokens > budget_tokens
@@ -138,7 +178,8 @@ def emit(payload: dict, as_json: bool) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("issue", help="Issue path")
-    parser.add_argument("--model", required=True, help="exact model ID declared by a capability")
+    parser.add_argument("--model", required=True, help="exact model ID declared by a capability or catalog")
+    parser.add_argument("--catalog", help="path to discovered model catalog JSON")
     parser.add_argument("--cwd", default=".", help="repository or worktree to inspect")
     parser.add_argument("--json", action="store_true", help="emit machine-readable output")
     args = parser.parse_args()
@@ -149,8 +190,9 @@ def main() -> int:
         emit({"error": f"configuration error: Issue does not exist: {issue_path}"}, args.json)
         return 1
     capabilities = Path(__file__).resolve().parents[1] / "capabilities"
+    catalog_path = Path(args.catalog).resolve() if args.catalog else None
     try:
-        payload = estimate(issue_path, args.model, root, capabilities)
+        payload = estimate(issue_path, args.model, root, capabilities, catalog_path=catalog_path)
     except (ConfigurationError, ValueError) as exc:
         emit({"error": f"configuration error: {exc}"}, args.json)
         return 1

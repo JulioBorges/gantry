@@ -28,6 +28,7 @@ DEFAULT_POLICY = {
     "hooks": {"record": [], "deny": []},
     "budget": {"corrections": 2, "contextShare": 0.15},
     "dashboard": {"staleAfterSeconds": 900},
+    "caveman": False,
 }
 
 REF_RE = re.compile(r"`?([a-z0-9][a-z0-9-]*)#(\d{2,})`?")
