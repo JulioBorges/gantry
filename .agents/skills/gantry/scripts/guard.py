@@ -569,9 +569,11 @@ def main() -> int:
 
     payload = read_payload()
     cwd = Path(args.cwd).resolve()
+    name = tool_name(payload) if payload else ""
+    normalized_name = re.sub(r"[^a-z]", "", name)
 
     def allow() -> int:
-        if args.event == "PostToolUse" and (not args.run_id and not args.state_root):
+        if args.event == "PostToolUse" and (not args.run_id or normalized_name != "invokesubagent"):
             if args.json:
                 print("{}")
             return 0
