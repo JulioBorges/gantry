@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-obsidian: #0a0d14;
+  --color-amber-glow: #ff9900;
+  --color-amber-accent: #f59e0b;
+}
+
+body {
+  background-color: #0a0d14;
+  color: #cbd5e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  overflow-x: hidden;
+}
+
+/* Industrial technical grid background */
+.bg-industrial-grid {
+  background-size: 40px 40px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 153, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 153, 0, 0.04) 1px, transparent 1px);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0d14;
+  border-left: 1px solid #1f293d;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f293d;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #f59e0b;
+}

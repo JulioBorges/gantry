@@ -1,0 +1,16 @@
+# Build
+dist/
+.astro/
+
+# Dependencies
+node_modules/
+
+# Tests
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Environment
+.env
+.env.production
