@@ -12,6 +12,8 @@ harness.**
 [![Agent Skills](https://img.shields.io/badge/Agent-Skills-orange.svg)](#installation)
 [![Status: early development](https://img.shields.io/badge/status-early%20development-yellow.svg)](#project-status)
 
+![Gantry crane](assets/gantry.png)
+
 Gantry is an open source, harness-neutral skill pack for agentic software
 development. Deterministic scripts decide which Issues are ready and whether
 checks pass. Fresh agents implement, review, and challenge each delivery. You
