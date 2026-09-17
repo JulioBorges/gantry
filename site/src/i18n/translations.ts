@@ -190,7 +190,7 @@ export const translations: Record<Locale, Dictionary> = {
       skills: 'SKILLS',
       harnesses: 'HARNESSES',
       github: 'GITHUB',
-      version: 'v1.0.4 [STANDBY]',
+      version: 'v1.0.5 [STANDBY]',
     },
     hero: {
       systemStrip: 'SYSTEM RIG // GANTRY CORE ONLINE',
@@ -550,7 +550,7 @@ export const translations: Record<Locale, Dictionary> = {
       skills: 'SKILLS',
       harnesses: 'HARNESSES',
       github: 'GITHUB',
-      version: 'v1.0.4 [STANDBY]',
+      version: 'v1.0.5 [STANDBY]',
     },
     hero: {
       systemStrip: 'RIG DO SISTEMA // NÚCLEO GANTRY ONLINE',
