@@ -1,0 +1,48 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import HeroSection from '../components/HeroSection.astro';
+import { PipelineSimulator } from '../components/PipelineSimulator';
+import ProblemSolution from '../components/ProblemSolution.astro';
+import SkillsSection from '../components/SkillsSection.astro';
+import HarnessMatrix from '../components/HarnessMatrix.astro';
+---
+
+<BaseLayout
+  title="Gantry // Harness-Neutral Agentic SDLC"
+  description="Deterministic agentic SDLC skill pack. Turning living specs into verified software deliveries inside your coding harness."
+>
+  <div class="space-y-16 py-4">
+    <!-- Hero Section with Crane Motif and Multi-Harness Install Widget -->
+    <HeroSection />
+
+    <!-- Interactive Pipeline Simulator Island -->
+    <section id="pipeline" class="space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-obsidian-700/80 pb-3">
+        <div>
+          <div class="text-xs font-mono text-amber-accent flex items-center space-x-2">
+            <span class="w-2 h-2 bg-amber-glow"></span>
+            <span class="uppercase tracking-widest">INTERACTIVE DEMO // SDLC PHASES</span>
+          </div>
+          <h2 class="text-xl sm:text-3xl font-extrabold text-slate-100 uppercase font-mono mt-1">
+            Pipeline Simulator
+          </h2>
+        </div>
+        <p class="text-xs text-slate-400 font-mono max-w-md">
+          Explore the 6 deterministic execution phases from Spec verification to serial gate integration.
+        </p>
+      </div>
+
+      <!-- Simulator Client Island -->
+      <PipelineSimulator client:load />
+    </section>
+
+    <!-- Problem vs Solution: Why Raw Agents Fail vs Gantry Guardrails -->
+    <ProblemSolution />
+
+    <!-- Three Modular Skills Pack Section -->
+    <SkillsSection />
+
+    <!-- Harness Compatibility Matrix & Verified Tiers -->
+    <HarnessMatrix />
+  </div>
+</BaseLayout>

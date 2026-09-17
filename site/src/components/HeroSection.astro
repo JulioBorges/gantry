@@ -1,0 +1,135 @@
+---
+import { InstallWidget } from './InstallWidget';
+
+const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<section
+  data-testid="hero-section"
+  class="relative border border-obsidian-700 bg-obsidian-850/90 p-6 sm:p-10 lg:p-12 overflow-hidden shadow-2xl"
+>
+  <!-- Industrial backdrop aura and technical grid accent -->
+  <div class="absolute -top-24 -right-24 w-96 h-96 bg-amber-glow/10 blur-3xl pointer-events-none"></div>
+  <div class="absolute -bottom-24 -left-24 w-72 h-72 bg-amber-accent/5 blur-3xl pointer-events-none"></div>
+
+  <!-- Telemetry Header Strip -->
+  <div class="flex flex-wrap items-center justify-between gap-3 border-b border-obsidian-700/80 pb-4 mb-8 text-xs font-mono">
+    <div class="flex items-center space-x-2 text-amber-accent">
+      <span class="inline-block w-2.5 h-2.5 bg-amber-glow animate-pulse"></span>
+      <span class="tracking-widest uppercase font-bold" data-i18n="hero.systemStrip">SYSTEM RIG // GANTRY CORE ONLINE</span>
+    </div>
+
+    <!-- Status Badges -->
+    <div class="flex flex-wrap items-center gap-2" data-testid="status-badges">
+      <span class="px-2 py-0.5 bg-obsidian-900 border border-obsidian-700 text-amber-glow font-bold" data-i18n="hero.badgeStatus">
+        STATUS: SPEC-VERIFIED
+      </span>
+      <span class="px-2 py-0.5 bg-obsidian-900 border border-obsidian-700 text-slate-300" data-i18n="hero.badgeHarness">
+        HARNESS-NEUTRAL
+      </span>
+      <span class="px-2 py-0.5 bg-obsidian-900 border border-obsidian-700 text-slate-400" data-i18n="hero.badgeLicense">
+        APACHE-2.0
+      </span>
+      <span class="px-2 py-0.5 bg-obsidian-900 border border-amber-accent/40 text-amber-accent" data-i18n="hero.badgeAiSlop">
+        ZERO AI-SLOP
+      </span>
+    </div>
+  </div>
+
+  <!-- Hero Grid: Left Content / Value Prop, Right Crane Visual Rig -->
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+    <!-- Left Column: Copy & Value Proposition & Install Widget -->
+    <div class="lg:col-span-7 space-y-6">
+      <div class="space-y-3">
+        <div class="inline-block text-xs font-mono tracking-widest text-amber-glow font-bold uppercase bg-amber-glow/10 border border-amber-glow/30 px-2.5 py-1" data-i18n="hero.kicker">
+          THE AGENTIC SDLC SKILL PACK
+        </div>
+
+        <h1 class="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-100 uppercase font-mono leading-none">
+          <span data-i18n="hero.titleHarness">Harness-Neutral</span> <br />
+          <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-glow via-amber-accent to-yellow-500" data-i18n="hero.titleAgentic">
+            Agentic SDLC
+          </span>
+        </h1>
+
+        <!-- Primary Tagline -->
+        <p
+          data-testid="hero-tagline"
+          data-i18n="hero.tagline"
+          class="text-base sm:text-lg font-mono font-semibold text-amber-accent leading-snug"
+        >
+          Turn an approved Spec into verified software deliveries inside your coding harness.
+        </p>
+      </div>
+
+      <!-- Value Proposition -->
+      <p
+        data-testid="hero-value-prop"
+        data-i18n="hero.valueProp"
+        class="text-sm sm:text-base text-slate-300 font-mono leading-relaxed max-w-2xl"
+      >
+        Gantry is a skill pack, not an execution engine. Workflow scripts decide readiness, acceptance, gates, and roadmap state; agents plan, implement, review, and refute; the operator holds approval authority.
+      </p>
+
+      <!-- Multi-Harness Quick Install Widget Island -->
+      <div class="pt-2">
+        <InstallWidget client:load />
+      </div>
+    </div>
+
+    <!-- Right Column: Official Crane Visual Rig -->
+    <div class="lg:col-span-5 flex flex-col items-center">
+      <div
+        data-testid="crane-visual-rig"
+        class="relative w-full max-w-md border-2 border-obsidian-700 bg-obsidian-950 p-2 shadow-2xl group"
+      >
+        <!-- Corner Technical Brackets -->
+        <div class="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-amber-glow"></div>
+        <div class="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-amber-glow"></div>
+        <div class="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-amber-glow"></div>
+        <div class="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-amber-glow"></div>
+
+        <!-- Crane Image Frame -->
+        <div class="relative overflow-hidden bg-obsidian-900 border border-obsidian-800">
+          <img
+            src={`${baseUrl}/gantry.png`}
+            alt="Official Gantry Crane Visual Motif - Industrial precision rig lifting living specs into verified software"
+            class="w-full h-auto object-cover filter contrast-105 brightness-95 group-hover:scale-102 transition-transform duration-500"
+            loading="eager"
+          />
+          <!-- Scanning telemetry line -->
+          <div class="absolute inset-0 bg-gradient-to-b from-transparent via-amber-glow/10 to-transparent pointer-events-none animate-pulse"></div>
+        </div>
+
+        <!-- Technical Telemetry Footer for Rig -->
+        <div class="mt-2 pt-2 border-t border-obsidian-800 flex items-center justify-between text-[10px] font-mono text-slate-400 px-1">
+          <div class="flex items-center space-x-1.5">
+            <span class="w-1.5 h-1.5 bg-amber-glow"></span>
+            <span class="text-slate-300 font-bold uppercase" data-i18n="hero.craneTitle">GANTRY CRANE // RIG MK-IV</span>
+          </div>
+          <span class="text-amber-accent" data-i18n="hero.craneLoad">LOAD: SPEC → VERIFIED</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Technical Grid Highlights -->
+  <div class="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-obsidian-700/80 pt-6">
+    <div class="p-3 bg-obsidian-900/70 border border-obsidian-700">
+      <div class="text-[11px] text-slate-400 uppercase font-mono" data-i18n="hero.metricArchLabel">Architecture</div>
+      <div class="text-sm font-bold text-amber-glow mt-1 font-mono" data-i18n="hero.metricArchVal">Skill Pack</div>
+    </div>
+    <div class="p-3 bg-obsidian-900/70 border border-obsidian-700">
+      <div class="text-[11px] text-slate-400 uppercase font-mono" data-i18n="hero.metricVerifLabel">Verification</div>
+      <div class="text-sm font-bold text-slate-200 mt-1 font-mono" data-i18n="hero.metricVerifVal">Adversarial Critic</div>
+    </div>
+    <div class="p-3 bg-obsidian-900/70 border border-obsidian-700">
+      <div class="text-[11px] text-slate-400 uppercase font-mono" data-i18n="hero.metricGatesLabel">Quality Gates</div>
+      <div class="text-sm font-bold text-slate-200 mt-1 font-mono" data-i18n="hero.metricGatesVal">RFC 6901 Differential</div>
+    </div>
+    <div class="p-3 bg-obsidian-900/70 border border-obsidian-700">
+      <div class="text-[11px] text-slate-400 uppercase font-mono" data-i18n="hero.metricOperatorLabel">Operator In Loop</div>
+      <div class="text-sm font-bold text-amber-accent mt-1 font-mono" data-i18n="hero.metricOperatorVal">Approval Authority</div>
+    </div>
+  </div>
+</section>

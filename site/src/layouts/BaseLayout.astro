@@ -1,0 +1,115 @@
+---
+import '../styles/global.css';
+import { LanguageToggle } from '../components/LanguageToggle';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'Gantry // Harness-Neutral Agentic SDLC',
+  description = 'Deterministic agentic SDLC skill pack. Resolves ready Issues deterministically, plans only to operator approval, implements with TDD, reviews against standards and Spec, and accepts delivery only after adversarial verification.',
+} = Astro.props;
+
+const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<!doctype html>
+<html lang="en" class="dark scroll-smooth overflow-x-hidden">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href={`${baseUrl}/favicon.svg`} />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <!-- Open Graph / Twitter -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <script is:inline>
+      try {
+        const stored = localStorage.getItem('gantry_locale');
+        if (stored === 'pt-br' || stored === 'en') {
+          document.documentElement.lang = stored;
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body class="min-h-screen bg-obsidian-900 text-slate-300 font-mono antialiased bg-industrial-grid flex flex-col selection:bg-amber-accent/20 selection:text-amber-glow overflow-x-hidden">
+    <!-- Header / Industrial Shell Rig -->
+    <header class="sticky top-0 z-50 border-b border-obsidian-700/80 bg-obsidian-900/90 backdrop-blur-md">
+      <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 overflow-x-hidden">
+        <div class="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
+          <a href={`${baseUrl}/`} class="flex items-center space-x-1.5 sm:space-x-2 group">
+            <span class="w-2.5 h-2.5 sm:w-3 sm:h-3 bg-amber-glow rounded-none rotate-45 group-hover:scale-125 transition-transform shadow-[0_0_8px_#ff9900]"></span>
+            <span class="font-bold text-sm sm:text-lg tracking-wider text-slate-100 group-hover:text-amber-glow transition-colors whitespace-nowrap">
+              GANTRY<span class="text-amber-accent">::</span>RIG
+            </span>
+          </a>
+          <span class="hidden md:inline-flex items-center px-2 py-0.5 text-xs font-mono bg-obsidian-800 text-amber-accent border border-obsidian-700">
+            v1.0.6 [STANDBY]
+          </span>
+        </div>
+
+        <nav class="flex items-center space-x-2 sm:space-x-4 md:space-x-5 text-[11px] sm:text-xs md:text-sm">
+          <a href="#pipeline" class="text-slate-400 hover:text-amber-glow transition-colors" data-i18n="nav.pipeline">PIPELINE</a>
+          <a href="#skills" class="text-slate-400 hover:text-amber-glow transition-colors" data-i18n="nav.skills">SKILLS</a>
+          <a href="#matrix" class="text-slate-400 hover:text-amber-glow transition-colors" data-i18n="nav.harnesses">HARNESSES</a>
+          
+          <!-- Bilingual Language Toggle -->
+          <LanguageToggle client:load />
+
+          <a
+            href="https://github.com/JulioBorges/gantry"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex items-center space-x-1 px-2 py-1 sm:px-3 sm:py-1.5 bg-obsidian-800 hover:bg-obsidian-700 border border-obsidian-700 hover:border-amber-accent/50 text-slate-200 text-[11px] sm:text-xs transition-colors"
+          >
+            <span data-i18n="nav.github">GITHUB</span>
+            <span class="text-amber-glow">↗</span>
+          </a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <slot />
+    </main>
+
+    <!-- Footer / Telemetry Bar -->
+    <footer class="border-t border-obsidian-700 bg-obsidian-950 text-xs py-8">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center justify-center md:justify-start gap-2 text-slate-400 text-[11px] sm:text-xs">
+          <span class="text-amber-glow">◆</span>
+          <span data-i18n="footer.rigTitle">GANTRY AGENTIC SDLC</span>
+          <span>|</span>
+          <span data-i18n="footer.license">APACHE-2.0</span>
+          <span>|</span>
+          <span data-i18n="footer.verification">DETERMINISTIC VERIFICATION</span>
+        </div>
+        <div class="text-slate-400 font-mono text-center md:text-right text-[11px] sm:text-xs">
+          <span data-i18n="footer.operator">OPERATOR IN LOOP // HARNESS-NEUTRAL</span>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      import { getStoredLocale, updateDomTranslations, LOCALE_CHANGE_EVENT } from '../i18n/client';
+      import type { Locale } from '../i18n/translations';
+
+      const initialLocale = getStoredLocale();
+      document.documentElement.lang = initialLocale;
+      updateDomTranslations(initialLocale);
+
+      window.addEventListener(LOCALE_CHANGE_EVENT, (e: Event) => {
+        const customEvent = e as CustomEvent<{ locale: Locale }>;
+        if (customEvent.detail?.locale) {
+          updateDomTranslations(customEvent.detail.locale);
+        }
+      });
+    </script>
+  </body>
+</html>

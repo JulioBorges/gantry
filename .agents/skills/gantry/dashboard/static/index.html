@@ -1,16 +1,66 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="utf-8" />
-  <title>Gantry Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gantry Dashboard // Telemetry & Run Log</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
-<body>
-  <header>
-    <h1>Gantry Dashboard</h1>
-    <p>Read-only view of every Run. Nothing on this page can change an Issue, a policy, a Run log, a branch or a worktree.</p>
+<body class="industrial-grid">
+  <!-- Industrial Header / Rig Bar -->
+  <header class="rig-header">
+    <div class="header-inner">
+      <div class="brand-group">
+        <div class="brand-mark">
+          <span class="diamond"></span>
+          <span class="brand-title">GANTRY<span class="accent">::</span>DASHBOARD</span>
+        </div>
+        <span class="telemetry-badge">v1.0.4 [STANDBY]</span>
+      </div>
+      <div class="header-status">
+        <span class="status-indicator"></span>
+        <span class="status-text">LOOPBACK TELEMETRY // READ-ONLY</span>
+      </div>
+    </div>
   </header>
-  <main id="swimlanes"></main>
+
+  <!-- Sub-header / System Status Strip -->
+  <div class="status-strip">
+    <div class="status-strip-inner">
+      <div class="status-strip-left">
+        <span class="signal-dot"></span>
+        <span class="strip-label">SYSTEM RIG // MULTI-RUN KANBAN ACTIVE</span>
+      </div>
+      <div class="status-strip-badges">
+        <span class="badge-tag">STATUS: RUNNING</span>
+        <span class="badge-tag">HARNESS-NEUTRAL</span>
+        <span class="badge-tag accent-tag">ZERO MUTATION</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <main class="dashboard-main">
+    <div id="swimlanes"></div>
+  </main>
+
+  <!-- Telemetry Footer -->
+  <footer class="rig-footer">
+    <div class="footer-inner">
+      <div class="footer-left">
+        <span class="accent-diamond">◆</span>
+        <span>GANTRY AGENTIC SDLC</span>
+        <span>|</span>
+        <span>APACHE-2.0</span>
+        <span>|</span>
+        <span>DETERMINISTIC VERIFICATION</span>
+      </div>
+      <div class="footer-right">
+        <span>OPERATOR IN LOOP // READ-ONLY DISPATCH</span>
+      </div>
+    </div>
+  </footer>
+
   <script src="/app.js"></script>
 </body>
 </html>

@@ -77,3 +77,9 @@ Rules that keep the roadmap trustworthy:
   scheduling problem.
 - If work reveals that an issue needs to be split, merged, or added, say so rather than silently editing
   the roadmap — the breakdown was approved by the operator, and changing it needs the same approval.
+<!-- gantry:begin -->
+## Gantry Repository Policy
+
+This repository uses Gantry for its agentic SDLC.
+Artifacts, templates, and checks are configured in `.gantry/config.json`.
+<!-- gantry:end -->

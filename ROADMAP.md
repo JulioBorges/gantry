@@ -39,9 +39,9 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **26 / 26** |
-| Specs completed | **3 / 3** |
-| Execution waves | **12** |
+| Issues completed | **32 / 32** |
+| Specs completed | **4 / 4** |
+| Execution waves | **17** |
 
 ## Specs
 
@@ -66,6 +66,7 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 10 | `windows-validation` | idea, waiting on a machine | 06 | external: a Windows machine | `install.sh`, `guard.py` path handling, `fixture/README.md` | fixture run on Windows (paths, symlinks, hooks); support declared only after the run is recorded |
 | 11 | `caveman-setup` | **done** | 01 | — | `gantry-setup`, portable policy, coordinating instructions, plan and round workflows, tests and documentation | optional environment-installed Caveman lite for agent messages and summaries; explicit repository opt-in; user-managed installation; once-per-Run fallback warning; artifacts and verification preserved |
 | 12 | `role-execution-selection` | **done** | 01 | — | runtime model discovery, context budget, setup policy, plan and round workflows, Run Log, fixture proof | complete executable model catalog; versioned role defaults; cross-harness roles (Codex, Claude Code, OpenCode, Antigravity); explicit Issue recovery; cross-harness and Antigravity proof |
+| 13 | `gantry-site` | planned | 01 | — | `site/`, `.github/workflows/deploy-pages.yml` | Gantry marketing and showcase site on GitHub Pages; Astro + Tailwind, industrial aesthetic, interactive pipeline simulator island, EN/PT-BR toggle, Playwright tests |
 
 ### Spec waves (structural)
 
@@ -74,7 +75,7 @@ Computed from *Blocked by* only, the same way issue waves are computed from `## 
 | Wave | Specs | Meaning |
 |---|---|---|
 | A | 01 | everything else builds on the migration |
-| B | 02, 03, 04, 05, 06, 07, 08, 09, 11, 12 | unblocked the moment 01 is done; the order among them is preference, not dependency |
+| B | 02, 03, 04, 05, 06, 07, 08, 09, 11, 12, 13 | unblocked the moment 01 is done; the order among them is preference, not dependency |
 | C | 10 | needs the installer from 06 (and a machine) |
 
 ### Intended order (one spec at a time)
@@ -125,6 +126,7 @@ complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel 
 | 01 | `gantry-migration` | 18/18 | 0–6 |
 | 11 | `caveman-setup` | 3/3 | 7–8 |
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
+| 13 | `gantry-site` | 6/6 | 12–16 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -220,5 +222,31 @@ of the others, and an issue never waits on anything in its own wave or a later o
 
 - [x] **`role-execution-selection#05`** — Demonstrate a Codex-hosted Run with an independent Claude Code Critic
   <br>↳ blocked by: role-execution-selection#04
+
+### Wave 12 — 1/1 done
+
+- [x] **`gantry-site#01`** — Scaffold Astro site with industrial shell and Playwright harness _(no blockers)_
+
+### Wave 13 — 2/2 done
+
+- [x] **`gantry-site#02`** — Build hero section with multi-harness install widget and crane visual
+  <br>↳ blocked by: gantry-site#01
+- [x] **`gantry-site#03`** — Build interactive pipeline simulator island
+  <br>↳ blocked by: gantry-site#01
+
+### Wave 14 — 1/1 done
+
+- [x] **`gantry-site#04`** — Build problem vs solution, skills pack, and harness compatibility sections
+  <br>↳ blocked by: gantry-site#02
+
+### Wave 15 — 1/1 done
+
+- [x] **`gantry-site#05`** — Implement bilingual i18n support with language toggle
+  <br>↳ blocked by: gantry-site#02, gantry-site#03, gantry-site#04
+
+### Wave 16 — 1/1 done
+
+- [x] **`gantry-site#06`** — Configure GitHub Pages deployment workflow and complete E2E validation
+  <br>↳ blocked by: gantry-site#05
 
 <!-- END GENERATED: issue checklist -->
