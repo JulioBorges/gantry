@@ -193,4 +193,5 @@ command's stdin, not appended to the command line. Every recorded Run event goes
   critic and mandatory operator stop.
 - `reference/round-workflow.md` — TDD implementation, two-axis review, adversarial Critic and serial
   integration contract.
+- `docs/role-execution.md` — cross-harness execution, model discovery, role overrides, and failure recovery.
 - `templates/` — default Spec, PRD and Issue structures.

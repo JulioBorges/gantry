@@ -185,7 +185,7 @@ def main() -> int:
             print(f"  ERROR: {error}")
     if errors:
         return 1
-    return 0 if selected or parked else 2
+    return 0 if selected or parked or all(i.done for i in issues.values()) else 2
 
 
 if __name__ == "__main__":

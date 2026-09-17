@@ -41,13 +41,13 @@ Execution failures preserve the worktree and pause the affected Issue separately
 
 ### Definition of Done
 
-- [ ] Complete available-model and supported-effort selection replaces static shortlists, including actionable discovery failure handling across Codex, Claude Code, OpenCode and Antigravity.
-- [ ] Antigravity capability declaration (`capabilities/antigravity.json`), `guard.py` hook payload normalization for Antigravity tools, and `.agents/hooks.json` setup generation establish host and execution foundation.
-- [ ] Versioned defaults survive cloning and setup merges, with validated Run and Issue overrides and no credentials.
-- [ ] Every role can select a supported execution harness (including Antigravity CLI) independently of the Host Harness and satisfy its Result Contract in an isolated context.
-- [ ] A real Codex-hosted delivery is independently inspected by a Claude Code Critic that executes acceptance and gates on the exact revision, with interoperability verified for Antigravity.
-- [ ] A runtime failure isolates the affected Issue, preserves its work, requires explicit recovery and blocks the next round while unresolved.
-- [ ] Local regression coverage and sanitized live evidence demonstrate the contract without changing completion authority or correction budgets.
+- [x] Complete available-model and supported-effort selection replaces static shortlists, including actionable discovery failure handling across Codex, Claude Code, OpenCode and Antigravity.
+- [x] Antigravity capability declaration (`capabilities/antigravity.json`), `guard.py` hook payload normalization for Antigravity tools, and `.agents/hooks.json` setup generation establish host and execution foundation.
+- [x] Versioned defaults survive cloning and setup merges, with validated Run and Issue overrides and no credentials.
+- [x] Every role can select a supported execution harness (including Antigravity CLI) independently of the Host Harness and satisfy its Result Contract in an isolated context.
+- [x] A real Codex-hosted delivery is independently inspected by a Claude Code Critic that executes acceptance and gates on the exact revision, with interoperability verified for Antigravity.
+- [x] A runtime failure isolates the affected Issue, preserves its work, requires explicit recovery and blocks the next round while unresolved.
+- [x] Local regression coverage and sanitized live evidence demonstrate the contract without changing completion authority or correction budgets.
 
 ### Regression Guardrails
 
@@ -108,6 +108,7 @@ Scenario: Explicit Issue-role replacement
 
 ## Changelog
 
+- 2026-09-17 — Proven cross-harness execution and recovery on the reference fixture: a Codex-hosted Run with an independent Claude Code Critic independently inspecting delivery revisions, refuting an unmet criterion, accepting corrected delivery, and demonstrating explicit recovery and Antigravity interoperability.
 - 2026-09-16 — Updated with operator-confirmed Antigravity compatibility: Host Harness hook integration, capability declaration, model discovery and headless role execution via `agy`.
 - 2026-09-15 — Draft based on the operator-confirmed interview; Spec and five-Issue breakdown approved by the operator.
 - 2026-09-15 — Operator approved the Spec and five-Issue breakdown; implementation remains pending.
