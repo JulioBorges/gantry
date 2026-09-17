@@ -337,11 +337,11 @@ export function PipelineSimulator() {
           const isCompleted = idx < activeStageIndex;
 
           let statusBadge = locale === 'pt-br' ? 'PENDENTE' : 'PENDING';
-          let statusBadgeClass = 'text-slate-500 bg-obsidian-900/50 border-obsidian-800';
+          let statusBadgeClass = 'text-slate-400 bg-obsidian-900/50 border-obsidian-800';
 
           if (isActive) {
             statusBadge = locale === 'pt-br' ? 'ATIVO' : 'ACTIVE';
-            statusBadgeClass = 'text-amber-glow bg-amber-glow/10 border-amber-glow/40 animate-pulse';
+            statusBadgeClass = 'text-amber-glow bg-amber-glow/10 border-amber-glow/60 font-bold';
           } else if (isCompleted) {
             statusBadge = locale === 'pt-br' ? 'VERIFICADO' : 'VERIFIED';
             statusBadgeClass = 'text-emerald-400 bg-emerald-950/40 border-emerald-800/60';
@@ -365,11 +365,11 @@ export function PipelineSimulator() {
                   ? 'bg-obsidian-850 text-slate-100 border-t-2 border-t-amber-glow'
                   : isCompleted
                   ? 'bg-obsidian-950/80 text-slate-300 hover:bg-obsidian-900'
-                  : 'bg-obsidian-950/40 text-slate-500 hover:text-slate-300 hover:bg-obsidian-900/40'
+                  : 'bg-obsidian-950/40 text-slate-400 hover:text-slate-300 hover:bg-obsidian-900/40'
               }`}
             >
               <div className="flex items-center justify-between w-full mb-1">
-                <span className={`text-[11px] font-bold ${isActive ? 'text-amber-glow' : 'text-slate-500'}`}>
+                <span className={`text-[11px] font-bold ${isActive ? 'text-amber-glow' : 'text-slate-400'}`}>
                   {dict.stageLabel} {stage.number}
                 </span>
                 <span className={`text-[9px] px-1.5 py-0.2 border uppercase ${statusBadgeClass}`}>
@@ -419,12 +419,17 @@ export function PipelineSimulator() {
                 <span>⚙</span>
                 <span>{dict.scriptInvariantsTitle}</span>
               </span>
-              <span className="text-[10px] text-slate-500 uppercase">RUNNER: PYTHON3</span>
+              <span className="text-[10px] text-slate-400 uppercase">RUNNER: PYTHON3</span>
             </div>
 
             <div className="text-xs space-y-1">
-              <span className="text-[10px] text-slate-500 uppercase block">SCRIPT ENTRYPOINT:</span>
-              <code className="text-amber-accent bg-obsidian-900 border border-obsidian-800 px-2 py-1 block text-xs overflow-x-auto whitespace-nowrap">
+              <span className="text-[10px] text-slate-400 uppercase block">SCRIPT ENTRYPOINT:</span>
+              <code
+                tabIndex={0}
+                role="region"
+                aria-label="Script command"
+                className="text-amber-accent bg-obsidian-900 border border-obsidian-800 px-2 py-1 block text-xs overflow-x-auto whitespace-nowrap focus:outline-none focus:ring-1 focus:ring-amber-glow"
+              >
                 {activeStage.deterministicScript.command}
               </code>
             </div>
@@ -449,7 +454,7 @@ export function PipelineSimulator() {
               <span
                 className={`text-[10px] px-1.5 py-0.2 border uppercase font-bold ${
                   activeStage.agentRole.adversarial
-                    ? 'text-red-400 bg-red-950/50 border-red-800/80 animate-pulse'
+                    ? 'text-red-400 bg-red-950/50 border-red-800/80'
                     : 'text-amber-glow bg-amber-glow/10 border-amber-glow/40'
                 }`}
               >
@@ -459,10 +464,10 @@ export function PipelineSimulator() {
 
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <div>
-                <span className="text-[10px] text-slate-500 uppercase mr-2">{dict.modelLabel}</span>
+                <span className="text-[10px] text-slate-400 uppercase mr-2">{dict.modelLabel}</span>
                 <span className="text-slate-300 font-bold">{activeStage.agentRole.model}</span>
               </div>
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[10px] text-slate-400">
                 {activeStage.agentRole.adversarial
                   ? 'Fresh independent agent verification'
                   : 'Isolated worktree implementation'}
@@ -470,7 +475,7 @@ export function PipelineSimulator() {
             </div>
 
             <div className="space-y-1.5 pt-1">
-              <span className="text-[10px] text-slate-500 uppercase block">{dict.responsibilitiesLabel}</span>
+              <span className="text-[10px] text-slate-400 uppercase block">{dict.responsibilitiesLabel}</span>
               <ul className="space-y-1 text-xs text-slate-300">
                 {activeStage.agentRole.responsibilities.map((resp, idx) => (
                   <li key={idx} className="flex items-start space-x-2">
@@ -493,7 +498,7 @@ export function PipelineSimulator() {
                 {dict.terminalStreamTitle}
               </span>
             </div>
-            <span className="text-[11px] text-slate-500">
+            <span className="text-[11px] text-slate-400">
               {dict.terminalExecTag}
             </span>
           </div>
@@ -518,7 +523,7 @@ export function PipelineSimulator() {
                 if (line.type === 'success') colorClass = 'text-emerald-400';
                 if (line.type === 'warn') colorClass = 'text-amber-glow font-bold';
                 if (line.type === 'info') colorClass = 'text-slate-300';
-                if (line.type === 'dim') colorClass = 'text-slate-500';
+                if (line.type === 'dim') colorClass = 'text-slate-400';
 
                 return (
                   <div key={idx} className={`leading-relaxed ${colorClass}`}>
@@ -535,11 +540,14 @@ export function PipelineSimulator() {
               <span className="uppercase text-amber-accent font-bold">
                 {dict.jsonLogTitle}
               </span>
-              <span className="text-slate-500 font-mono">APPEND-ONLY // SNAPSHOT</span>
+              <span className="text-slate-400 font-mono">APPEND-ONLY // SNAPSHOT</span>
             </div>
             <pre
               data-testid="json-event-log"
-              className="bg-obsidian-950 border border-obsidian-800 p-3 text-[11px] text-slate-300 overflow-x-auto font-mono leading-tight max-h-28"
+              tabIndex={0}
+              role="region"
+              aria-label="JSON Event Log"
+              className="bg-obsidian-950 border border-obsidian-800 p-3 text-[11px] text-slate-300 overflow-x-auto font-mono leading-tight max-h-28 focus:outline-none focus:ring-1 focus:ring-amber-glow"
             >
               {JSON.stringify(activeStage.terminal.jsonEvent, null, 2)}
             </pre>
@@ -552,17 +560,17 @@ export function PipelineSimulator() {
               data-testid="prev-stage-btn"
               onClick={handlePrev}
               disabled={activeStageIndex === 0}
-              className={`px-3 py-1.5 text-xs font-mono uppercase font-bold border transition-colors flex items-center space-x-1 ${
+              className={`px-3 py-1.5 text-xs font-mono uppercase font-bold border flex items-center space-x-1 ${
                 activeStageIndex === 0
-                  ? 'opacity-40 cursor-not-allowed border-obsidian-800 text-slate-600'
-                  : 'border-obsidian-700 hover:border-amber-glow text-slate-300 hover:text-amber-glow bg-obsidian-900 cursor-pointer'
+                  ? 'opacity-40 cursor-not-allowed border-obsidian-800 text-slate-400'
+                  : 'border-obsidian-700 hover:border-amber-glow text-slate-200 hover:text-amber-glow bg-obsidian-900 cursor-pointer'
               }`}
             >
               <span>←</span>
               <span>{dict.prevStageBtn}</span>
             </button>
 
-            <div className="text-[11px] text-slate-500 font-mono">
+            <div className="text-[11px] text-slate-400 font-mono">
               STAGE {activeStage.number} OF 06
             </div>
 
@@ -571,9 +579,9 @@ export function PipelineSimulator() {
               data-testid="next-stage-btn"
               onClick={handleNext}
               disabled={activeStageIndex === stages.length - 1}
-              className={`px-3 py-1.5 text-xs font-mono uppercase font-bold border transition-colors flex items-center space-x-1 ${
+              className={`px-3 py-1.5 text-xs font-mono uppercase font-bold border flex items-center space-x-1 ${
                 activeStageIndex === stages.length - 1
-                  ? 'opacity-40 cursor-not-allowed border-obsidian-800 text-slate-600'
+                  ? 'opacity-40 cursor-not-allowed border-obsidian-800 text-slate-400'
                   : 'border-amber-glow/60 bg-amber-glow/10 text-amber-glow hover:bg-amber-glow hover:text-obsidian-950 cursor-pointer'
               }`}
             >

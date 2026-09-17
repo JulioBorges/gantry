@@ -160,7 +160,12 @@ export function InstallWidget() {
         className="p-4 space-y-3 font-mono"
       >
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-obsidian-950 border border-obsidian-700/80 p-3">
-          <div className="flex items-center space-x-2 text-xs sm:text-sm text-slate-200 overflow-x-auto">
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label="Installation command"
+            className="flex items-center space-x-2 text-xs sm:text-sm text-slate-200 overflow-x-auto focus:outline-none focus:ring-1 focus:ring-amber-glow"
+          >
             <span className="text-amber-glow select-none">$</span>
             <code data-testid="install-command" className="text-slate-100 font-bold whitespace-nowrap">
               {activeHarness.command}
@@ -215,8 +220,8 @@ export function InstallWidget() {
         {/* Harness Context & Flags */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-[11px] text-slate-400 gap-2">
           <span>{description}</span>
-          <span className="text-slate-500 font-mono">
-            {dict.altSetupLabel} <code className="text-slate-400">{activeHarness.altCommand}</code>
+          <span className="text-slate-400 font-mono">
+            {dict.altSetupLabel} <code className="text-slate-300">{activeHarness.altCommand}</code>
           </span>
         </div>
       </div>

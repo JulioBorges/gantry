@@ -17,7 +17,7 @@ test.describe('Gantry Site Shell Smoke Tests', () => {
     await expect(description).toHaveAttribute('content', /Deterministic agentic SDLC skill pack/);
 
     // 2. Verify Industrial Header & Branding
-    const brand = page.locator('header');
+    const brand = page.getByRole('banner');
     await expect(brand).toBeVisible();
     await expect(brand).toContainText('GANTRY');
     await expect(brand).toContainText('RIG');

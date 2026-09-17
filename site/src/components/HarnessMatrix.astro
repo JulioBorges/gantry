@@ -70,7 +70,12 @@
 
   <!-- Detailed Matrix Table Container -->
   <div class="border border-obsidian-700 bg-obsidian-900/80 overflow-hidden font-mono">
-    <div class="overflow-x-auto">
+    <div
+      tabindex="0"
+      role="region"
+      aria-label="Harness compatibility matrix"
+      class="overflow-x-auto focus:outline-none focus:ring-1 focus:ring-amber-glow"
+    >
       <table
         data-testid="harness-matrix-table"
         class="w-full text-left text-xs border-collapse"
