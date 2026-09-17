@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { getStoredLocale, LOCALE_CHANGE_EVENT } from '../i18n/client';
+import { translations, type Locale } from '../i18n/translations';
 
 export type HarnessId = 'claude' | 'opencode' | 'codex' | 'antigravity' | 'cursor';
 
@@ -8,7 +10,6 @@ export interface HarnessConfig {
   badge: string;
   command: string;
   altCommand?: string;
-  description: string;
   tier: 'Reference' | 'Supported' | 'Compatible';
 }
 
@@ -19,7 +20,6 @@ export const HARNESSES: HarnessConfig[] = [
     badge: 'REFERENCE',
     command: 'npx skills add JulioBorges/gantry',
     altCommand: 'npx @julioborges/gantry setup --harness claude',
-    description: 'Reference tier. Native settings, hooks guard, and multi-role subagents.',
     tier: 'Reference',
   },
   {
@@ -28,7 +28,6 @@ export const HARNESSES: HarnessConfig[] = [
     badge: 'COMPATIBLE',
     command: 'npx skills add JulioBorges/gantry',
     altCommand: 'npx @julioborges/gantry setup --harness opencode',
-    description: 'Compatible tier. Plugin hooks wiring and per-role subagent execution.',
     tier: 'Compatible',
   },
   {
@@ -37,7 +36,6 @@ export const HARNESSES: HarnessConfig[] = [
     badge: 'SUPPORTED',
     command: 'npx skills add JulioBorges/gantry',
     altCommand: 'npx @julioborges/gantry setup --harness codex',
-    description: 'Supported tier. Direct process runner and independent Critic verification.',
     tier: 'Supported',
   },
   {
@@ -46,7 +44,6 @@ export const HARNESSES: HarnessConfig[] = [
     badge: 'SUPPORTED',
     command: 'npx skills add JulioBorges/gantry',
     altCommand: 'npx @julioborges/gantry setup --harness antigravity',
-    description: 'Supported tier. Hook guard integration via .agents/hooks.json and agy execution.',
     tier: 'Supported',
   },
   {
@@ -55,7 +52,6 @@ export const HARNESSES: HarnessConfig[] = [
     badge: 'COMPATIBLE',
     command: 'npx skills add JulioBorges/gantry',
     altCommand: 'npx @julioborges/gantry setup --harness cursor',
-    description: 'Compatible tier. Rules and commands integration for Cursor composer workflows.',
     tier: 'Compatible',
   },
 ];
@@ -63,8 +59,25 @@ export const HARNESSES: HarnessConfig[] = [
 export function InstallWidget() {
   const [selectedHarnessId, setSelectedHarnessId] = useState<HarnessId>('claude');
   const [copied, setCopied] = useState<boolean>(false);
+  const [locale, setLocale] = useState<Locale>('en');
+
+  useEffect(() => {
+    setLocale(getStoredLocale());
+
+    const handleLocaleChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ locale: Locale }>;
+      if (customEvent.detail?.locale) {
+        setLocale(customEvent.detail.locale);
+      }
+    };
+
+    window.addEventListener(LOCALE_CHANGE_EVENT, handleLocaleChange);
+    return () => window.removeEventListener(LOCALE_CHANGE_EVENT, handleLocaleChange);
+  }, []);
 
   const activeHarness = HARNESSES.find((h) => h.id === selectedHarnessId) ?? HARNESSES[0];
+  const dict = translations[locale]?.install ?? translations.en.install;
+  const description = dict.harnessDescriptions[activeHarness.id];
 
   const handleCopy = async () => {
     const textToCopy = activeHarness.command;
@@ -100,7 +113,7 @@ export function InstallWidget() {
         <div className="flex items-center space-x-2">
           <span className="w-2 h-2 rounded-none bg-amber-glow animate-pulse"></span>
           <span className="font-mono uppercase tracking-wider text-slate-300 font-bold">
-            QUICK INSTALL // SELECT HARNESS
+            {dict.quickInstallTitle}
           </span>
         </div>
         <div className="flex items-center space-x-2 font-mono text-[11px] text-slate-400">
@@ -175,7 +188,7 @@ export function InstallWidget() {
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                 </svg>
-                <span>COPIED!</span>
+                <span>{dict.copied}</span>
               </>
             ) : (
               <>
@@ -193,7 +206,7 @@ export function InstallWidget() {
                     d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
                   />
                 </svg>
-                <span>COPY</span>
+                <span>{dict.copy}</span>
               </>
             )}
           </button>
@@ -201,9 +214,9 @@ export function InstallWidget() {
 
         {/* Harness Context & Flags */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-[11px] text-slate-400 gap-2">
-          <span>{activeHarness.description}</span>
+          <span>{description}</span>
           <span className="text-slate-500 font-mono">
-            Alt: <code className="text-slate-400">{activeHarness.altCommand}</code>
+            {dict.altSetupLabel} <code className="text-slate-400">{activeHarness.altCommand}</code>
           </span>
         </div>
       </div>

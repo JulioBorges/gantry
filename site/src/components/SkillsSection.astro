@@ -13,20 +13,20 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
     <div>
       <div class="text-xs font-mono text-amber-accent flex items-center space-x-2">
         <span class="w-2 h-2 bg-amber-glow"></span>
-        <span class="uppercase tracking-widest">ARCHITECTURE // MODULAR PACK</span>
+        <span class="uppercase tracking-widest" data-i18n="skills.tag">ARCHITECTURE // MODULAR PACK</span>
       </div>
-      <h2 class="text-xl sm:text-3xl font-extrabold text-slate-100 uppercase font-mono mt-1 tracking-wide">
+      <h2 class="text-xl sm:text-3xl font-extrabold text-slate-100 uppercase font-mono mt-1 tracking-wide" data-i18n="skills.title">
         The Three Skills
       </h2>
     </div>
     <div class="flex items-center space-x-2">
-      <span class="text-xs px-2.5 py-1 bg-obsidian-800 text-amber-accent border border-obsidian-700 font-mono">
+      <span class="text-xs px-2.5 py-1 bg-obsidian-800 text-amber-accent border border-obsidian-700 font-mono" data-i18n="skills.badge">
         PACK RIG: 1 THICK // 2 THIN
       </span>
     </div>
   </div>
 
-  <p class="text-xs text-slate-400 font-mono max-w-3xl leading-relaxed">
+  <p class="text-xs text-slate-400 font-mono max-w-3xl leading-relaxed" data-i18n="skills.subtitle">
     Gantry distributes as three focused, complementary skills in <code class="text-amber-accent">.agents/skills/</code>. One workflow engine coordinates the full SDLC, while two specialized tools govern policy and runtime visibility.
   </p>
 
@@ -44,14 +44,14 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
             <span class="w-2.5 h-2.5 bg-amber-glow rotate-45 group-hover:scale-110 transition-transform"></span>
             <span class="text-base font-bold text-slate-100 font-mono">gantry</span>
           </div>
-          <span class="text-[10px] px-2 py-0.5 bg-amber-glow/10 border border-amber-glow/40 text-amber-glow font-bold uppercase">
+          <span class="text-[10px] px-2 py-0.5 bg-amber-glow/10 border border-amber-glow/40 text-amber-glow font-bold uppercase" data-i18n="skills.gantryBadge">
             Core Workflow
           </span>
         </div>
 
         <!-- Triggers & Invocations -->
         <div class="space-y-1 text-xs">
-          <span class="text-[11px] text-slate-500 uppercase tracking-wider block">INVOCATION TRIGGERS:</span>
+          <span class="text-[11px] text-slate-500 uppercase tracking-wider block" data-i18n="skills.triggersLabel">INVOCATION TRIGGERS:</span>
           <div class="p-2 bg-obsidian-950 border border-obsidian-800 text-amber-accent/90 text-xs break-all">
             /gantry · wave:N · implement spec &lt;slug&gt;
           </div>
@@ -59,21 +59,21 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
 
         <!-- Role & Narrative -->
         <div class="space-y-2 text-xs text-slate-300 leading-relaxed">
-          <p>
+          <p data-i18n="skills.gantryDesc">
             The orchestrator executing the full SDLC loop: spec validation, context budget checks, TDD implementation loops, two-axis reviews (standards + spec), and adversarial verification.
           </p>
           <ul class="space-y-1.5 text-slate-400 pt-1 text-[11px]">
             <li class="flex items-start space-x-1.5">
               <span class="text-amber-glow">›</span>
-              <span><strong class="text-slate-200">TDD Cycles:</strong> Red-green-refactor with strictly minimal diffs.</span>
+              <span><strong class="text-slate-200" data-i18n="skills.gantryBullet1Title">TDD Cycles:</strong> <span data-i18n="skills.gantryBullet1Desc">Red-green-refactor with strictly minimal diffs.</span></span>
             </li>
             <li class="flex items-start space-x-1.5">
               <span class="text-amber-glow">›</span>
-              <span><strong class="text-slate-200">Adversarial Critic:</strong> Fresh agent disproves claims before integration.</span>
+              <span><strong class="text-slate-200" data-i18n="skills.gantryBullet2Title">Adversarial Critic:</strong> <span data-i18n="skills.gantryBullet2Desc">Fresh agent disproves claims before integration.</span></span>
             </li>
             <li class="flex items-start space-x-1.5">
               <span class="text-amber-glow">›</span>
-              <span><strong class="text-slate-200">Quality Gates:</strong> Differential <code class="text-amber-accent">gates.py</code> run serially.</span>
+              <span><strong class="text-slate-200" data-i18n="skills.gantryBullet3Title">Quality Gates:</strong> <span data-i18n="skills.gantryBullet3Desc">Differential gates.py run serially.</span></span>
             </li>
           </ul>
         </div>
@@ -87,7 +87,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
           rel="noopener noreferrer"
           class="inline-flex items-center justify-between w-full px-3 py-2 bg-obsidian-950 hover:bg-obsidian-850 border border-obsidian-700 hover:border-amber-glow/50 text-slate-200 text-xs transition-colors"
         >
-          <span>VIEW WORKFLOW SPEC</span>
+          <span data-i18n="skills.viewSpec">VIEW SPEC</span>
           <span class="text-amber-glow">↗</span>
         </a>
       </div>
@@ -105,14 +105,14 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
             <span class="w-2.5 h-2.5 bg-cyan-400 rotate-45 group-hover:scale-110 transition-transform"></span>
             <span class="text-base font-bold text-slate-100 font-mono">gantry-setup</span>
           </div>
-          <span class="text-[10px] px-2 py-0.5 bg-cyan-950/40 border border-cyan-700/50 text-cyan-400 font-bold uppercase">
+          <span class="text-[10px] px-2 py-0.5 bg-cyan-950/40 border border-cyan-700/50 text-cyan-400 font-bold uppercase" data-i18n="skills.setupBadge">
             Policy & Governance
           </span>
         </div>
 
         <!-- Triggers & Invocations -->
         <div class="space-y-1 text-xs">
-          <span class="text-[11px] text-slate-500 uppercase tracking-wider block">INVOCATION TRIGGERS:</span>
+          <span class="text-[11px] text-slate-500 uppercase tracking-wider block" data-i18n="skills.triggersLabel">INVOCATION TRIGGERS:</span>
           <div class="p-2 bg-obsidian-950 border border-obsidian-800 text-cyan-300 text-xs break-all">
             /gantry-setup · setup gantry · configure policy
           </div>
@@ -120,21 +120,21 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
 
         <!-- Role & Narrative -->
         <div class="space-y-2 text-xs text-slate-300 leading-relaxed">
-          <p>
+          <p data-i18n="skills.setupDesc">
             Conversational repository onboarding and policy writer. Establishes enforceable constraints and registers guard hooks across supported coding harnesses.
           </p>
           <ul class="space-y-1.5 text-slate-400 pt-1 text-[11px]">
             <li class="flex items-start space-x-1.5">
               <span class="text-cyan-400">›</span>
-              <span><strong class="text-slate-200">Single Policy Author:</strong> Sole writer of <code class="text-slate-200 bg-obsidian-950 px-1">.gantry/config.json</code>.</span>
+              <span><strong class="text-slate-200" data-i18n="skills.setupBullet1Title">Policy Generation:</strong> <span data-i18n="skills.setupBullet1Desc">Interactive questionnaire configuring gates and budgets.</span></span>
             </li>
             <li class="flex items-start space-x-1.5">
               <span class="text-cyan-400">›</span>
-              <span><strong class="text-slate-200">Repo Guidance:</strong> Injects immutable rules into marked <code class="text-slate-200 bg-obsidian-950 px-1">AGENTS.md</code>.</span>
+              <span><strong class="text-slate-200" data-i18n="skills.setupBullet2Title">Harness Detection:</strong> <span data-i18n="skills.setupBullet2Desc">Inspects active IDE harness and configures hooks.</span></span>
             </li>
             <li class="flex items-start space-x-1.5">
               <span class="text-cyan-400">›</span>
-              <span><strong class="text-slate-200">Harness Detection:</strong> Automatically discovers capabilities and hook paths.</span>
+              <span><strong class="text-slate-200" data-i18n="skills.setupBullet3Title">Drift Protection:</strong> <span data-i18n="skills.setupBullet3Desc">Never writes unvalidated or conflicting settings.</span></span>
             </li>
           </ul>
         </div>
@@ -148,7 +148,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
           rel="noopener noreferrer"
           class="inline-flex items-center justify-between w-full px-3 py-2 bg-obsidian-950 hover:bg-obsidian-850 border border-obsidian-700 hover:border-cyan-400/50 text-slate-200 text-xs transition-colors"
         >
-          <span>VIEW SETUP SPEC</span>
+          <span data-i18n="skills.viewSpec">VIEW SPEC</span>
           <span class="text-cyan-400">↗</span>
         </a>
       </div>
@@ -166,14 +166,14 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
             <span class="w-2.5 h-2.5 bg-amber-accent rotate-45 group-hover:scale-110 transition-transform"></span>
             <span class="text-base font-bold text-slate-100 font-mono">gantry-dashboard</span>
           </div>
-          <span class="text-[10px] px-2 py-0.5 bg-amber-950/40 border border-amber-800/50 text-amber-accent font-bold uppercase">
+          <span class="text-[10px] px-2 py-0.5 bg-amber-950/40 border border-amber-800/50 text-amber-accent font-bold uppercase" data-i18n="skills.dashboardBadge">
             Observability
           </span>
         </div>
 
         <!-- Triggers & Invocations -->
         <div class="space-y-1 text-xs">
-          <span class="text-[11px] text-slate-500 uppercase tracking-wider block">INVOCATION TRIGGERS:</span>
+          <span class="text-[11px] text-slate-500 uppercase tracking-wider block" data-i18n="skills.triggersLabel">INVOCATION TRIGGERS:</span>
           <div class="p-2 bg-obsidian-950 border border-obsidian-800 text-amber-accent text-xs break-all">
             /gantry-dashboard · open dashboard · show runs
           </div>
@@ -181,21 +181,21 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
 
         <!-- Role & Narrative -->
         <div class="space-y-2 text-xs text-slate-300 leading-relaxed">
-          <p>
+          <p data-i18n="skills.dashboardDesc">
             Zero-dependency, read-only multi-run kanban observer. Binds locally to loopback (<code class="text-amber-accent">localhost:42687</code>) with strict zero-mutation guarantees.
           </p>
           <ul class="space-y-1.5 text-slate-400 pt-1 text-[11px]">
             <li class="flex items-start space-x-1.5">
               <span class="text-amber-accent">›</span>
-              <span><strong class="text-slate-200">Local Loopback:</strong> Runs securely at <code class="text-slate-200 bg-obsidian-950 px-1">http://localhost:42687</code>.</span>
+              <span><strong class="text-slate-200" data-i18n="skills.dashboardBullet1Title">Local Loopback:</strong> <span data-i18n="skills.dashboardBullet1Desc">Runs securely at localhost:42687.</span></span>
             </li>
             <li class="flex items-start space-x-1.5">
               <span class="text-amber-accent">›</span>
-              <span><strong class="text-slate-200">Read-only Observer:</strong> Reads append-only JSON logs; never alters state.</span>
+              <span><strong class="text-slate-200" data-i18n="skills.dashboardBullet2Title">Read-only Observer:</strong> <span data-i18n="skills.dashboardBullet2Desc">Reads append-only JSON logs; never alters state.</span></span>
             </li>
             <li class="flex items-start space-x-1.5">
               <span class="text-amber-accent">›</span>
-              <span><strong class="text-slate-200">Multi-Run Swimlanes:</strong> Live tracking of concurrent worktrees and phases.</span>
+              <span><strong class="text-slate-200" data-i18n="skills.dashboardBullet3Title">Multi-Run Swimlanes:</strong> <span data-i18n="skills.dashboardBullet3Desc">Live tracking of concurrent worktrees and phases.</span></span>
             </li>
           </ul>
         </div>
@@ -209,7 +209,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
           rel="noopener noreferrer"
           class="inline-flex items-center justify-between w-full px-3 py-2 bg-obsidian-950 hover:bg-obsidian-850 border border-obsidian-700 hover:border-amber-glow/50 text-slate-200 text-xs transition-colors"
         >
-          <span>VIEW DASHBOARD SPEC</span>
+          <span data-i18n="skills.viewSpec">VIEW SPEC</span>
           <span class="text-amber-glow">↗</span>
         </a>
       </div>

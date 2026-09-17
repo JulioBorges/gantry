@@ -16,21 +16,21 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
   <div class="flex flex-wrap items-center justify-between gap-3 border-b border-obsidian-700/80 pb-4 mb-8 text-xs font-mono">
     <div class="flex items-center space-x-2 text-amber-accent">
       <span class="inline-block w-2.5 h-2.5 bg-amber-glow animate-pulse"></span>
-      <span class="tracking-widest uppercase font-bold">SYSTEM RIG // GANTRY CORE ONLINE</span>
+      <span class="tracking-widest uppercase font-bold" data-i18n="hero.systemStrip">SYSTEM RIG // GANTRY CORE ONLINE</span>
     </div>
 
     <!-- Status Badges -->
     <div class="flex flex-wrap items-center gap-2" data-testid="status-badges">
-      <span class="px-2 py-0.5 bg-obsidian-900 border border-obsidian-700 text-amber-glow font-bold">
+      <span class="px-2 py-0.5 bg-obsidian-900 border border-obsidian-700 text-amber-glow font-bold" data-i18n="hero.badgeStatus">
         STATUS: SPEC-VERIFIED
       </span>
-      <span class="px-2 py-0.5 bg-obsidian-900 border border-obsidian-700 text-slate-300">
+      <span class="px-2 py-0.5 bg-obsidian-900 border border-obsidian-700 text-slate-300" data-i18n="hero.badgeHarness">
         HARNESS-NEUTRAL
       </span>
-      <span class="px-2 py-0.5 bg-obsidian-900 border border-obsidian-700 text-slate-400">
+      <span class="px-2 py-0.5 bg-obsidian-900 border border-obsidian-700 text-slate-400" data-i18n="hero.badgeLicense">
         APACHE-2.0
       </span>
-      <span class="px-2 py-0.5 bg-obsidian-900 border border-amber-accent/40 text-amber-accent">
+      <span class="px-2 py-0.5 bg-obsidian-900 border border-amber-accent/40 text-amber-accent" data-i18n="hero.badgeAiSlop">
         ZERO AI-SLOP
       </span>
     </div>
@@ -41,13 +41,13 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
     <!-- Left Column: Copy & Value Proposition & Install Widget -->
     <div class="lg:col-span-7 space-y-6">
       <div class="space-y-3">
-        <div class="inline-block text-xs font-mono tracking-widest text-amber-glow font-bold uppercase bg-amber-glow/10 border border-amber-glow/30 px-2.5 py-1">
+        <div class="inline-block text-xs font-mono tracking-widest text-amber-glow font-bold uppercase bg-amber-glow/10 border border-amber-glow/30 px-2.5 py-1" data-i18n="hero.kicker">
           THE AGENTIC SDLC SKILL PACK
         </div>
 
         <h1 class="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-100 uppercase font-mono leading-none">
-          Harness-Neutral <br />
-          <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-glow via-amber-accent to-yellow-500">
+          <span data-i18n="hero.titleHarness">Harness-Neutral</span> <br />
+          <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-glow via-amber-accent to-yellow-500" data-i18n="hero.titleAgentic">
             Agentic SDLC
           </span>
         </h1>
@@ -55,6 +55,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
         <!-- Primary Tagline -->
         <p
           data-testid="hero-tagline"
+          data-i18n="hero.tagline"
           class="text-base sm:text-lg font-mono font-semibold text-amber-accent leading-snug"
         >
           Turn an approved Spec into verified software deliveries inside your coding harness.
@@ -64,6 +65,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
       <!-- Value Proposition -->
       <p
         data-testid="hero-value-prop"
+        data-i18n="hero.valueProp"
         class="text-sm sm:text-base text-slate-300 font-mono leading-relaxed max-w-2xl"
       >
         Gantry is a skill pack, not an execution engine. Workflow scripts decide readiness, acceptance, gates, and roadmap state; agents plan, implement, review, and refute; the operator holds approval authority.
@@ -103,9 +105,9 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
         <div class="mt-2 pt-2 border-t border-obsidian-800 flex items-center justify-between text-[10px] font-mono text-slate-400 px-1">
           <div class="flex items-center space-x-1.5">
             <span class="w-1.5 h-1.5 bg-amber-glow"></span>
-            <span class="text-slate-300 font-bold uppercase">GANTRY CRANE // RIG MK-IV</span>
+            <span class="text-slate-300 font-bold uppercase" data-i18n="hero.craneTitle">GANTRY CRANE // RIG MK-IV</span>
           </div>
-          <span class="text-amber-accent">LOAD: SPEC → VERIFIED</span>
+          <span class="text-amber-accent" data-i18n="hero.craneLoad">LOAD: SPEC → VERIFIED</span>
         </div>
       </div>
     </div>
@@ -114,20 +116,20 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
   <!-- Bottom Technical Grid Highlights -->
   <div class="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-obsidian-700/80 pt-6">
     <div class="p-3 bg-obsidian-900/70 border border-obsidian-700">
-      <div class="text-[11px] text-slate-500 uppercase font-mono">Architecture</div>
-      <div class="text-sm font-bold text-amber-glow mt-1 font-mono">Skill Pack</div>
+      <div class="text-[11px] text-slate-500 uppercase font-mono" data-i18n="hero.metricArchLabel">Architecture</div>
+      <div class="text-sm font-bold text-amber-glow mt-1 font-mono" data-i18n="hero.metricArchVal">Skill Pack</div>
     </div>
     <div class="p-3 bg-obsidian-900/70 border border-obsidian-700">
-      <div class="text-[11px] text-slate-500 uppercase font-mono">Verification</div>
-      <div class="text-sm font-bold text-slate-200 mt-1 font-mono">Adversarial Critic</div>
+      <div class="text-[11px] text-slate-500 uppercase font-mono" data-i18n="hero.metricVerifLabel">Verification</div>
+      <div class="text-sm font-bold text-slate-200 mt-1 font-mono" data-i18n="hero.metricVerifVal">Adversarial Critic</div>
     </div>
     <div class="p-3 bg-obsidian-900/70 border border-obsidian-700">
-      <div class="text-[11px] text-slate-500 uppercase font-mono">Quality Gates</div>
-      <div class="text-sm font-bold text-slate-200 mt-1 font-mono">RFC 6901 Differential</div>
+      <div class="text-[11px] text-slate-500 uppercase font-mono" data-i18n="hero.metricGatesLabel">Quality Gates</div>
+      <div class="text-sm font-bold text-slate-200 mt-1 font-mono" data-i18n="hero.metricGatesVal">RFC 6901 Differential</div>
     </div>
     <div class="p-3 bg-obsidian-900/70 border border-obsidian-700">
-      <div class="text-[11px] text-slate-500 uppercase font-mono">Operator In Loop</div>
-      <div class="text-sm font-bold text-amber-accent mt-1 font-mono">Approval Authority</div>
+      <div class="text-[11px] text-slate-500 uppercase font-mono" data-i18n="hero.metricOperatorLabel">Operator In Loop</div>
+      <div class="text-sm font-bold text-amber-accent mt-1 font-mono" data-i18n="hero.metricOperatorVal">Approval Authority</div>
     </div>
   </div>
 </section>
