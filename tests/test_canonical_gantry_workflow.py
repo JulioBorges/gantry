@@ -3223,6 +3223,7 @@ Slice: `legacy#07`
             "datetime",
             "difflib",
             "discovery",
+            "execution",
             "hashlib",
             "http",
             "json",
@@ -3241,7 +3242,7 @@ Slice: `legacy#07`
             "typing",
         }
         self.assertEqual(
-            {"acceptance.py", "budget.py", "caveman.py", "cleanup.py", "common.py", "dashboard.py", "discovery.py", "frontier.py", "gates.py", "guard.py", "learner.py", "result.py", "roadmap.py", "runlog.py", "setup.py", "spec.py"},
+            {"acceptance.py", "budget.py", "caveman.py", "cleanup.py", "common.py", "dashboard.py", "discovery.py", "execution.py", "frontier.py", "gates.py", "guard.py", "learner.py", "result.py", "roadmap.py", "runlog.py", "setup.py", "spec.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         git_hooks = SKILL_DIR / "hooks" / "git"

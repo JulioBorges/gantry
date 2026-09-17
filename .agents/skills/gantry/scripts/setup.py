@@ -2,6 +2,8 @@
 """Conversational setup wizard for Gantry policy and hooks."""
 import argparse
 import json
+import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -110,6 +112,43 @@ def main() -> None:
                     new_hooks_text = json.dumps(old_hooks, indent=2)
                     indented_new_hooks = new_hooks_text.replace('\n', '\n' + ' ' * base_indent)
                     settings_path.write_text(content[:start_idx] + indented_new_hooks + content[end_idx:], encoding="utf-8")
+
+    # Antigravity hook wiring: when Antigravity is detected, generate or merge .agents/hooks.json
+    if (repo_root / ".agents").exists() or shutil.which("agy") or os.environ.get("ANTIGRAVITY_PROJECT_DIR") or os.environ.get("GEMINI_CLI"):
+        ag_hook_frag_path = Path(__file__).resolve().parents[1] / "hooks" / "antigravity.hooks.json"
+        if ag_hook_frag_path.exists():
+            ag_hook_frag = json.loads(ag_hook_frag_path.read_text(encoding="utf-8"))
+        else:
+            guard_cmd = 'python3 ".agents/skills/gantry/scripts/guard.py" PreToolUse --json'
+            ag_hook_frag = {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "*",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": guard_cmd,
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        agents_dir = repo_root / ".agents"
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        hooks_json_path = agents_dir / "hooks.json"
+        if hooks_json_path.exists():
+            try:
+                existing_hooks = json.loads(hooks_json_path.read_text(encoding="utf-8"))
+                if not isinstance(existing_hooks, dict):
+                    existing_hooks = {}
+            except Exception:
+                existing_hooks = {}
+            merged_hooks = merge_dicts(existing_hooks, ag_hook_frag)
+            hooks_json_path.write_text(json.dumps(merged_hooks, indent=2) + "\n", encoding="utf-8")
+        else:
+            hooks_json_path.write_text(json.dumps(ag_hook_frag, indent=2) + "\n", encoding="utf-8")
 
     agents_path = repo_root / "AGENTS.md"
     content = agents_path.read_text(encoding="utf-8") if agents_path.exists() else ""

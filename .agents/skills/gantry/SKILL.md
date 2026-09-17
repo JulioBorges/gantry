@@ -30,11 +30,21 @@ Before a Run, resolve these values once and pass them as `args` to every referen
    repository-specific literals.
 5. `caveman` comes from resolving repository preference `policy["caveman"]` and host availability
    via `caveman.resolve_activation(policy, harness=hostHarness, root=repoRoot, warned=args.cavemanWarned)`.
-   When active, the coordinating agent uses concise phrasing for conversational messages and summaries,
-   while all Specs, Issues, documentation, PR descriptions, Result Contracts, exact commands, exact
-   errors and acceptance criteria retain full detail. If enabled in policy but unavailable in the host
-   environment, emit at most one actionable warning per Run with installation guidance and continue with
-   normal behavior; a disabled preference does not load the skill.
+   When active, the coordinating agent, planning roles (Requirement Critic, research, Planner, Plan Critic)
+   and round roles (Implementer, Reviewer, Critic, optional Learner) across all initial calls, retries,
+   review fixes and correction passes receive concise phrasing instructions for conversational messages
+   and summaries along with supported external-skill access, while all Specs, draft Issues, code,
+   documentation, lesson candidates, PR descriptions, Result Contracts, exact commands, exact errors,
+   acceptance criteria and verification evidence retain full detail. If enabled in policy but unavailable
+   in the host environment, emit at most one actionable warning per Run with installation guidance and
+   continue with normal behavior without claiming live token savings; a disabled preference does not load
+   the skill. The manual harness-neutral path carries the same instructions.
+6. `roles` comes from resolving repository defaults under `policy["execution"]["roles"]` overlaid by
+   optional Run and Issue overrides via `execution.resolve_roles()`. Preflight validates that every selected
+   combination is supported, executable and authenticated (via `execution.preflight_validate()`), refusing
+   to start implementation when validation fails. Derived roles (`requirement-critic`, `plan-critic`, `learner`
+   inheriting from `critic`, and `research` from `plan`) adopt parent defaults unless explicitly set.
+   Model strength guidance between roles is advisory and does not block valid cross-family selections.
 
 Run the standard-library workflow scripts as `python3 <skillDir>/scripts/<script>.py`. `common.py` provides
 the shared Markdown parser and policy resolution; its `--json` path prints the resolved portable runtime.

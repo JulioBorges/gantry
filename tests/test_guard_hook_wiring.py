@@ -205,6 +205,22 @@ class CodexHookWiringTests(unittest.TestCase):
         self.assertEqual({}, payload["hooks"])
 
 
+class AntigravityHookWiringTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.hooks = json.loads((HOOKS / "antigravity.hooks.json").read_text(encoding="utf-8"))
+        self.capabilities = json.loads((CAPABILITIES / "antigravity.json").read_text(encoding="utf-8"))
+
+    def test_every_declared_capability_event_is_wired_to_guard_py_with_json(self) -> None:
+        for event in self.capabilities["hook_events"]:
+            self.assertIn(event, self.hooks["hooks"], f"{event} is declared as a capability but not wired")
+            commands = list(iter_commands(self.hooks["hooks"][event]))
+            self.assertTrue(commands, f"{event} has no hook command")
+            for command in commands:
+                self.assertIn("guard.py", command)
+                self.assertIn(f"guard.py\" {event} --json", command.replace("'", '"'))
+
+
+
 class NoHooksFallbackTests(unittest.TestCase):
     """Every rule guard.py enforces must also be a stated, Critic-checked prompt rule."""
 

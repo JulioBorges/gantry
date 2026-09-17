@@ -166,6 +166,16 @@ const budget = Number.isInteger(requestedBudget) && requestedBudget >= 0
 const runLogEnabled = Boolean(A.runId && A.unitId)
 const stateRootFlag = A.stateRoot ? ` --state-root '${String(A.stateRoot).replaceAll("'", "'\\''")}'` : ''
 
+const cavemanState = A.caveman || { active: false, preference: false, scope: 'none' }
+const cavemanActive = Boolean(cavemanState && cavemanState.active)
+if (cavemanState && cavemanState.warning) {
+  if (typeof log === 'function') log(cavemanState.warning)
+  cavemanState.warned = true
+}
+const cavemanInstruction = cavemanActive
+  ? 'Caveman lite is active: use concise phrasing for conversational messages and summaries. Code, documentation, lesson candidates, PR descriptions, Result Contracts, exact commands, exact errors, acceptance criteria, and verification evidence retain full detail.'
+  : ''
+
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical)
   if (value && typeof value === 'object') {
@@ -314,16 +324,20 @@ async function validRoleResult(role, result) {
 async function requestRole(role, prompt, options) {
   const native = A.structuredOutput === true
   const schema = native ? await roleSchema(role) : null
-  const result = await agent(prompt, {
+  const agentPrompt = cavemanActive ? `${prompt}\n\n${cavemanInstruction}` : prompt
+  const agentOptions = {
     ...options,
+    ...(cavemanActive ? { skills: (options.skills || []).concat(cavemanState.skill_path || 'caveman'), caveman: true } : {}),
     ...(schema ? { schema } : {}),
-  })
+  }
+  const result = await agent(agentPrompt, agentOptions)
   if (await validRoleResult(role, result)) return result
-  const retry = await agent(`${prompt}\nYour prior result was invalid. Return the complete ${role} result contract.`, {
-    ...options,
+  const retryPrompt = `${agentPrompt}\nYour prior result was invalid. Return the complete ${role} result contract.`
+  const retryOptions = {
+    ...agentOptions,
     label: `${options.label}:retry`,
-    ...(schema ? { schema } : {}),
-  })
+  }
+  const retry = await agent(retryPrompt, retryOptions)
   return (await validRoleResult(role, retry)) ? retry : null
 }
 
@@ -747,7 +761,7 @@ if (!integrationStopped && A.isLastRound) {
     }
   }
 }
-return { round: A.round, date: A.date, results: deliveries, ...(A.isLastRound ? { candidates, prOffer } : {}) }
+return { round: A.round, date: A.date, results: deliveries, caveman: cavemanState, ...(A.isLastRound ? { candidates, prOffer } : {}) }
 ```
 
 The Workflow returns `done` only after serial integration (when isolated), a passing post-integration
