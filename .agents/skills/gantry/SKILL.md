@@ -124,7 +124,7 @@ Every script provides `--help`, and data-producing paths support `--json`.
   `issue.blocked` records only a Run-log fact: the Issue's `Status:` line stays `ready-for-agent` so
   `frontier.py` keeps offering it, and only `roadmap.py done` after Critic acceptance ever changes an
   Issue's authoritative status. Omitting `runId` or `unitId` disables recording entirely and leaves the
-  round behaviorally identical, so a harness with no resolved Run log keeps working.
+  round behaviorally identical (a headless/test fallback only; conversational agents must not omit them).
 - Before any agent works in a worktree, the round workflow marks it with the Run — `runlog.py mark
   <runId> --cwd <worktree>`, stored in that worktree's own git directory — and clears it with
   `runlog.py unmark` when the Run ends, never between rounds. The tracked git hooks
@@ -186,6 +186,15 @@ runner contract is `runCommand(command, { cwd, input })`: `input`, when supplied
 command's stdin, not appended to the command line. Every recorded Run event goes through
 `runlog.py append <unitId> <runId>` this way, with the event JSON as `input` — a harness that implements
 `runCommand` without stdin support breaks every recorded round, not just this one.
+
+When coordinating directly in conversational or manual harnesses (Antigravity, Cursor, interactive CLI),
+the coordinating agent MUST explicitly record Run lifecycle events via the CLI:
+1. **Preflight**: resolve `unitId` (`python3 <skillDir>/scripts/runlog.py unit-id --cwd <repoRoot>`) and generate `runId="run-$(date +%s)"`.
+2. **Start Run**: append `run.started` with repository root, policy hash, tier, and staleAfterSeconds.
+3. **Mark worktree**: mark the active worktree with `python3 <skillDir>/scripts/runlog.py mark <runId> --cwd <worktree>`.
+4. **Rounds and phases**: append `round.started`, and before/after each phase append `phase.started` and `phase.finished` with `{ issue, phase }`.
+5. **Completion**: on issue completion after Critic acceptance, append `issue.done`. On Run completion, unmark with `python3 <skillDir>/scripts/runlog.py unmark --cwd <worktree>` and append `run.finished`.
+Never omit `runId` or `unitId` during interactive execution; doing so disables telemetry and leaves the dashboard blind to active runs.
 
 ## References
 
