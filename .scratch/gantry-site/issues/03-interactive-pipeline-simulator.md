@@ -1,7 +1,7 @@
 # Build interactive pipeline simulator island
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-site#03`
 Spec: `.scratch/gantry-site/spec.md`
 Created: 2026-09-17
@@ -23,10 +23,10 @@ Implement a client-side interactive island showcasing Gantry's SDLC pipeline sta
 
 ## Acceptance criteria
 
-- [ ] Simulator island displays all six core pipeline stages with active, completed, and pending visual indicators.
-- [ ] Selecting a stage dynamically updates the stage description, script invariants, agent responsibilities, and simulated terminal log stream.
-- [ ] Terminal view provides realistic syntax-highlighted commands, checks, and JSON log events for each phase.
-- [ ] Playwright tests verify keyboard navigation, stage transitions, active state classes, and responsive layout scaling.
+- [x] Simulator island displays all six core pipeline stages with active, completed, and pending visual indicators.
+- [x] Selecting a stage dynamically updates the stage description, script invariants, agent responsibilities, and simulated terminal log stream.
+- [x] Terminal view provides realistic syntax-highlighted commands, checks, and JSON log events for each phase.
+- [x] Playwright tests verify keyboard navigation, stage transitions, active state classes, and responsive layout scaling.
 
 ## Blocked by
 

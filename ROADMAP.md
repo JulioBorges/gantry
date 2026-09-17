@@ -39,7 +39,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **27 / 32** |
+| Issues completed | **29 / 32** |
 | Specs completed | **3 / 4** |
 | Execution waves | **17** |
 
@@ -126,7 +126,7 @@ complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel 
 | 01 | `gantry-migration` | 18/18 | 0–6 |
 | 11 | `caveman-setup` | 3/3 | 7–8 |
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
-| 13 | `gantry-site` | 1/6 | 12–16 |
+| 13 | `gantry-site` | 3/6 | 12–16 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -227,11 +227,11 @@ of the others, and an issue never waits on anything in its own wave or a later o
 
 - [x] **`gantry-site#01`** — Scaffold Astro site with industrial shell and Playwright harness _(no blockers)_
 
-### Wave 13 — 0/2 done
+### Wave 13 — 2/2 done
 
-- [ ] **`gantry-site#02`** — Build hero section with multi-harness install widget and crane visual
+- [x] **`gantry-site#02`** — Build hero section with multi-harness install widget and crane visual
   <br>↳ blocked by: gantry-site#01
-- [ ] **`gantry-site#03`** — Build interactive pipeline simulator island
+- [x] **`gantry-site#03`** — Build interactive pipeline simulator island
   <br>↳ blocked by: gantry-site#01
 
 ### Wave 14 — 0/1 done
