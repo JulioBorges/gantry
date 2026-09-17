@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **31 / 32** |
-| Specs completed | **3 / 4** |
+| Issues completed | **32 / 32** |
+| Specs completed | **4 / 4** |
 | Execution waves | **17** |
 
 ## Specs
@@ -126,7 +126,7 @@ complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel 
 | 01 | `gantry-migration` | 18/18 | 0–6 |
 | 11 | `caveman-setup` | 3/3 | 7–8 |
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
-| 13 | `gantry-site` | 5/6 | 12–16 |
+| 13 | `gantry-site` | 6/6 | 12–16 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -244,9 +244,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-site#05`** — Implement bilingual i18n support with language toggle
   <br>↳ blocked by: gantry-site#02, gantry-site#03, gantry-site#04
 
-### Wave 16 — 0/1 done
+### Wave 16 — 1/1 done
 
-- [ ] **`gantry-site#06`** — Configure GitHub Pages deployment workflow and complete E2E validation
+- [x] **`gantry-site#06`** — Configure GitHub Pages deployment workflow and complete E2E validation
   <br>↳ blocked by: gantry-site#05
 
 <!-- END GENERATED: issue checklist -->

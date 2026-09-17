@@ -1,7 +1,7 @@
 # Configure GitHub Pages deployment workflow and complete E2E validation
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-site#06`
 Spec: `.scratch/gantry-site/spec.md`
 Created: 2026-09-17
@@ -23,10 +23,10 @@ Create the GitHub Actions workflow `.github/workflows/deploy-pages.yml` to build
 
 ## Acceptance criteria
 
-- [ ] GitHub Actions workflow `.github/workflows/deploy-pages.yml` builds `site/` and deploys pages artifact on `main` push.
-- [ ] Astro production build outputs clean static assets respecting the `/gantry/` base path.
-- [ ] Comprehensive Playwright suite passes cleanly on desktop and mobile viewports with zero accessibility violations.
-- [ ] Repository test suite and npm packaging checks continue passing without regressions.
+- [x] GitHub Actions workflow `.github/workflows/deploy-pages.yml` builds `site/` and deploys pages artifact on `main` push.
+- [x] Astro production build outputs clean static assets respecting the `/gantry/` base path.
+- [x] Comprehensive Playwright suite passes cleanly on desktop and mobile viewports with zero accessibility violations.
+- [x] Repository test suite and npm packaging checks continue passing without regressions.
 
 ## Blocked by
 
