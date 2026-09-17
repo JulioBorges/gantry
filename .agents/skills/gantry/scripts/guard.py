@@ -67,15 +67,16 @@ EVENT_REQUIRED_CONCEPTS = {
 CONCEPT_FIELD_BY_HARNESS = {
     "claude-code": {"tool_name": "tool_name", "tool_input": "tool_input", "session_id": "session_id"},
     "opencode": {"tool_name": "tool", "tool_input": "args", "session_id": "sessionID"},
+    "antigravity": {"tool_name": "tool_name", "tool_input": "tool_input", "session_id": "session_id"},
 }
 CONCEPT_ALIASES = {
-    "tool_name": ("tool_name", "tool", "toolName"),
-    "tool_input": ("tool_input", "args", "toolInput", "input"),
+    "tool_name": ("tool_name", "tool", "toolName", "name"),
+    "tool_input": ("tool_input", "args", "toolInput", "input", "parameters", "arguments"),
     "session_id": ("session_id", "sessionID", "sessionId"),
 }
 
-MODIFYING_TOOLS = {"edit", "write", "multiedit", "notebookedit", "applypatch", "patch"}
-BASH_TOOLS = {"bash", "shell", "exec"}
+MODIFYING_TOOLS = {"edit", "write", "multiedit", "notebookedit", "applypatch", "patch", "writetofile", "replacefilecontent"}
+BASH_TOOLS = {"bash", "shell", "exec", "runcommand"}
 
 ISSUE_FILE_RE = re.compile(r"^\d{2,}-[a-z0-9-]+\.md$")
 STATUS_LINE_RE = re.compile(r"(?m)^Status:\s*(\S+)")
@@ -134,13 +135,21 @@ def tool_input(payload: dict) -> dict:
 
 
 def extract_path(payload: dict, arguments: dict) -> str | None:
-    value = _first(arguments, ("file_path", "filePath", "path", "filename")) or _first(payload, ("file_path", "path"))
+    value = (
+        _first(arguments, ("file_path", "filePath", "path", "filename", "TargetFile", "target_file", "targetFile"))
+        or _first(payload, ("file_path", "path", "TargetFile", "target_file", "targetFile"))
+    )
     return str(value) if value else None
 
 
 def extract_text(arguments: dict) -> str:
     parts: list[str] = []
-    for key in ("old_string", "oldString", "new_string", "newString", "content", "text"):
+    for key in (
+        "old_string", "oldString", "new_string", "newString", "content", "text",
+        "CodeContent", "code_content", "codeContent",
+        "TargetContent", "target_content", "targetContent",
+        "ReplacementContent", "replacement_content", "replacementContent",
+    ):
         value = arguments.get(key)
         if isinstance(value, str):
             parts.append(value)
@@ -158,7 +167,11 @@ def extract_text(arguments: dict) -> str:
 def extract_new_text(arguments: dict) -> str:
     """The resulting text a modifying tool would write -- never the text it replaces."""
     parts: list[str] = []
-    for key in ("new_string", "newString", "content", "text"):
+    for key in (
+        "new_string", "newString", "content", "text",
+        "CodeContent", "code_content", "codeContent",
+        "ReplacementContent", "replacement_content", "replacementContent",
+    ):
         value = arguments.get(key)
         if isinstance(value, str):
             parts.append(value)
@@ -182,7 +195,7 @@ def is_draft_safe(new_text: str) -> bool:
 
 
 def extract_command(arguments: dict) -> str | None:
-    value = _first(arguments, ("command", "cmd"))
+    value = _first(arguments, ("command", "cmd", "CommandLine", "command_line", "commandLine"))
     return str(value) if value else None
 
 
@@ -218,23 +231,23 @@ def apply_edits(original: str, arguments: dict) -> str | None:
     """
     edits = arguments.get("edits")
     if not isinstance(edits, list):
-        old = arguments.get("old_string", arguments.get("oldString"))
-        new = arguments.get("new_string", arguments.get("newString"))
+        old = _first(arguments, ("old_string", "oldString", "TargetContent", "target_content", "targetContent"))
+        new = _first(arguments, ("new_string", "newString", "ReplacementContent", "replacement_content", "replacementContent"))
         if not isinstance(old, str) or not isinstance(new, str):
             return None
-        replace_all = arguments.get("replace_all", arguments.get("replaceAll"))
+        replace_all = arguments.get("replace_all", arguments.get("replaceAll", arguments.get("AllowMultiple", arguments.get("allow_multiple", arguments.get("allowMultiple")))))
         edits = [{"old_string": old, "new_string": new, "replace_all": replace_all}]
     text = original
     for edit in edits:
         if not isinstance(edit, dict):
             return None
-        old = edit.get("old_string", edit.get("oldString"))
-        new = edit.get("new_string", edit.get("newString"))
+        old = _first(edit, ("old_string", "oldString", "TargetContent", "target_content", "targetContent"))
+        new = _first(edit, ("new_string", "newString", "ReplacementContent", "replacement_content", "replacementContent"))
         if not isinstance(old, str) or not isinstance(new, str):
             return None
         if old not in text:
             return None
-        replace_all = bool(edit.get("replace_all", edit.get("replaceAll")))
+        replace_all = bool(edit.get("replace_all", edit.get("replaceAll", edit.get("AllowMultiple", edit.get("allow_multiple", edit.get("allowMultiple"))))))
         count = -1 if replace_all else 1
         text = text.replace(old, new, count)
     return text
@@ -258,7 +271,7 @@ def decide(payload: dict, cwd: Path) -> Decision:
         if ISSUE_FILE_RE.match(basename):
             target = Path(path)
             target = target if target.is_absolute() else cwd / target
-            if normalized_name in {"write", "multiedit"}:
+            if normalized_name in {"write", "multiedit", "writetofile"}:
                 # The draft exemption only ever applies to *creating* a new Issue file.
                 # Once the target exists, its Status/checkbox fields are already under
                 # protection, and the new content must fall through to the same
@@ -266,7 +279,7 @@ def decide(payload: dict, cwd: Path) -> Decision:
                 # never exempted just because the new content, read alone, looks draft-safe.
                 if not target.exists() and is_draft_safe(extract_new_text(arguments)):
                     return Decision(True)
-            if normalized_name in {"edit", "multiedit"} and target.exists():
+            if normalized_name in {"edit", "multiedit", "replacefilecontent"} and target.exists():
                 # Compare the whole file before/after applying the edit in memory, so a
                 # value-only edit (e.g. 'ready-for-agent' -> 'done', or '[ ]' -> '[x]'
                 # without the '- ' scaffolding) is caught even though neither its
@@ -542,11 +555,12 @@ def main() -> int:
             return allow()
         message = f"deny: {decision.rule} {decision.path}"
         if args.json:
-            print(json.dumps({"decision": "deny", "rule": decision.rule, "path": decision.path}, separators=(",", ":")))
+            print(json.dumps({"decision": "deny", "rule": decision.rule, "path": decision.path, "reason": message}, separators=(",", ":")))
+            return 0
         else:
             print(message)
-        print(message, file=sys.stderr)
-        return 2
+            print(message, file=sys.stderr)
+            return 2
 
     if args.event in SUBAGENT_START_EVENTS:
         handle_subagent_event(payload, args, "subagent.started")

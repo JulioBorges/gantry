@@ -29,6 +29,7 @@ DEFAULT_POLICY = {
     "budget": {"corrections": 2, "contextShare": 0.15},
     "dashboard": {"staleAfterSeconds": 900},
     "caveman": False,
+    "execution": {"roles": {}},
 }
 
 REF_RE = re.compile(r"`?([a-z0-9][a-z0-9-]*)#(\d{2,})`?")

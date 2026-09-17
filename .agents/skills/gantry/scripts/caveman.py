@@ -164,6 +164,28 @@ def get_coordinating_instructions(active: bool = True) -> str:
     )
 
 
+def get_planning_instructions(active: bool = True) -> str:
+    """Return planning agent prompt instructions for Caveman lite conversational scope."""
+    if not active:
+        return ""
+    return (
+        "Caveman lite is active: use concise phrasing for conversational messages and summaries. "
+        "Specs, draft Issues, persisted role results, exact errors, commands, and acceptance criteria "
+        "retain full detail."
+    )
+
+
+def get_round_instructions(active: bool = True) -> str:
+    """Return round agent prompt instructions for Caveman lite conversational scope."""
+    if not active:
+        return ""
+    return (
+        "Caveman lite is active: use concise phrasing for conversational messages and summaries. "
+        "Code, documentation, lesson candidates, PR descriptions, Result Contracts, exact commands, "
+        "exact errors, acceptance criteria, and verification evidence retain full detail."
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command")

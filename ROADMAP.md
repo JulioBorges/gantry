@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **20 / 26** |
-| Specs completed | **1 / 3** |
+| Issues completed | **23 / 26** |
+| Specs completed | **2 / 3** |
 | Execution waves | **12** |
 
 ## Specs
@@ -123,8 +123,8 @@ complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel 
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
 | 01 | `gantry-migration` | 18/18 | 0–6 |
-| 11 | `caveman-setup` | 1/3 | 7–8 |
-| 12 | `role-execution-selection` | 1/5 | 7–11 |
+| 11 | `caveman-setup` | 3/3 | 7–8 |
+| 12 | `role-execution-selection` | 2/5 | 7–11 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -197,13 +197,13 @@ of the others, and an issue never waits on anything in its own wave or a later o
   <br>↳ blocked by: gantry-migration#10, gantry-migration#02
 - [x] **`role-execution-selection#01`** — Select from a complete executable model catalog _(no blockers)_
 
-### Wave 8 — 0/3 done
+### Wave 8 — 3/3 done
 
-- [ ] **`caveman-setup#02`** — Apply Caveman lite to planning agents
+- [x] **`caveman-setup#02`** — Apply Caveman lite to planning agents
   <br>↳ blocked by: caveman-setup#01
-- [ ] **`caveman-setup#03`** — Apply Caveman lite to round agents
+- [x] **`caveman-setup#03`** — Apply Caveman lite to round agents
   <br>↳ blocked by: caveman-setup#01
-- [ ] **`role-execution-selection#02`** — Start a Run from validated repository role defaults
+- [x] **`role-execution-selection#02`** — Start a Run from validated repository role defaults
   <br>↳ blocked by: role-execution-selection#01
 
 ### Wave 9 — 0/1 done

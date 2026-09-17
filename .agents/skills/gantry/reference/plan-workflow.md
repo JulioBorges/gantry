@@ -82,6 +82,16 @@ const targetText = t.kind === 'goal' ? `the goal "${t.goal}" (new slug: ${t.slug
   : t.kind === 'issue' ? `the Issue at ${t.issuePath} (Spec ${t.specPath})`
   : `the Spec at ${t.specPath} (slug ${t.slug})`
 
+const cavemanState = A.caveman || { active: false, preference: false, scope: 'none' }
+const cavemanActive = Boolean(cavemanState && cavemanState.active)
+if (cavemanState && cavemanState.warning) {
+  if (typeof log === 'function') log(cavemanState.warning)
+  cavemanState.warned = true
+}
+const cavemanInstruction = cavemanActive
+  ? 'Caveman lite is active: use concise phrasing for conversational messages and summaries. Specs, draft Issues, persisted role results, exact errors, commands, and acceptance criteria retain full detail.'
+  : ''
+
 async function validateSpecBeforePlanning() {
   if (t.kind === 'goal') return null
   const specPath = t.specPath || paths.specPath
@@ -139,16 +149,20 @@ async function validRoleResult(role, result) {
 
 async function requestRole(role, prompt, options) {
   const native = A.structuredOutput === true
-  const result = await agent(prompt, {
+  const agentPrompt = cavemanActive ? `${prompt}\n\n${cavemanInstruction}` : prompt
+  const agentOptions = {
     ...options,
+    ...(cavemanActive ? { skills: (options.skills || []).concat(cavemanState.skill_path || 'caveman'), caveman: true } : {}),
     ...(native ? { schema: await roleSchema(role) } : {}),
-  })
+  }
+  const result = await agent(agentPrompt, agentOptions)
   if (await validRoleResult(role, result)) return result
-  const retry = await agent(`${prompt}\nYour prior result was invalid. Return the complete ${role} result contract.`, {
-    ...options,
+  const retryPrompt = `${agentPrompt}\nYour prior result was invalid. Return the complete ${role} result contract.`
+  const retryOptions = {
+    ...agentOptions,
     label: `${options.label}:retry`,
-    ...(native ? { schema: await roleSchema(role) } : {}),
-  })
+  }
+  const retry = await agent(retryPrompt, retryOptions)
   return (await validRoleResult(role, retry)) ? retry : null
 }
 
@@ -282,14 +296,21 @@ and budgets as structured output.`
 }
 
 phase('Research')
+const researchPrompt = (text) => (cavemanActive ? `${text}\n\n${cavemanInstruction}` : text)
+const researchOptions = (opts) => ({
+  ...opts,
+  phase: 'Research',
+  model: A.models.plan,
+  ...(cavemanActive ? { skills: (opts.skills || []).concat(cavemanState.skill_path || 'caveman'), caveman: true } : {}),
+})
 const research = await parallel([
-  () => agent(`Survey ${A.repoRoot}: conventions, current code/tests, ${paths.context}, and ${paths.adrs}.
-Return facts and paths for the Planner.`, { label: 'research:codebase', phase: 'Research', model: A.models.plan }),
-  () => agent(`Read ${t.specPath || paths.specPath}, ${paths.decisions}, and the relevant repository documents.
-Return owned and consumed contracts, settled decisions, and the testing seam.`, { label: 'research:spec', phase: 'Research', model: A.models.plan }),
-  () => agent(`Read ${paths.exemplarIssue} and ${paths.issueTracker}. Run
-\`python3 ${scripts}/frontier.py --scope frontier --json\`. Return the exact Issue format and frontier facts.`,
-    { label: 'research:format', phase: 'Research', model: A.models.plan }),
+  () => agent(researchPrompt(`Survey ${A.repoRoot}: conventions, current code/tests, ${paths.context}, and ${paths.adrs}.
+Return facts and paths for the Planner.`), researchOptions({ label: 'research:codebase' })),
+  () => agent(researchPrompt(`Read ${t.specPath || paths.specPath}, ${paths.decisions}, and the relevant repository documents.
+Return owned and consumed contracts, settled decisions, and the testing seam.`), researchOptions({ label: 'research:spec' })),
+  () => agent(researchPrompt(`Read ${paths.exemplarIssue} and ${paths.issueTracker}. Run
+\`python3 ${scripts}/frontier.py --scope frontier --json\`. Return the exact Issue format and frontier facts.`),
+    researchOptions({ label: 'research:format' })),
 ])
 
 phase('Plan')
@@ -379,5 +400,5 @@ async function approvePlan() {
 }
 
 const approved = await approvePlan()
-return { target: t, structuralValidation, requirementReview, plan, critique, awaitingOperatorApproval: !approved, approved }
+return { target: t, structuralValidation, requirementReview, plan, critique, caveman: cavemanState, awaitingOperatorApproval: !approved, approved }
 ```
