@@ -1,6 +1,6 @@
 {
   "name": "@julioborges/gantry",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Install the Gantry harness-neutral agentic SDLC skill pack.",
   "type": "commonjs",
   "license": "Apache-2.0",
@@ -10,9 +10,20 @@
   },
   "homepage": "https://github.com/JulioBorges/gantry#readme",
   "bugs": "https://github.com/JulioBorges/gantry/issues",
-  "keywords": ["agent-skills", "gantry", "sdlc", "claude-code", "codex", "opencode"],
-  "engines": {"node": ">=22.20.0"},
-  "bin": {"gantry": "bin/gantry.mjs"},
+  "keywords": [
+    "agent-skills",
+    "gantry",
+    "sdlc",
+    "claude-code",
+    "codex",
+    "opencode"
+  ],
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "bin": {
+    "gantry": "bin/gantry.mjs"
+  },
   "files": [
     "bin/gantry.mjs",
     "scripts/ensure-npm-author.mjs",
@@ -31,6 +42,11 @@
     "pack:check": "npm run test:package",
     "prepublishOnly": "node scripts/ensure-npm-author.mjs && npm test && npm run test:package"
   },
-  "dependencies": {"skills": "1.5.26"},
-  "publishConfig": {"access": "public", "registry": "https://registry.npmjs.org/"}
+  "dependencies": {
+    "skills": "1.5.26"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }
