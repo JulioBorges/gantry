@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import runlog  # noqa: E402
 
 DECISION_EVENTS = {"PreToolUse", "tool.execute.before"}
-SUBAGENT_START_EVENTS = {"SubagentStart"}
+SUBAGENT_START_EVENTS = {"SubagentStart", "invoke_subagent"}
 SUBAGENT_STOP_EVENTS = {"SubagentStop"}
 COMPACTION_EVENTS = {"PreCompact", "session.compacted"}
 
@@ -202,11 +202,15 @@ def extract_command(arguments: dict) -> str | None:
 def payload_cwd(payload: dict) -> str | None:
     """The harness-reported working directory for this call, if the payload carries one.
 
-    Claude Code spells it `cwd`, OpenCode spells it `directory`. Neither is a decision
-    concept the capability files gate on -- it is only ever used to pick *where* to look
-    (a git worktree, an Issue path), never to grant or withhold authority on its own.
+    Claude Code spells it `cwd`, OpenCode spells it `directory`, Antigravity spells it `Cwd`
+    in run_command tool_input. Neither is a decision concept the capability files gate on --
+    it is only ever used to pick *where* to look (a git worktree, an Issue path), never to grant
+    or withhold authority on its own.
     """
-    value = _first(payload, ("cwd", "directory"))
+    value = _first(payload, ("cwd", "directory", "Cwd"))
+    if not value and isinstance(payload, dict):
+        args = tool_input(payload)
+        value = _first(args, ("cwd", "directory", "Cwd"))
     return str(value) if value else None
 
 
@@ -462,7 +466,14 @@ def handle_subagent_event(payload: dict, args: argparse.Namespace, event: str) -
         return
     role = None
     if isinstance(payload, dict):
-        role = _first(payload, ("role", "subagent_type", "agent_type", "subagentType", "agentType", "description"))
+        role = _first(payload, ("role", "subagent_type", "agent_type", "subagentType", "agentType", "description", "Role", "TypeName"))
+        if not role:
+            args_input = tool_input(payload)
+            subagents = args_input.get("Subagents") or args_input.get("subagents")
+            if isinstance(subagents, list) and subagents:
+                role = _first(subagents[0], ("Role", "role", "TypeName", "typeName"))
+            if not role:
+                role = _first(args_input, ("Role", "role", "TypeName", "typeName", "description"))
     record(
         cwd,
         root,
@@ -474,6 +485,36 @@ def handle_subagent_event(payload: dict, args: argparse.Namespace, event: str) -
             "data": {"role": str(role) if role else "unknown"},
         },
     )
+
+
+def record_invoke_subagent_event(payload: dict, args: argparse.Namespace, cwd: Path, event: str) -> None:
+    args_input = tool_input(payload)
+    subagents = args_input.get("Subagents") or args_input.get("subagents")
+    roles = []
+    if isinstance(subagents, list):
+        for sub in subagents:
+            if isinstance(sub, dict):
+                r = _first(sub, ("Role", "role", "TypeName", "typeName", "type_name", "description"))
+                if r:
+                    roles.append(str(r))
+    if not roles:
+        r = _first(args_input, ("Role", "role", "TypeName", "typeName", "description"))
+        if r:
+            roles.append(str(r))
+    run_id, root = resolve_run(payload, args.run_id, args.state_root, cwd)
+    if run_id:
+        for role_name in (roles or ["unknown"]):
+            record(
+                cwd,
+                root,
+                run_id,
+                {
+                    "ts": now_iso(),
+                    "run": run_id,
+                    "event": event,
+                    "data": {"role": role_name},
+                },
+            )
 
 
 def handle_compaction_event(payload: dict, args: argparse.Namespace) -> None:
@@ -552,6 +593,10 @@ def main() -> int:
     if args.event in DECISION_EVENTS:
         decision = handle_decision_event(payload, args)
         if decision.allow:
+            name = tool_name(payload)
+            normalized_name = re.sub(r"[^a-z]", "", name)
+            if normalized_name == "invokesubagent":
+                record_invoke_subagent_event(payload, args, cwd, "subagent.started")
             return allow()
         message = f"deny: {decision.rule} {decision.path}"
         if args.json:
@@ -561,6 +606,13 @@ def main() -> int:
             print(message)
             print(message, file=sys.stderr)
             return 2
+
+    if args.event == "PostToolUse":
+        name = tool_name(payload)
+        normalized_name = re.sub(r"[^a-z]", "", name)
+        if normalized_name == "invokesubagent":
+            record_invoke_subagent_event(payload, args, cwd, "subagent.stopped")
+        return allow()
 
     if args.event in SUBAGENT_START_EVENTS:
         handle_subagent_event(payload, args, "subagent.started")

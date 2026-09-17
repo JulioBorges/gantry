@@ -3230,6 +3230,7 @@ Slice: `legacy#07`
             "os",
             "pathlib",
             "re",
+            "result",
             "runlog",
             "shlex",
             "shutil",

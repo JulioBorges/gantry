@@ -322,6 +322,23 @@ async function validRoleResult(role, result) {
   return Boolean(validation && validation.exitCode === 0)
 }
 async function requestRole(role, prompt, options) {
+  const selection = (options && options.selection) || (A.roles && A.roles[role])
+  const hostHarness = A.hostHarness || 'claude-code'
+  if (selection && selection.harness && selection.harness !== hostHarness) {
+    const cwd = (options && options.cwd) || A.repoRoot
+    const selectionJson = JSON.stringify(selection)
+    const agentPrompt = cavemanActive ? `${prompt}\n\n${cavemanInstruction}` : prompt
+    const cmd = `python3 "${scripts}/execution.py" dispatch --role "${role}" --cwd ${shellQuote(cwd)} --selection '${selectionJson.replaceAll("'", "'\\''")}'`
+    const res = await runCommand(cmd, { cwd: A.repoRoot, input: agentPrompt })
+    if (res && res.exitCode === 0) {
+      try {
+        return JSON.parse(res.stdout)
+      } catch (e) {
+        return null
+      }
+    }
+    return null
+  }
   const native = A.structuredOutput === true
   const schema = native ? await roleSchema(role) : null
   const agentPrompt = cavemanActive ? `${prompt}\n\n${cavemanInstruction}` : prompt

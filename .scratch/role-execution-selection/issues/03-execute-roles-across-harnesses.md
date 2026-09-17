@@ -1,7 +1,7 @@
 # Execute any role in a selected native harness
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `role-execution-selection#03`
 Spec: `.scratch/role-execution-selection/spec.md`
 Created: 2026-09-15
@@ -25,12 +25,12 @@ Dispatch bounded role invocations to Codex CLI, Claude Code, OpenCode or Antigra
 
 ## Acceptance criteria
 
-- [ ] Contract tests exercise every role and derived-role mapping with independent harness/model/effort selection (including Antigravity `agy` CLI dispatch) and canonical assigned working directories.
-- [ ] `guard.py` normalizes Antigravity tool calls (`run_command`, `write_to_file`, `replace_file_content`) and records subagent events (`invoke_subagent`), returning JSON allow/deny decisions with exit 0.
-- [ ] External results pass result.py validation; missing or invalid results retain existing protocol-failure semantics.
-- [ ] Critic invocation verifies the delivered revision and independently runs acceptance and gates; permission or tool limitations fail visibly rather than accepting a summary.
-- [ ] Selection identity is recorded honestly and native/configured automatic model fallback is disabled or detected and rejected.
-- [ ] Existing command and edit approval policies are preserved without introducing an engine or persistent supervisor.
+- [x] Contract tests exercise every role and derived-role mapping with independent harness/model/effort selection (including Antigravity `agy` CLI dispatch) and canonical assigned working directories.
+- [x] `guard.py` normalizes Antigravity tool calls (`run_command`, `write_to_file`, `replace_file_content`) and records subagent events (`invoke_subagent`), returning JSON allow/deny decisions with exit 0.
+- [x] External results pass result.py validation; missing or invalid results retain existing protocol-failure semantics.
+- [x] Critic invocation verifies the delivered revision and independently runs acceptance and gates; permission or tool limitations fail visibly rather than accepting a summary.
+- [x] Selection identity is recorded honestly and native/configured automatic model fallback is disabled or detected and rejected.
+- [x] Existing command and edit approval policies are preserved without introducing an engine or persistent supervisor.
 
 ## Blocked by
 

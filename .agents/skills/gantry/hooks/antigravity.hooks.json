@@ -10,6 +10,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \".agents/skills/gantry/scripts/guard.py\" PostToolUse --json"
+          }
+        ]
+      }
     ]
   }
 }
