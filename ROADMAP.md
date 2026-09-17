@@ -39,7 +39,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **26 / 32** |
+| Issues completed | **27 / 32** |
 | Specs completed | **3 / 4** |
 | Execution waves | **17** |
 
@@ -126,7 +126,7 @@ complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel 
 | 01 | `gantry-migration` | 18/18 | 0–6 |
 | 11 | `caveman-setup` | 3/3 | 7–8 |
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
-| 13 | `gantry-site` | 0/6 | 12–16 |
+| 13 | `gantry-site` | 1/6 | 12–16 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -223,9 +223,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`role-execution-selection#05`** — Demonstrate a Codex-hosted Run with an independent Claude Code Critic
   <br>↳ blocked by: role-execution-selection#04
 
-### Wave 12 — 0/1 done
+### Wave 12 — 1/1 done
 
-- [ ] **`gantry-site#01`** — Scaffold Astro site with industrial shell and Playwright harness _(no blockers)_
+- [x] **`gantry-site#01`** — Scaffold Astro site with industrial shell and Playwright harness _(no blockers)_
 
 ### Wave 13 — 0/2 done
 

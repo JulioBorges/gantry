@@ -1,7 +1,7 @@
 # Scaffold Astro site with industrial shell and Playwright harness
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-site#01`
 Spec: `.scratch/gantry-site/spec.md`
 Created: 2026-09-17
@@ -23,9 +23,9 @@ Initialize the Astro project in `site/` configured with Tailwind CSS, `base: '/g
 
 ## Acceptance criteria
 
-- [ ] Astro project exists under `site/` with Tailwind CSS, React/Preact integration, and builds cleanly with `base: '/gantry/'`.
-- [ ] Base layout and industrial theme design tokens are implemented (obsidian background, technical grid borders, glowing amber accents, monospace headers).
-- [ ] Playwright E2E configuration exists in `site/` and runs a smoke test verifying the page renders the shell, heading, and correct metadata without errors.
+- [x] Astro project exists under `site/` with Tailwind CSS, React/Preact integration, and builds cleanly with `base: '/gantry/'`.
+- [x] Base layout and industrial theme design tokens are implemented (obsidian background, technical grid borders, glowing amber accents, monospace headers).
+- [x] Playwright E2E configuration exists in `site/` and runs a smoke test verifying the page renders the shell, heading, and correct metadata without errors.
 
 ## Blocked by
 
