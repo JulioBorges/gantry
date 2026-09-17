@@ -119,7 +119,7 @@ def main() -> None:
         if ag_hook_frag_path.exists():
             ag_hook_frag = json.loads(ag_hook_frag_path.read_text(encoding="utf-8"))
         else:
-            guard_cmd = 'python3 ".agents/skills/gantry/scripts/guard.py" PreToolUse --json'
+            guard_cmd = 'python3 "skills/gantry/scripts/guard.py" PreToolUse --json'
             ag_hook_frag = {
                 "hooks": {
                     "PreToolUse": [

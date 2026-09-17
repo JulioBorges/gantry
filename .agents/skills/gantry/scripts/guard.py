@@ -571,6 +571,10 @@ def main() -> int:
     cwd = Path(args.cwd).resolve()
 
     def allow() -> int:
+        if args.event == "PostToolUse" and (not args.run_id and not args.state_root):
+            if args.json:
+                print("{}")
+            return 0
         if args.json:
             print(json.dumps({"decision": "allow"}, separators=(",", ":")))
         else:

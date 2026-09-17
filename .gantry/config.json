@@ -1,0 +1,24 @@
+{
+  "caveman": true,
+  "execution": {
+    "roles": {
+      "plan": {
+        "harness": "antigravity",
+        "model": "gemini-3.1-pro-high"
+      },
+      "implement": {
+        "harness": "antigravity",
+        "model": "gemini-3.8-flash-medium"
+      },
+      "review": {
+        "harness": "antigravity",
+        "model": "claude-opus-4-6"
+      },
+      "critic": {
+        "harness": "codex",
+        "model": "gpt-6-terra",
+        "effort": "medium"
+      }
+    }
+  }
+}
