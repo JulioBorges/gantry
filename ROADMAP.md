@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **25 / 26** |
-| Specs completed | **2 / 3** |
+| Issues completed | **26 / 26** |
+| Specs completed | **3 / 3** |
 | Execution waves | **12** |
 
 ## Specs
@@ -64,8 +64,8 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 08 | `codex-tier` | idea, waiting on Codex | 01 | external: Codex subagent model selection stable | `hooks/codex.hooks.json`, `capabilities/codex.json`, `SKILL.md` harness notes | compatible tier: `hooks.json`, hand-driven chain, detection of per-role model support |
 | 09 | `run-history` | idea | 01 | 02 (more than one run to compare) | `scripts/dashboard.py`, dashboard static assets, `scripts/runlog.py` queries | read-only per-run page in the dashboard (phase timeline, corrections, refutations) and comparison of runs over the same scope |
 | 10 | `windows-validation` | idea, waiting on a machine | 06 | external: a Windows machine | `install.sh`, `guard.py` path handling, `fixture/README.md` | fixture run on Windows (paths, symlinks, hooks); support declared only after the run is recorded |
-| 11 | `caveman-setup` | **approved** | 01 | — | `gantry-setup`, portable policy, coordinating instructions, plan and round workflows, tests and documentation | optional environment-installed Caveman lite for agent messages and summaries; explicit repository opt-in; user-managed installation; once-per-Run fallback warning; artifacts and verification preserved |
-| 12 | `role-execution-selection` | **approved** | 01 | — | runtime model discovery, context budget, setup policy, plan and round workflows, Run Log, fixture proof | complete executable model catalog; versioned role defaults; cross-harness roles (Codex, Claude Code, OpenCode, Antigravity); explicit Issue recovery; cross-harness and Antigravity proof |
+| 11 | `caveman-setup` | **done** | 01 | — | `gantry-setup`, portable policy, coordinating instructions, plan and round workflows, tests and documentation | optional environment-installed Caveman lite for agent messages and summaries; explicit repository opt-in; user-managed installation; once-per-Run fallback warning; artifacts and verification preserved |
+| 12 | `role-execution-selection` | **done** | 01 | — | runtime model discovery, context budget, setup policy, plan and round workflows, Run Log, fixture proof | complete executable model catalog; versioned role defaults; cross-harness roles (Codex, Claude Code, OpenCode, Antigravity); explicit Issue recovery; cross-harness and Antigravity proof |
 
 ### Spec waves (structural)
 
@@ -124,7 +124,7 @@ complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel 
 |---|---|---|---|
 | 01 | `gantry-migration` | 18/18 | 0–6 |
 | 11 | `caveman-setup` | 3/3 | 7–8 |
-| 12 | `role-execution-selection` | 4/5 | 7–11 |
+| 12 | `role-execution-selection` | 5/5 | 7–11 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -216,9 +216,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`role-execution-selection#04`** — Recover an unavailable Issue role without interrupting independent work
   <br>↳ blocked by: role-execution-selection#03
 
-### Wave 11 — 0/1 done
+### Wave 11 — 1/1 done
 
-- [ ] **`role-execution-selection#05`** — Demonstrate a Codex-hosted Run with an independent Claude Code Critic
+- [x] **`role-execution-selection#05`** — Demonstrate a Codex-hosted Run with an independent Claude Code Critic
   <br>↳ blocked by: role-execution-selection#04
 
 <!-- END GENERATED: issue checklist -->
