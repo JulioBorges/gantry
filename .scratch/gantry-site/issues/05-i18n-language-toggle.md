@@ -1,7 +1,7 @@
 # Implement bilingual i18n support with language toggle
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-site#05`
 Spec: `.scratch/gantry-site/spec.md`
 Created: 2026-09-17
@@ -23,10 +23,10 @@ Implement seamless internationalization between English (default) and Portuguese
 
 ## Acceptance criteria
 
-- [ ] Language toggle component switches seamlessly between English (`en`) and Portuguese (`pt-br`).
-- [ ] Complete translation dictionary covers all text nodes, section headings, simulator stages, terminal logs, and badges.
-- [ ] User language choice is remembered across page reloads via localStorage without hydration mismatch.
-- [ ] Playwright test verifies that toggling language changes all primary text content and retains layout stability.
+- [x] Language toggle component switches seamlessly between English (`en`) and Portuguese (`pt-br`).
+- [x] Complete translation dictionary covers all text nodes, section headings, simulator stages, terminal logs, and badges.
+- [x] User language choice is remembered across page reloads via localStorage without hydration mismatch.
+- [x] Playwright test verifies that toggling language changes all primary text content and retains layout stability.
 
 ## Blocked by
 
