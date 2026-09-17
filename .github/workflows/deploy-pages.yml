@@ -38,14 +38,14 @@ jobs:
         run: |
           cd site
           npx playwright install --with-deps chromium
-      - name: Run Playwright E2E and A11y tests
-        run: |
-          cd site
-          npm run test:e2e
       - name: Build static site with base path
         run: |
           cd site
           npm run build
+      - name: Run Playwright E2E and A11y tests
+        run: |
+          cd site
+          npm run test:e2e
       - name: Verify static build artifacts
         run: |
           test -f site/dist/index.html
