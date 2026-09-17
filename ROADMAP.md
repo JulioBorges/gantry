@@ -39,7 +39,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **24 / 26** |
+| Issues completed | **25 / 26** |
 | Specs completed | **2 / 3** |
 | Execution waves | **12** |
 
@@ -124,7 +124,7 @@ complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel 
 |---|---|---|---|
 | 01 | `gantry-migration` | 18/18 | 0–6 |
 | 11 | `caveman-setup` | 3/3 | 7–8 |
-| 12 | `role-execution-selection` | 3/5 | 7–11 |
+| 12 | `role-execution-selection` | 4/5 | 7–11 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -211,9 +211,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`role-execution-selection#03`** — Execute any role in a selected native harness
   <br>↳ blocked by: role-execution-selection#02
 
-### Wave 10 — 0/1 done
+### Wave 10 — 1/1 done
 
-- [ ] **`role-execution-selection#04`** — Recover an unavailable Issue role without interrupting independent work
+- [x] **`role-execution-selection#04`** — Recover an unavailable Issue role without interrupting independent work
   <br>↳ blocked by: role-execution-selection#03
 
 ### Wave 11 — 0/1 done
