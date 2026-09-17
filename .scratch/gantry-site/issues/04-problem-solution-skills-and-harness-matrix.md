@@ -1,7 +1,7 @@
 # Build problem vs solution, skills pack, and harness compatibility sections
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-site#04`
 Spec: `.scratch/gantry-site/spec.md`
 Created: 2026-09-17
@@ -24,10 +24,10 @@ Implement the narrative and capability sections of the page: (1) Problem vs Solu
 
 ## Acceptance criteria
 
-- [ ] Problem vs Solution section highlights failure modes vs Gantry principles with structured visual cards.
-- [ ] Skills section clearly delineates the roles of `gantry`, `gantry-setup`, and `gantry-dashboard`.
-- [ ] Harness matrix displays tier definitions, capabilities, and verification notes without fabricated claims.
-- [ ] Playwright test asserts section presence, correct heading hierarchy, link integrity, and responsive grid layouts.
+- [x] Problem vs Solution section highlights failure modes vs Gantry principles with structured visual cards.
+- [x] Skills section clearly delineates the roles of `gantry`, `gantry-setup`, and `gantry-dashboard`.
+- [x] Harness matrix displays tier definitions, capabilities, and verification notes without fabricated claims.
+- [x] Playwright test asserts section presence, correct heading hierarchy, link integrity, and responsive grid layouts.
 
 ## Blocked by
 

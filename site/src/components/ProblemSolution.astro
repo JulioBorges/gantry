@@ -1,0 +1,187 @@
+---
+// Component: Problem vs Solution - Why Raw Agents Fail vs Deterministic Guardrails
+---
+
+<section
+  id="problem-solution"
+  data-testid="problem-solution-section"
+  class="space-y-6 scroll-mt-20"
+>
+  <!-- Section Header -->
+  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-obsidian-700 pb-4">
+    <div>
+      <div class="text-xs font-mono text-amber-accent flex items-center space-x-2">
+        <span class="w-2 h-2 bg-amber-glow"></span>
+        <span class="uppercase tracking-widest">ANALYSIS // PROBLEM VS SOLUTION</span>
+      </div>
+      <h2 class="text-xl sm:text-3xl font-extrabold text-slate-100 uppercase font-mono mt-1 tracking-wide">
+        Why Raw Agents Fail — And How Gantry Fixes It
+      </h2>
+    </div>
+    <p class="text-xs text-slate-400 font-mono max-w-lg">
+      Prose instructions in prompts are probabilistic. Gantry replaces wishful prompting with deterministic code, adversarial checks, and operator approval.
+    </p>
+  </div>
+
+  <!-- Core Thesis Industrial Banner -->
+  <div
+    data-testid="core-thesis-banner"
+    class="border-l-4 border-l-amber-glow border border-obsidian-700 bg-obsidian-950 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 font-mono"
+  >
+    <div class="space-y-1">
+      <div class="flex items-center space-x-2 text-amber-glow text-xs font-bold uppercase tracking-wider">
+        <span>◆</span>
+        <span>FIRST PRINCIPLE // ADR-0004 & PRD §2</span>
+      </div>
+      <p class="text-sm sm:text-base text-slate-100 font-bold">
+        "Agents + code > agents alone."
+      </p>
+      <p class="text-xs text-slate-400 leading-relaxed max-w-3xl">
+        Every decision that must not be improvised — what is ready, what must be proven, whether quality gates pass, and when an Issue is done — is made by a workflow script. Agents propose; scripts verify; the operator retains final approval.
+      </p>
+    </div>
+    <div class="flex-shrink-0 flex items-center space-x-2 px-3 py-1.5 bg-obsidian-850 border border-obsidian-700 text-xs text-slate-300">
+      <span class="text-amber-glow font-bold">AUTHORITY:</span>
+      <span class="text-slate-200">SCRIPTS DECIDE</span>
+    </div>
+  </div>
+
+  <!-- Structured Comparison Cards Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 font-mono">
+    <!-- Card 1: Context Degradation & Bloat -->
+    <div
+      data-testid="problem-card-context"
+      class="border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-4 hover:border-obsidian-600 transition-colors relative overflow-hidden group"
+    >
+      <div class="space-y-3">
+        <div class="flex items-center justify-between border-b border-obsidian-800 pb-2.5">
+          <span class="text-xs font-bold text-red-400 bg-red-950/50 border border-red-800/60 px-2 py-0.5">
+            FAILURE MODE 01 // PITFALL
+          </span>
+          <span class="text-[10px] text-slate-500 uppercase">STATE DRIFT</span>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-slate-100 uppercase tracking-wide">
+            Context Degradation & Hallucination
+          </h3>
+          <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+            Long-running agent chat sessions accumulate tokens, lose instruction precision, drop critical constraints, and hallucinate missing architecture.
+          </p>
+        </div>
+      </div>
+
+      <!-- Gantry Guardrail Resolution -->
+      <div class="border-t border-obsidian-800 pt-3 bg-obsidian-950/70 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 p-4 border-l-2 border-l-emerald-500">
+        <div class="text-emerald-400 text-xs font-bold uppercase tracking-wider flex items-center space-x-1.5 mb-1">
+          <span>✓</span>
+          <span>GANTRY PRINCIPLE: Bounded Context & Fresh Agents</span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          Preflight validates tokens with <code class="text-amber-accent px-1 bg-obsidian-800">budget.py</code> (refuting packages &gt; 15% window). Every phase (Implementer, Reviewer, Critic) spawns a fresh subagent with zero memory pollution.
+        </p>
+      </div>
+    </div>
+
+    <!-- Card 2: Mock Escapes & Test Tampering -->
+    <div
+      data-testid="problem-card-mocks"
+      class="border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-4 hover:border-obsidian-600 transition-colors relative overflow-hidden group"
+    >
+      <div class="space-y-3">
+        <div class="flex items-center justify-between border-b border-obsidian-800 pb-2.5">
+          <span class="text-xs font-bold text-red-400 bg-red-950/50 border border-red-800/60 px-2 py-0.5">
+            FAILURE MODE 02 // PITFALL
+          </span>
+          <span class="text-[10px] text-slate-500 uppercase">TEST CORROSION</span>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-slate-100 uppercase tracking-wide">
+            Mock Escapes & Test Tampering
+          </h3>
+          <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+            Autonomous coding agents routinely replace real integration points with trivial mocks, disable flaky assertions, or delete failing tests to fabricate green status.
+          </p>
+        </div>
+      </div>
+
+      <!-- Gantry Guardrail Resolution -->
+      <div class="border-t border-obsidian-800 pt-3 bg-obsidian-950/70 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 p-4 border-l-2 border-l-emerald-500">
+        <div class="text-emerald-400 text-xs font-bold uppercase tracking-wider flex items-center space-x-1.5 mb-1">
+          <span>✓</span>
+          <span>GANTRY PRINCIPLE: Adversarial Verification & No Mocks</span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          The adversarial Critic directly inspects the git diff for mock escapes, deleted tests, or weakened checks. No delivery is accepted if tests were bypassed or watered down.
+        </p>
+      </div>
+    </div>
+
+    <!-- Card 3: Unearned Self-Approval -->
+    <div
+      data-testid="problem-card-approval"
+      class="border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-4 hover:border-obsidian-600 transition-colors relative overflow-hidden group"
+    >
+      <div class="space-y-3">
+        <div class="flex items-center justify-between border-b border-obsidian-800 pb-2.5">
+          <span class="text-xs font-bold text-red-400 bg-red-950/50 border border-red-800/60 px-2 py-0.5">
+            FAILURE MODE 03 // PITFALL
+          </span>
+          <span class="text-[10px] text-slate-500 uppercase">SELF-BIAS</span>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-slate-100 uppercase tracking-wide">
+            Unearned Self-Approval & Fake Green
+          </h3>
+          <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+            When the builder grades its own homework, the implementer hallucinates that edge cases pass, summarizes away defects, and marks its own tasks as completed.
+          </p>
+        </div>
+      </div>
+
+      <!-- Gantry Guardrail Resolution -->
+      <div class="border-t border-obsidian-800 pt-3 bg-obsidian-950/70 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 p-4 border-l-2 border-l-emerald-500">
+        <div class="text-emerald-400 text-xs font-bold uppercase tracking-wider flex items-center space-x-1.5 mb-1">
+          <span>✓</span>
+          <span>GANTRY PRINCIPLE: Zero Self-Approval & Critic Refutation</span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          The Implementer has zero authority to mark an Issue complete. An independent adversarial Critic must prove delivery with real execution evidence before integration.
+        </p>
+      </div>
+    </div>
+
+    <!-- Card 4: Flaky Merges & Branch Drifts -->
+    <div
+      data-testid="problem-card-drift"
+      class="border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-4 hover:border-obsidian-600 transition-colors relative overflow-hidden group"
+    >
+      <div class="space-y-3">
+        <div class="flex items-center justify-between border-b border-obsidian-800 pb-2.5">
+          <span class="text-xs font-bold text-red-400 bg-red-950/50 border border-red-800/60 px-2 py-0.5">
+            FAILURE MODE 04 // PITFALL
+          </span>
+          <span class="text-[10px] text-slate-500 uppercase">INTEGRATION COLLISION</span>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-slate-100 uppercase tracking-wide">
+            Integration Drifts & Broken Branches
+          </h3>
+          <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+            Parallel multi-agent branches create silent regressions when merged in bulk, hiding broken dependencies until after the repository is corrupted.
+          </p>
+        </div>
+      </div>
+
+      <!-- Gantry Guardrail Resolution -->
+      <div class="border-t border-obsidian-800 pt-3 bg-obsidian-950/70 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 p-4 border-l-2 border-l-emerald-500">
+        <div class="text-emerald-400 text-xs font-bold uppercase tracking-wider flex items-center space-x-1.5 mb-1">
+          <span>✓</span>
+          <span>GANTRY PRINCIPLE: Serial Integration & Differential Gates</span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          <code class="text-amber-accent px-1 bg-obsidian-800">frontier.py</code> computes DAG execution waves. Accepted slices merge serially, running differential quality gates (<code class="text-amber-accent px-1 bg-obsidian-800">gates.py</code>) after every merge.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

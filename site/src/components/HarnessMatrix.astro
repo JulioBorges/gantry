@@ -1,0 +1,244 @@
+---
+// Component: Harness Compatibility Matrix - Honest Support Tiers and Capabilities
+---
+
+<section
+  id="matrix"
+  data-testid="harness-matrix-section"
+  class="space-y-6 scroll-mt-20"
+>
+  <!-- Section Header -->
+  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-obsidian-700 pb-4">
+    <div>
+      <div class="text-xs font-mono text-amber-accent flex items-center space-x-2">
+        <span class="w-2 h-2 bg-amber-glow"></span>
+        <span class="uppercase tracking-widest">INTEROPERABILITY // VERIFIED TIERS</span>
+      </div>
+      <h2 class="text-xl sm:text-3xl font-extrabold text-slate-100 uppercase font-mono mt-1 tracking-wide">
+        Harness Compatibility Matrix
+      </h2>
+    </div>
+    <div class="flex items-center space-x-2">
+      <span class="text-xs px-2.5 py-1 bg-obsidian-800 text-amber-accent border border-obsidian-700 font-mono">
+        TIER AUDIT // HONEST CLAIMS
+      </span>
+    </div>
+  </div>
+
+  <p class="text-xs text-slate-400 font-mono max-w-3xl leading-relaxed">
+    Gantry declares harness capabilities in machine-readable JSON files (<code class="text-amber-accent">.agents/skills/gantry/capabilities/</code>) and proves them against real test fixtures. Gantry never advertises guarantees it cannot measure.
+  </p>
+
+  <!-- Tier Definitions Industrial Panel -->
+  <div
+    data-testid="tier-definitions"
+    class="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs"
+  >
+    <!-- Reference Tier -->
+    <div class="border border-obsidian-700 bg-obsidian-950 p-4 space-y-2 border-l-2 border-l-amber-glow">
+      <div class="flex items-center justify-between">
+        <span class="font-bold text-amber-glow uppercase tracking-wider">REFERENCE TIER</span>
+        <span class="text-[10px] px-1.5 py-0.2 bg-amber-glow/10 border border-amber-glow/40 text-amber-glow">GOLD STANDARD</span>
+      </div>
+      <p class="text-slate-300 text-[11px] leading-relaxed">
+        Full native harness support: lifecycle hooks guard, structured output contracts, isolated worktrees, per-role model selection, and complete end-to-end fixture proof.
+      </p>
+    </div>
+
+    <!-- Supported Tier -->
+    <div class="border border-obsidian-700 bg-obsidian-950 p-4 space-y-2 border-l-2 border-l-amber-accent">
+      <div class="flex items-center justify-between">
+        <span class="font-bold text-amber-accent uppercase tracking-wider">SUPPORTED TIER</span>
+        <span class="text-[10px] px-1.5 py-0.2 bg-amber-accent/10 border border-amber-accent/40 text-amber-accent">VERIFIED IN CI</span>
+      </div>
+      <p class="text-slate-300 text-[11px] leading-relaxed">
+        Multi-role execution, hook guard integration (via harness hooks or runner wrap), and independent Critic verification proven in automated test suites.
+      </p>
+    </div>
+
+    <!-- Compatible Tier -->
+    <div class="border border-obsidian-700 bg-obsidian-950 p-4 space-y-2 border-l-2 border-l-slate-400">
+      <div class="flex items-center justify-between">
+        <span class="font-bold text-slate-300 uppercase tracking-wider">COMPATIBLE TIER</span>
+        <span class="text-[10px] px-1.5 py-0.2 bg-slate-800 border border-slate-700 text-slate-300">INSTRUCTION RIG</span>
+      </div>
+      <p class="text-slate-300 text-[11px] leading-relaxed">
+        Executable workflow through process runner, skill discovery, and prompt instructions. Guard hooks fall back to repository policy and manual operator gates.
+      </p>
+    </div>
+  </div>
+
+  <!-- Detailed Matrix Table Container -->
+  <div class="border border-obsidian-700 bg-obsidian-900/80 overflow-hidden font-mono">
+    <div class="overflow-x-auto">
+      <table
+        data-testid="harness-matrix-table"
+        class="w-full text-left text-xs border-collapse"
+      >
+        <thead class="bg-obsidian-950 text-slate-400 border-b border-obsidian-700 uppercase tracking-wider text-[11px]">
+          <tr>
+            <th class="p-3.5 border-r border-obsidian-800">Harness</th>
+            <th class="p-3.5 border-r border-obsidian-800">Tier</th>
+            <th class="p-3.5 border-r border-obsidian-800">Hook Guardrails</th>
+            <th class="p-3.5 border-r border-obsidian-800">Role Execution</th>
+            <th class="p-3.5 border-r border-obsidian-800">Worktree Isolation</th>
+            <th class="p-3.5 border-r border-obsidian-800">Structured Output</th>
+            <th class="p-3.5">Verification Evidence & Notes</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-obsidian-800 text-slate-300">
+          <!-- Row 1: Claude Code -->
+          <tr class="hover:bg-obsidian-850/60 transition-colors">
+            <td class="p-3.5 font-bold text-slate-100 border-r border-obsidian-800 whitespace-nowrap">
+              Claude Code
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 whitespace-nowrap">
+              <span class="px-2 py-0.5 bg-amber-glow/10 border border-amber-glow/40 text-amber-glow font-bold text-[10px]">
+                Reference
+              </span>
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-emerald-400">
+              Native Pre/PostToolUse hooks
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-300">
+              Full Multi-Role (Subagents)
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-emerald-400">
+              Native Git Worktrees
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-emerald-400">
+              JSON Schema (<code class="text-amber-accent">result.py</code>)
+            </td>
+            <td class="p-3.5 text-slate-400 text-[11px]">
+              Full end-to-end proof recorded on <code class="text-slate-200">fixture/</code> (§13, Issue #17).
+            </td>
+          </tr>
+
+          <!-- Row 2: Antigravity -->
+          <tr class="hover:bg-obsidian-850/60 transition-colors">
+            <td class="p-3.5 font-bold text-slate-100 border-r border-obsidian-800 whitespace-nowrap">
+              Gemini / Antigravity
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 whitespace-nowrap">
+              <span class="px-2 py-0.5 bg-amber-accent/10 border border-amber-accent/40 text-amber-accent font-bold text-[10px]">
+                Supported
+              </span>
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-emerald-400">
+              <code class="text-slate-200">.agents/hooks.json</code> guard
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-300">
+              Subagents &amp; <code class="text-slate-200">agy --print</code>
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-emerald-400">
+              Dedicated Worktrees
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-emerald-400">
+              JSON Schema (<code class="text-amber-accent">result.py</code>)
+            </td>
+            <td class="p-3.5 text-slate-400 text-[11px]">
+              Multi-role execution &amp; hooks verified via cross-harness test suite.
+            </td>
+          </tr>
+
+          <!-- Row 3: Codex CLI -->
+          <tr class="hover:bg-obsidian-850/60 transition-colors">
+            <td class="p-3.5 font-bold text-slate-100 border-r border-obsidian-800 whitespace-nowrap">
+              Codex CLI
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 whitespace-nowrap">
+              <span class="px-2 py-0.5 bg-amber-accent/10 border border-amber-accent/40 text-amber-accent font-bold text-[10px]">
+                Supported
+              </span>
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-400">
+              Direct Process Runner Guard
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-300">
+              Independent Critic &amp; Roles
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-400">
+              Worktree Supported
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-emerald-400">
+              CLI JSON Contract
+            </td>
+            <td class="p-3.5 text-slate-400 text-[11px]">
+              Codex-hosted Run proven with independent Claude Critic (ADR-0006).
+            </td>
+          </tr>
+
+          <!-- Row 4: OpenCode -->
+          <tr class="hover:bg-obsidian-850/60 transition-colors">
+            <td class="p-3.5 font-bold text-slate-100 border-r border-obsidian-800 whitespace-nowrap">
+              OpenCode
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 whitespace-nowrap">
+              <span class="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-300 font-bold text-[10px]">
+                Compatible
+              </span>
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-400">
+              Plugin Hooks Wiring (<code class="text-slate-300">opencode.json</code>)
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-300">
+              Per-role subagents
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-400">
+              Host Worktree
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-400">
+              Contract Verified
+            </td>
+            <td class="p-3.5 text-slate-400 text-[11px]">
+              Configured runner verified; awaiting Spec 02 full fixture proof.
+            </td>
+          </tr>
+
+          <!-- Row 5: Cursor -->
+          <tr class="hover:bg-obsidian-850/60 transition-colors">
+            <td class="p-3.5 font-bold text-slate-100 border-r border-obsidian-800 whitespace-nowrap">
+              Cursor
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 whitespace-nowrap">
+              <span class="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-300 font-bold text-[10px]">
+                Compatible
+              </span>
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-400">
+              Rules &amp; Commands Policy
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-300">
+              Composer Workflows
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-400">
+              Shared Worktree
+            </td>
+            <td class="p-3.5 border-r border-obsidian-800 text-slate-400">
+              Text Protocol Output
+            </td>
+            <td class="p-3.5 text-slate-400 text-[11px]">
+              Instruction-driven execution; git hooks enforce local commit guards.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Honest Disclaimer Callout -->
+  <div
+    data-testid="honest-disclaimer-callout"
+    class="border border-obsidian-700 bg-obsidian-950 p-4 font-mono text-xs flex items-start space-x-3 text-slate-400"
+  >
+    <span class="text-amber-glow text-base leading-none">⚠</span>
+    <div class="space-y-1">
+      <div class="text-slate-200 font-bold uppercase tracking-wider">
+        AUDIT POLICY &amp; HONEST CAPABILITIES // PRD §13
+      </div>
+      <p class="leading-relaxed">
+        A declared tier does not prove every harness version has been exercised. Gantry tests specific integrations against reproducible fixture suites and logs the active tier in every Run report. No unearned claims, no marketing hyperbole.
+      </p>
+    </div>
+  </div>
+</section>
