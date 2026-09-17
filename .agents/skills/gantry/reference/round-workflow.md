@@ -312,6 +312,104 @@ async function roleSchema(role) {
   return JSON.parse(result.stdout)
 }
 
+function resolveRoleForIssue(issueRef, role, options) {
+  if (options && options.selection) return options.selection
+  if (issueRef && A.issueRoleReplacements && A.issueRoleReplacements[issueRef] && A.issueRoleReplacements[issueRef][role]) {
+    return A.issueRoleReplacements[issueRef][role]
+  }
+  if (issueRef && A.issueRoles && A.issueRoles[issueRef] && A.issueRoles[issueRef][role]) {
+    return A.issueRoles[issueRef][role]
+  }
+  const roleKey = role === 'implementer' ? 'implement' : role === 'reviewer' ? 'review' : role
+  if (A.roles && (A.roles[role] || A.roles[roleKey])) {
+    return A.roles[role] || A.roles[roleKey]
+  }
+  if (A.models && (A.models[role] || A.models[roleKey])) {
+    return { harness: A.hostHarness || 'claude-code', model: A.models[role] || A.models[roleKey] }
+  }
+  return null
+}
+
+async function logRoleSelected(issueRef, role, selection) {
+  const isSelectionConfigured = Boolean(A.roles || A.issueRoles || A.issueRoleReplacements || A.recordRoleSelection)
+  if (!runLogEnabled || !selection || !issueRef || !isSelectionConfigured) return
+  await appendRunEvent('role.selected', issueRef, undefined, {
+    role,
+    issue: issueRef,
+    requested: selection,
+    effective: selection,
+    evidence: { source: 'role_selection' },
+  })
+}
+
+// Check for unresolved execution failures
+let unresolvedFailures = Array.isArray(A.unresolvedFailures) ? [...A.unresolvedFailures] : []
+if (unresolvedFailures.length === 0 && runLogEnabled && !isFirstRound) {
+  try {
+    const unresCheck = await runCommand(
+      `python3 "${scripts}/execution.py" unresolved-failures '${A.unitId}' '${A.runId}'${stateRootFlag} --json`,
+      { cwd: A.repoRoot },
+    )
+    if (unresCheck && unresCheck.exitCode === 0) {
+      unresolvedFailures = JSON.parse(unresCheck.stdout)
+    }
+  } catch (e) {}
+}
+
+if (unresolvedFailures.length > 0) {
+  const remainingUnresolved = []
+  for (const failure of unresolvedFailures) {
+    const replacement = resolveRoleForIssue(failure.issue, failure.role, null)
+    const hasReplacement = Boolean(
+      replacement &&
+      ((A.issueRoles && A.issueRoles[failure.issue] && A.issueRoles[failure.issue][failure.role]) ||
+       (A.issueRoleReplacements && A.issueRoleReplacements[failure.issue] && A.issueRoleReplacements[failure.issue][failure.role]))
+    )
+    if (hasReplacement) {
+      const repJson = JSON.stringify(replacement)
+      const valCmd = `python3 "${scripts}/execution.py" validate-replacement --issue "${failure.issue}" --role "${failure.role}" --selection '${repJson.replaceAll("'", "'\\''")}' --cwd ${shellQuote(A.repoRoot)} --json`
+      const valRes = await runCommand(valCmd, { cwd: A.repoRoot })
+      let valid = false
+      if (valRes && valRes.exitCode === 0) {
+        try {
+          const parsed = JSON.parse(valRes.stdout)
+          valid = parsed.valid === true
+        } catch (e) {}
+      }
+      if (!valid) {
+        return {
+          round: A.round,
+          blocked: true,
+          nextRoundBlocked: true,
+          reason: 'invalid_role_replacement',
+          error: `Invalid replacement selection for ${failure.issue} role ${failure.role}`,
+          results: [],
+        }
+      }
+      await appendRunEvent('role.changed', failure.issue, undefined, {
+        role: failure.role,
+        issue: failure.issue,
+        previous: failure.selection || { harness: 'unknown' },
+        requested: replacement,
+        effective: replacement,
+        evidence: { source: 'explicit_recovery' },
+      })
+    } else {
+      remainingUnresolved.push(failure)
+    }
+  }
+  if (remainingUnresolved.length > 0) {
+    return {
+      round: A.round,
+      blocked: true,
+      nextRoundBlocked: true,
+      reason: 'unresolved_execution_failure',
+      unresolvedFailures: remainingUnresolved,
+      results: [],
+    }
+  }
+}
+
 async function validRoleResult(role, result) {
   if (!result) return false
   if (A.structuredOutput === true) return true
@@ -322,8 +420,12 @@ async function validRoleResult(role, result) {
   return Boolean(validation && validation.exitCode === 0)
 }
 async function requestRole(role, prompt, options) {
-  const selection = (options && options.selection) || (A.roles && A.roles[role])
+  const issueRef = options && options.issueRef
+  const selection = resolveRoleForIssue(issueRef, role, options)
   const hostHarness = A.hostHarness || 'claude-code'
+  if (options && options.executionUnavailable) {
+    return { executionUnavailable: true, error: options.error || 'Role execution unavailable' }
+  }
   if (selection && selection.harness && selection.harness !== hostHarness) {
     const cwd = (options && options.cwd) || A.repoRoot
     const selectionJson = JSON.stringify(selection)
@@ -337,7 +439,10 @@ async function requestRole(role, prompt, options) {
         return null
       }
     }
-    return null
+    if (res && res.exitCode === 2) {
+      return null
+    }
+    return { executionUnavailable: true, error: (res && res.stderr) || 'Harness execution failed' }
   }
   const native = A.structuredOutput === true
   const schema = native ? await roleSchema(role) : null
@@ -347,14 +452,30 @@ async function requestRole(role, prompt, options) {
     ...(cavemanActive ? { skills: (options.skills || []).concat(cavemanState.skill_path || 'caveman'), caveman: true } : {}),
     ...(schema ? { schema } : {}),
   }
-  const result = await agent(agentPrompt, agentOptions)
+  let result
+  try {
+    result = await agent(agentPrompt, agentOptions)
+  } catch (err) {
+    return { executionUnavailable: true, error: String(err && err.message ? err.message : err) }
+  }
+  if (result && result.executionUnavailable) {
+    return { executionUnavailable: true, error: result.error || 'Execution unavailable' }
+  }
   if (await validRoleResult(role, result)) return result
   const retryPrompt = `${agentPrompt}\nYour prior result was invalid. Return the complete ${role} result contract.`
   const retryOptions = {
     ...agentOptions,
     label: `${options.label}:retry`,
   }
-  const retry = await agent(retryPrompt, retryOptions)
+  let retry
+  try {
+    retry = await agent(retryPrompt, retryOptions)
+  } catch (err) {
+    return { executionUnavailable: true, error: String(err && err.message ? err.message : err) }
+  }
+  if (retry && retry.executionUnavailable) {
+    return { executionUnavailable: true, error: retry.error || 'Execution unavailable' }
+  }
   return (await validRoleResult(role, retry)) ? retry : null
 }
 
@@ -531,13 +652,20 @@ refutations, gateResult, gateFailures and decisionsForOperator as structured out
 async function implement(issue, feedback, previous) {
   const assigned = await implementationLocation(issue, previous)
   if (!assigned) return null
+  const selection = resolveRoleForIssue(issue.ref, 'implementer', null)
+  await logRoleSelected(issue.ref, 'implementer', selection)
   const options = {
     label: `implement:${issue.ref}`, phase: 'Implement', model: A.models.implement, cwd: assigned.worktree,
+    issueRef: issue.ref, selection,
+    ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'implementer' ? { executionUnavailable: true } : {}),
   }
   await markRunIn(assigned.worktree)
   await appendRunEvent('phase.started', issue.ref, 'Implement', { worktree: assigned.worktree })
   await appendRunEvent('subagent.started', issue.ref, 'Implement', { role: 'implementer' })
   const result = await requestRole('implementer', implementPrompt(issue, feedback, assigned), options)
+  if (result && result.executionUnavailable) {
+    return { executionUnavailable: true, role: 'implementer', error: result.error, worktree: assigned.worktree, branch: assigned.branch }
+  }
   await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', result })
   await appendRunEvent('phase.finished', issue.ref, 'Implement', { worktree: assigned.worktree })
   return result && result.worktree === assigned.worktree && result.branch === assigned.branch ? result : null
@@ -548,11 +676,19 @@ const results = await pipeline(
   issue => implement(issue, null, null),
   async (impl, issue) => {
     if (!impl) return null
+    if (impl.executionUnavailable) return impl
+    const selection = resolveRoleForIssue(issue.ref, 'reviewer', null)
+    await logRoleSelected(issue.ref, 'reviewer', selection)
     await appendRunEvent('phase.started', issue.ref, 'Review', { worktree: location(impl) })
     await appendRunEvent('subagent.started', issue.ref, 'Review', { role: 'reviewer' })
     const review = await requestRole('reviewer', reviewPrompt(issue, impl), {
       label: `review:${issue.ref}`, phase: 'Review', model: A.models.review, cwd: location(impl),
+      issueRef: issue.ref, selection,
+      ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'reviewer' ? { executionUnavailable: true } : {}),
     })
+    if (review && review.executionUnavailable) {
+      return { executionUnavailable: true, role: 'reviewer', error: review.error, impl }
+    }
     await appendRunEvent('subagent.stopped', issue.ref, 'Review', { role: 'reviewer', result: review })
     await appendRunEvent('phase.finished', issue.ref, 'Review', {})
     if (review) {
@@ -567,10 +703,42 @@ const results = await pipeline(
     if (!reviewed) {
       return { impl: null, implementerFailed: true, failedImpl: impl, review, reviewFix: true }
     }
+    if (reviewed.executionUnavailable) return reviewed
     return { impl: reviewed, review, reviewFix: Boolean(review && review.blocking.length) }
   },
   async (state, issue) => {
     if (!state) return { ref: issue.ref, outcome: 'implementer_failed' }
+    if (state.executionUnavailable) {
+      const impl = state.impl
+      const worktree = (impl && impl.worktree) || state.worktree || issueWorktreePath(issue)
+      const branch = (impl && impl.branch) || state.branch || await configuredIssueBranch(issue)
+      const corrections = state.corrections || 0
+      await appendRunEvent('issue.paused', issue.ref, state.role === 'reviewer' ? 'Review' : state.role === 'implementer' ? 'Implement' : 'Critic', {
+        role: state.role || 'critic',
+        reason: 'execution_unavailable',
+        worktree,
+        error: state.error || 'Role execution unavailable',
+      })
+      return {
+        ref: issue.ref,
+        issuePath: issue.path,
+        outcome: 'paused',
+        status: 'paused',
+        reason: 'execution_unavailable',
+        executionUnavailable: true,
+        role: state.role || 'critic',
+        error: state.error || 'Role execution unavailable',
+        worktree,
+        branch,
+        commits: (impl && impl.commits) || [],
+        corrections,
+        reviewFix: state.reviewFix,
+        review: state.review,
+        verdict: null,
+        decisions: (impl && impl.decisions) || [],
+        blockers: (impl && impl.blockers) || [],
+      }
+    }
     if (state.implementerFailed) {
       return {
         ref: issue.ref, outcome: 'implementer_failed',
@@ -588,11 +756,42 @@ const results = await pipeline(
     let corrections = prior && Number.isInteger(prior.correctionsSpent) ? prior.correctionsSpent : 0
     let accepted = false
     for (let attempt = 1; ; attempt += 1) {
+      const selection = resolveRoleForIssue(issue.ref, 'critic', null)
+      await logRoleSelected(issue.ref, 'critic', selection)
       await appendRunEvent('phase.started', issue.ref, 'Critic', { attempt, worktree: location(impl) })
       await appendRunEvent('subagent.started', issue.ref, 'Critic', { role: 'critic', attempt })
       verdict = await requestRole('critic', criticPrompt(issue, impl, state.review, attempt), {
         label: `critic:${issue.ref}#${attempt}`, phase: 'Critic', model: A.models.critic, cwd: location(impl),
+        issueRef: issue.ref, selection,
+        ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'critic' ? { executionUnavailable: true } : {}),
       })
+      if (verdict && verdict.executionUnavailable) {
+        await appendRunEvent('issue.paused', issue.ref, 'Critic', {
+          role: 'critic',
+          reason: 'execution_unavailable',
+          worktree: location(impl),
+          error: verdict.error || 'Critic execution unavailable',
+        })
+        return {
+          ref: issue.ref,
+          issuePath: issue.path,
+          outcome: 'paused',
+          status: 'paused',
+          reason: 'execution_unavailable',
+          executionUnavailable: true,
+          role: 'critic',
+          error: verdict.error || 'Critic execution unavailable',
+          worktree: impl.worktree,
+          branch: impl.branch,
+          commits: impl.commits,
+          corrections,
+          reviewFix: state.reviewFix,
+          review: state.review,
+          verdict: null,
+          decisions: (impl.decisions) || [],
+          blockers: (impl.blockers) || [],
+        }
+      }
       await appendRunEvent('subagent.stopped', issue.ref, 'Critic', { role: 'critic', attempt, result: projectCriticResult(verdict) })
       await appendRunEvent('phase.finished', issue.ref, 'Critic', { attempt })
       if (!verdict) {
@@ -616,6 +815,33 @@ const results = await pipeline(
           ref: issue.ref, issuePath: issue.path, outcome: 'implementer_failed',
           worktree: impl.worktree, branch: impl.branch, commits: impl.commits,
           corrections, reviewFix: state.reviewFix, review: state.review, verdict,
+          decisions: [...(impl.decisions || []), ...(verdict.decisionsForOperator || [])],
+          blockers: impl.blockers || [],
+        }
+      }
+      if (corrected.executionUnavailable) {
+        await appendRunEvent('issue.paused', issue.ref, 'Implement', {
+          role: 'implementer',
+          reason: 'execution_unavailable',
+          worktree: location(corrected),
+          error: corrected.error || 'Implementer execution unavailable',
+        })
+        return {
+          ref: issue.ref,
+          issuePath: issue.path,
+          outcome: 'paused',
+          status: 'paused',
+          reason: 'execution_unavailable',
+          executionUnavailable: true,
+          role: 'implementer',
+          error: corrected.error || 'Implementer execution unavailable',
+          worktree: corrected.worktree || impl.worktree,
+          branch: corrected.branch || impl.branch,
+          commits: impl.commits,
+          corrections,
+          reviewFix: state.reviewFix,
+          review: state.review,
+          verdict,
           decisions: [...(impl.decisions || []), ...(verdict.decisionsForOperator || [])],
           blockers: impl.blockers || [],
         }
@@ -724,15 +950,16 @@ if (integrationStopped) {
     round: A.round, reason: cancelReason && cancelReason.reason,
   })
 }
-const candidates = A.isLastRound ? await learn() : []
-if (!integrationStopped && A.isLastRound) {
+const hasPaused = deliveries.some(d => d.outcome === 'paused')
+const candidates = (A.isLastRound && !hasPaused) ? await learn() : []
+if (!integrationStopped && A.isLastRound && !hasPaused) {
   await appendRunEvent('run.finished', undefined, undefined, { round: A.round })
 }
-if (integrationStopped || A.isLastRound) {
+if (integrationStopped || (A.isLastRound && !hasPaused)) {
   await unmarkRun()
 }
 let prOffer = null
-if (!integrationStopped && A.isLastRound) {
+if (!integrationStopped && A.isLastRound && !hasPaused) {
   const completed = deliveries.filter(d => d.outcome === 'done')
   if (completed.length > 0) {
     const ghCheck = await runCommand('gh --version', { cwd: A.repoRoot })
@@ -778,7 +1005,15 @@ if (!integrationStopped && A.isLastRound) {
     }
   }
 }
-return { round: A.round, date: A.date, results: deliveries, caveman: cavemanState, ...(A.isLastRound ? { candidates, prOffer } : {}) }
+return {
+  round: A.round,
+  date: A.date,
+  results: deliveries,
+  caveman: cavemanState,
+  nextRoundBlocked: hasPaused || integrationStopped,
+  ...(hasPaused ? { pausedIssues: deliveries.filter(d => d.outcome === 'paused') } : {}),
+  ...(A.isLastRound && !hasPaused ? { candidates, prOffer } : {}),
+}
 ```
 
 The Workflow returns `done` only after serial integration (when isolated), a passing post-integration

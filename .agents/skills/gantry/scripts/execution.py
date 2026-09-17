@@ -594,6 +594,70 @@ def preflight_validate(
     }
 
 
+def validate_role_replacement(
+    role: str,
+    selection: dict[str, Any],
+    issue_ref: str,
+    root: Path | None = None,
+    check_auth: bool = False,
+    runner: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Validate an explicit role replacement for an Issue without mutating defaults."""
+    if not isinstance(selection, dict):
+        return {"valid": False, "error": "Replacement selection must be an object"}
+    val = validate_selection(selection, role=role, root=root, check_auth=check_auth, runner=runner)
+    if not val["valid"]:
+        return {"valid": False, "error": val["error"]}
+    return {
+        "valid": True,
+        "role": role,
+        "issue": issue_ref,
+        "selection": selection,
+    }
+
+
+def check_unresolved_failures(
+    unit_id: str,
+    run_id: str,
+    state_root_path: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    """Derive unresolved paused executions from the Run log.
+
+    An issue execution is paused if an `issue.paused` event was recorded.
+    It is considered resolved if a later `role.changed` event was recorded for that same issue and role.
+    """
+    root = runlog.state_root(str(state_root_path) if state_root_path else None)
+    log_path = runlog.run_log_path(root, unit_id, run_id)
+    if not log_path.is_file():
+        return []
+
+    events = runlog.read_valid_events(log_path)
+    paused_map: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for event in events:
+        ev_type = event.get("event")
+        issue = event.get("issue")
+        data = event.get("data", {})
+        if ev_type == "issue.paused" and issue:
+            role = data.get("role", "critic")
+            paused_map[(issue, role)] = {
+                "issue": issue,
+                "role": role,
+                "worktree": data.get("worktree"),
+                "reason": data.get("reason", "execution_unavailable"),
+                "error": data.get("error", "execution unavailable"),
+            }
+        elif ev_type == "role.changed" and issue:
+            role = data.get("role", "critic")
+            paused_map.pop((issue, role), None)
+        elif ev_type in ("issue.done", "issue.blocked") and issue:
+            for key in list(paused_map.keys()):
+                if key[0] == issue:
+                    paused_map.pop(key, None)
+
+    return list(paused_map.values())
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command")
@@ -623,8 +687,21 @@ def main() -> int:
     dispatch_parser.add_argument("--state-root", help="State root directory")
     dispatch_parser.add_argument("--json", action="store_true", help="output JSON")
 
+    failures_parser = subparsers.add_parser("unresolved-failures", help="check for unresolved paused executions")
+    failures_parser.add_argument("unit_id", help="repository unit ID")
+    failures_parser.add_argument("run_id", help="run ID")
+    failures_parser.add_argument("--state-root", help="override state root")
+    failures_parser.add_argument("--json", action="store_true", help="output JSON")
+
+    validate_rep_parser = subparsers.add_parser("validate-replacement", help="validate role replacement")
+    validate_rep_parser.add_argument("--issue", required=True, help="issue ref")
+    validate_rep_parser.add_argument("--role", required=True, help="role name")
+    validate_rep_parser.add_argument("--selection", required=True, help="selection JSON")
+    validate_rep_parser.add_argument("--cwd", default=".", help="repository root path")
+    validate_rep_parser.add_argument("--json", action="store_true", help="output JSON")
+
     args = parser.parse_args()
-    root = Path(args.cwd).resolve()
+    root = Path(args.cwd).resolve() if getattr(args, "cwd", None) else Path(".").resolve()
     policy = resolve_policy(root)
 
     run_ov = json.loads(args.run_overrides) if getattr(args, "run_overrides", None) else None
@@ -676,9 +753,40 @@ def main() -> int:
             )
             print(json.dumps(res, indent=2))
             return 0
+        except ProtocolFailureError as exc:
+            print(f"protocol failure: {exc}", file=sys.stderr)
+            return 2
         except Exception as exc:
-            print(f"dispatch error: {exc}", file=sys.stderr)
+            print(f"execution failure: {exc}", file=sys.stderr)
             return 1
+
+    elif args.command == "unresolved-failures":
+        failures = check_unresolved_failures(
+            unit_id=args.unit_id,
+            run_id=args.run_id,
+            state_root_path=getattr(args, "state_root", None),
+        )
+        if args.json:
+            print(json.dumps(failures, indent=2))
+        else:
+            print(f"Unresolved failures: {len(failures)}")
+            for f in failures:
+                print(f"  - {f['issue']} ({f['role']}): {f['reason']}")
+        return 0
+
+    elif args.command == "validate-replacement":
+        sel = json.loads(args.selection)
+        res = validate_role_replacement(
+            role=args.role,
+            selection=sel,
+            issue_ref=args.issue,
+            root=root,
+        )
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print("Valid" if res["valid"] else f"Invalid: {res.get('error')}")
+        return 0 if res["valid"] else 1
 
     else:
         parser.print_help()

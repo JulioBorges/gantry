@@ -29,14 +29,17 @@ EVENTS = {
     "policy.changed",
     "issue.done",
     "issue.blocked",
+    "issue.paused",
     "refutation",
     "review.finding",
+    "role.selected",
+    "role.changed",
 }
 RUN_EVENTS = {"run.started", "run.resumed", "run.cancelled", "run.finished"}
 ROUND_EVENTS = {"round.started", "round.finished"}
 PHASE_EVENTS = {"phase.started", "phase.finished"}
 SUBAGENT_EVENTS = {"subagent.started", "subagent.stopped"}
-ISSUE_EVENTS = {"issue.done", "issue.blocked", "refutation", "review.finding"}
+ISSUE_EVENTS = {"issue.done", "issue.blocked", "issue.paused", "refutation", "review.finding", "role.selected", "role.changed"}
 FINISHED_EVENTS = {"run.cancelled", "run.finished"}
 UNIT_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
@@ -277,6 +280,29 @@ def validate_event(payload: object) -> dict:
         if not isinstance(data, dict) or "policyHash" not in data:
             raise EventError("policy.changed requires data.policyHash")
         require_string(data["policyHash"], "data.policyHash")
+    elif event == "issue.paused":
+        if "issue" not in payload:
+            raise EventError("issue.paused requires issue")
+        if not isinstance(data, dict) or not {"role", "reason"} <= set(data):
+            raise EventError("issue.paused requires data.role and data.reason")
+        require_string(data["role"], "data.role")
+        require_string(data["reason"], "data.reason")
+    elif event == "role.selected":
+        if "issue" not in payload:
+            raise EventError("role.selected requires issue")
+        if not isinstance(data, dict) or not {"role", "requested", "effective"} <= set(data):
+            raise EventError("role.selected requires data.role, data.requested, and data.effective")
+        require_string(data["role"], "data.role")
+        if not isinstance(data["requested"], dict) or not isinstance(data["effective"], dict):
+            raise EventError("data.requested and data.effective must be objects")
+    elif event == "role.changed":
+        if "issue" not in payload:
+            raise EventError("role.changed requires issue")
+        if not isinstance(data, dict) or not {"role", "requested", "effective"} <= set(data):
+            raise EventError("role.changed requires data.role, data.requested, and data.effective")
+        require_string(data["role"], "data.role")
+        if not isinstance(data["requested"], dict) or not isinstance(data["effective"], dict):
+            raise EventError("data.requested and data.effective must be objects")
     elif event in ISSUE_EVENTS and "issue" not in payload:
         raise EventError(f"{event} requires issue")
     return payload
@@ -339,6 +365,17 @@ def inflight(root: Path, unit: str) -> list[dict]:
                     "phase": event["phase"],
                     "worktree": event.get("data", {}).get("worktree"),
                 }
+            elif event["event"] == "issue.paused":
+                if event["issue"] in active:
+                    if event.get("data", {}).get("worktree"):
+                        active[event["issue"]]["worktree"] = event["data"]["worktree"]
+                else:
+                    active[event["issue"]] = {
+                        "run": event["run"],
+                        "issue": event["issue"],
+                        "phase": event.get("phase") or "Critic",
+                        "worktree": event.get("data", {}).get("worktree"),
+                    }
             elif event["event"] == "phase.finished":
                 active.pop(event["issue"], None)
             elif event["event"] in {"issue.done", "issue.blocked"}:

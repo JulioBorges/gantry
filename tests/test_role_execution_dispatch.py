@@ -381,5 +381,630 @@ class AntigravityGuardSubagentAndToolTests(unittest.TestCase):
             self.assertEqual("hook-bypass-protected", res["rule"])
 
 
+from common import parse_issue
+
+
+class WorkflowTestBase(unittest.TestCase):
+    def run_script(self, root: Path, script: str, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(SCRIPTS / script), *args],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def write_issue(
+        self,
+        root: Path,
+        ref: str,
+        status: str,
+        blockers: list[str] | None = None,
+        criteria: list[str] | None = None,
+    ) -> Path:
+        slug, number = ref.split("#")
+        path = root / ".scratch" / slug / "issues" / f"{int(number):02d}-example.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        blocked_by = "\n".join(f"- `{blocker}` — prerequisite" for blocker in blockers or []) or "- None"
+        acceptance_criteria = "\n".join(f"- [ ] {criterion}" for criterion in criteria or ["exposes a deterministic behaviour"])
+        path.write_text(
+            f"""# Example {ref}
+
+Type: issue
+Status: {status}
+Slice: `{ref}`
+Spec: `.scratch/{slug}/spec.md`
+Created: 2026-09-13
+
+## Parent
+
+`{slug}`
+
+## What to build
+
+Preserve the portable workflow contract.
+
+## Acceptance criteria
+
+{acceptance_criteria}
+
+## Blocked by
+
+{blocked_by}
+
+## Comments
+""",
+            encoding="utf-8",
+        )
+        return path
+
+    def write_roadmap(self, root: Path) -> Path:
+        roadmap = root / "ROADMAP.md"
+        roadmap.write_text(
+            """# Roadmap
+
+| Metric | Value |
+|---|---|
+| Issues completed | **0 / 0** |
+| Specs completed | **0 / 0** |
+| Execution waves | **0** |
+
+<!-- BEGIN GENERATED: spec progress -->
+
+<!-- END GENERATED: spec progress -->
+
+<!-- BEGIN GENERATED: issue checklist -->
+
+<!-- END GENERATED: issue checklist -->
+""",
+            encoding="utf-8",
+        )
+        return roadmap
+
+    def critic_evidence(self, root: Path, issue: Path) -> list[dict[str, object]]:
+        accepted = self.run_script(root, "acceptance.py", str(issue), "--json")
+        self.assertEqual(0, accepted.returncode, accepted.stderr)
+        return [
+            {
+                "index": criterion["index"],
+                "met": True,
+                "evidence": f"real test evidence for criterion {criterion['index']}",
+            }
+            for criterion in json.loads(accepted.stdout)["criteria"]
+        ]
+
+    def read_run_log_events(self, state_root: Path, unit_id: str, run_id: str) -> list[dict]:
+        path = state_root / unit_id / "runs" / f"{run_id}.jsonl"
+        if not path.is_file():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    def init_repo(self, root: Path) -> None:
+        subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+        subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+
+    def run_workflow(self, filename: str, args: dict) -> dict:
+        source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
+        source = source.replace("export const meta", "const meta", 1)
+        driver = f"""
+import {{ mkdirSync, writeFileSync }} from 'node:fs';
+import {{ dirname }} from 'node:path';
+import {{ spawnSync }} from 'node:child_process';
+const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
+const source = {json.dumps(source)};
+const args = {json.dumps(args)};
+const calls = [];
+const commandCalls = [];
+let sequence = 0;
+const defaultIssueWorktree = args.issueWorktree || (
+  args.isolate && args.issues && args.issues[0]
+    ? `${{args.repoRoot}}.gantry-${{args.issues[0].ref.replace('#', '-') }}`
+    : args.repoRoot
+);
+const runCommand = async (command, options = {{}}) => {{
+  commandCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});
+  if (command.includes('/spec.py') && args.stubSpecCheck !== false) {{
+    return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
+  }}
+  if (args.commandMode === 'real') {{
+    const completed = spawnSync(command, {{
+      cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8', input: options.input,
+    }});
+    return {{
+      exitCode: completed.status ?? 1, stdout: completed.stdout || '',
+      stderr: completed.stderr || '',
+    }};
+  }}
+  if (args.commandResults && args.commandResults.length) return args.commandResults.shift();
+  if (command.includes('/common.py')) return {{ exitCode: 0, stdout: JSON.stringify({{ issueBranch: args.issueBranch || args.branch }}) }};
+  if (command === 'git branch --show-current') return {{ exitCode: 0, stdout: args.issueBranch || args.branch }};
+  return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}'
+    : command.includes('/spec.py') ? '{{"valid":true}}' : '' }};
+}};
+const agent = async (prompt, options) => {{
+  calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, sequence: sequence++ }});
+  if (options.label.startsWith('research:')) return 'factual research';
+  if (options.label.startsWith('requirement-critic')) {{
+    if (args.requirementCriticRawResults && args.requirementCriticRawResults.length) {{
+      return args.requirementCriticRawResults.shift();
+    }}
+    if (args.requirementCriticResult) return args.requirementCriticResult;
+    return {{ blocking: [], findings: [] }};
+  }}
+  if (options.label.startsWith('plan')) {{
+    if (args.plannerRawResults && args.plannerRawResults.length) {{
+      return args.plannerRawResults.shift();
+    }}
+    if (args.plannerResult) return args.plannerResult;
+    return {{ filesWritten: [], issues: [], roadmapAdditions: [], openDecisions: [] }};
+  }}
+  if (options.label.startsWith('critique')) {{
+    return {{ acceptable: true, problems: [], frontierErrors: [] }};
+  }}
+  if (options.label.startsWith('implement:')) {{
+    if (args.implementerRawResults && args.implementerRawResults.length) {{
+      return args.implementerRawResults.shift();
+    }}
+    if (args.implementerCommitText) {{
+      writeFileSync(`${{options.cwd}}/delivery.txt`, args.implementerCommitText);
+      const added = spawnSync('git', ['add', 'delivery.txt'], {{ cwd: options.cwd, encoding: 'utf8' }});
+      const committed = spawnSync('git', ['commit', '--quiet', '-m', 'delivery'], {{ cwd: options.cwd, encoding: 'utf8' }});
+      if (added.status !== 0 || committed.status !== 0) throw new Error(added.stderr || committed.stderr);
+    }}
+    const ref = options.label.split(':')[1];
+    const assigned = (args.issueAssignments && args.issueAssignments[ref]) || {{}};
+    return {{
+      worktree: assigned.worktree || defaultIssueWorktree, branch: assigned.branch || args.issueBranch || args.branch,
+      commits: ['test commit'],
+      summary: 'workflow execution', testsAdded: [], gatesResult: 'verdict: pass',
+      decisions: [], blockers: [],
+    }};
+  }}
+  if (options.label.startsWith('review:')) return {{
+    blocking: [], nonBlocking: [], summary: 'no findings',
+  }};
+  if (options.label.startsWith('critic:') && args.criticRawResults && args.criticRawResults.length) {{
+    return args.criticRawResults.shift();
+  }}
+  if (options.label.startsWith('critic:')) return {{
+    complete: true, criteria: [], gatesVerdict: 'pass', gateResult: {{ verdict: 'pass' }}, gateFailures: [],
+    refutations: [], requiredFixes: [], decisionsForOperator: [],
+    ...(args.criticResults && args.criticResults.length ? args.criticResults.shift() : (args.criticResult || {{}})),
+  }};
+  return null;
+}};
+const parallel = async (tasks) => Promise.all(tasks.map((task) => task()));
+const pipeline = async (items, ...steps) => {{
+  const results = [];
+  for (const item of items) {{
+    let value = await steps[0](item);
+    for (const step of steps.slice(1)) value = await step(value, item);
+    results.push(value);
+  }}
+  return results;
+}};
+const phase = () => {{}};
+const log = () => {{}};
+let result = null;
+let error = null;
+try {{
+  result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'runCommand', source)(
+    args, agent, parallel, pipeline, phase, log, runCommand,
+  );
+}} catch (err) {{
+  error = err && err.message ? err.message : String(err);
+}}
+process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
+"""
+        result = subprocess.run(
+            ["node", "--input-type=module", "--eval", driver],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        return json.loads(result.stdout)
+
+
+class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):
+    def test_two_issue_workflow_pauses_failed_execution_preserves_worktree_and_integrates_accepted_issue(self) -> None:
+        """A two-Issue workflow pauses one failed execution, preserves its worktree, and allows the independent accepted Issue to integrate."""
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue_one = self.write_issue(root, "rec#01", "ready-for-agent")
+            issue_two = self.write_issue(root, "rec#02", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+            run_branch = subprocess.run(["git", "branch", "--show-current"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+
+            worktree_one = Path(f"{root}.gantry-rec-01")
+            worktree_two = Path(f"{root}.gantry-rec-02")
+            state_root = Path(state_dir)
+            unit_id = "123456abcdef"
+            run_id = "run-recovery-1"
+
+            try:
+                run = self.run_workflow(
+                    "round-workflow.md",
+                    {
+                        "round": 1,
+                        "issues": [
+                            {"ref": "rec#01", "path": str(issue_one.relative_to(root)), "title": "Recovery one", "specPath": ".scratch/rec/spec.md"},
+                            {"ref": "rec#02", "path": str(issue_two.relative_to(root)), "title": "Recovery two", "specPath": ".scratch/rec/spec.md"},
+                        ],
+                        "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                        "recordRoleSelection": True,
+                        "branch": run_branch,
+                        "baseRef": base_ref,
+                        "isolate": True,
+                        "correctionBudget": 2,
+                        "skillDir": str(SKILL_DIR),
+                        "repoRoot": str(root),
+                        "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                        "paths": {},
+                        "date": "2026-09-16",
+                        "commandMode": "real",
+                        "runId": run_id,
+                        "unitId": unit_id,
+                        "stateRoot": str(state_root),
+                        "tier": "reference",
+                        "implementerCommitText": "integrated\n",
+                        "issueAssignments": {
+                            "rec#01": {"worktree": str(worktree_one), "branch": "gantry/rec-01"},
+                            "rec#02": {"worktree": str(worktree_two), "branch": "gantry/rec-02"},
+                        },
+                        "issueExecutionUnavailable": {
+                            "rec#02": "critic",
+                        },
+                        "criticResults": [
+                            {"criteria": self.critic_evidence(root, issue_one)},
+                        ],
+                    },
+                )
+
+                self.assertIsNone(run["error"], run["error"])
+                outcomes = {res["ref"]: res["outcome"] for res in run["result"]["results"]}
+                # Independent accepted Issue integrates
+                self.assertEqual("done", outcomes["rec#01"])
+                self.assertEqual("done", parse_issue(issue_one).status)
+                # Failed execution pauses and preserves worktree
+                self.assertEqual("paused", outcomes["rec#02"])
+                self.assertEqual("ready-for-agent", parse_issue(issue_two).status)
+                self.assertTrue(worktree_two.is_dir(), "Failed execution worktree must be preserved")
+
+                # Authoritative completion in ROADMAP.md
+                roadmap_text = (root / "ROADMAP.md").read_text(encoding="utf-8")
+                self.assertIn("- [x] **`rec#01`**", roadmap_text)
+                self.assertIn("- [ ] **`rec#02`**", roadmap_text)
+
+                # Next round is blocked
+                self.assertTrue(run["result"]["nextRoundBlocked"])
+
+                # Run log events
+                events = self.read_run_log_events(state_root, unit_id, run_id)
+                done_events = [e for e in events if e.get("event") == "issue.done"]
+                self.assertEqual(1, len(done_events))
+                self.assertEqual("rec#01", done_events[0]["issue"])
+
+                paused_events = [e for e in events if e.get("event") == "issue.paused"]
+                self.assertEqual(1, len(paused_events))
+                self.assertEqual("rec#02", paused_events[0]["issue"])
+                self.assertEqual("critic", paused_events[0]["data"]["role"])
+                self.assertEqual("execution_unavailable", paused_events[0]["data"]["reason"])
+
+                # Selection event was recorded
+                sel_events = [e for e in events if e.get("event") == "role.selected"]
+                self.assertTrue(len(sel_events) > 0)
+                rec2_critic_sel = next(e for e in sel_events if e.get("issue") == "rec#02" and e["data"]["role"] == "critic")
+                self.assertEqual("critic", rec2_critic_sel["data"]["role"])
+                self.assertIn("effective", rec2_critic_sel["data"])
+
+            finally:
+                subprocess.run(["git", "worktree", "remove", "--force", str(worktree_one)], cwd=root, check=False)
+                subprocess.run(["git", "worktree", "remove", "--force", str(worktree_two)], cwd=root, check=False)
+
+    def test_workflow_blocks_next_round_until_explicit_recovery_without_fallback(self) -> None:
+        """The workflow blocks the next round until explicit recovery; no automatic fallback or automatic retry substitutes a selection."""
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            issue_two = self.write_issue(root, "rec#02", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+            run_branch = subprocess.run(["git", "branch", "--show-current"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+
+            state_root = Path(state_dir)
+            unit_id = "123456abcdef"
+            run_id = "run-recovery-2"
+            log_dir = state_root / unit_id / "runs"
+            log_dir.mkdir(parents=True)
+            log_path = log_dir / f"{run_id}.jsonl"
+            # Simulate prior round with paused issue
+            log_path.write_text(
+                json.dumps({"ts": "2026-09-16T00:00:00Z", "run": run_id, "event": "run.started", "data": {"repositoryRoot": str(root), "policyHash": "12345678", "tier": "reference", "staleAfterSeconds": 900}}) + "\n"
+                + json.dumps({"ts": "2026-09-16T00:00:01Z", "run": run_id, "event": "round.started", "data": {"round": 1}}) + "\n"
+                + json.dumps({"ts": "2026-09-16T00:00:02Z", "run": run_id, "event": "issue.paused", "issue": "rec#02", "data": {"role": "critic", "reason": "execution_unavailable"}}) + "\n"
+                + json.dumps({"ts": "2026-09-16T00:00:03Z", "run": run_id, "event": "round.finished", "data": {"round": 1}}) + "\n",
+                encoding="utf-8",
+            )
+
+            # Round 2 invoked without explicit recovery
+            round2 = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 2,
+                    "isFirstRound": False,
+                    "issues": [
+                        {"ref": "rec#02", "path": str(issue_two.relative_to(root)), "title": "Recovery two", "specPath": ".scratch/rec/spec.md"},
+                    ],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": run_branch,
+                    "baseRef": base_ref,
+                    "isolate": True,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-16",
+                    "commandMode": "real",
+                    "runId": run_id,
+                    "unitId": unit_id,
+                    "stateRoot": str(state_root),
+                    "tier": "reference",
+                },
+            )
+
+            self.assertIsNone(round2["error"])
+            self.assertTrue(round2["result"]["blocked"])
+            self.assertTrue(round2["result"]["nextRoundBlocked"])
+            self.assertEqual("unresolved_execution_failure", round2["result"]["reason"])
+            # Verify no agents were called and no fallback occurred
+            self.assertEqual(0, len(round2["calls"]))
+
+    def test_issue_role_replacement_validated_and_logged_without_altering_defaults_and_preserves_spent_budget(self) -> None:
+        """Issue-role replacement is validated and logged, does not alter saved defaults or active agents, and preserves spent correction budget."""
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
+            root = Path(temp)
+            self.init_repo(root)
+            subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
+            issue = self.write_issue(root, "rec#02", "ready-for-agent")
+            self.write_roadmap(root)
+            (root / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+
+            # Setup repository defaults in tracked .gantry/config.json
+            gantry_dir = root / ".gantry"
+            gantry_dir.mkdir()
+            config_file = gantry_dir / "config.json"
+            initial_config = {
+                "execution": {
+                    "roles": {
+                        "critic": {"harness": "codex", "model": "gpt-5.2-codex"},
+                    }
+                }
+            }
+            config_file.write_text(json.dumps(initial_config, indent=2), encoding="utf-8")
+
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=root, check=True)
+            base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+            run_branch = subprocess.run(["git", "branch", "--show-current"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+
+            state_root = Path(state_dir)
+            unit_id = "123456abcdef"
+            run_id = "run-recovery-3"
+            log_dir = state_root / unit_id / "runs"
+            log_dir.mkdir(parents=True)
+            log_path = log_dir / f"{run_id}.jsonl"
+            log_path.write_text(
+                json.dumps({"ts": "2026-09-16T00:00:00Z", "run": run_id, "event": "run.started", "data": {"repositoryRoot": str(root), "policyHash": "12345678", "tier": "reference", "staleAfterSeconds": 900}}) + "\n"
+                + json.dumps({"ts": "2026-09-16T00:00:01Z", "run": run_id, "event": "round.started", "data": {"round": 1}}) + "\n"
+                + json.dumps({"ts": "2026-09-16T00:00:02Z", "run": run_id, "event": "issue.paused", "issue": "rec#02", "data": {"role": "critic", "reason": "execution_unavailable"}}) + "\n"
+                + json.dumps({"ts": "2026-09-16T00:00:03Z", "run": run_id, "event": "round.finished", "data": {"round": 1}}) + "\n",
+                encoding="utf-8",
+            )
+
+            # 1. Invalid replacement is rejected
+            invalid_run = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 2,
+                    "isFirstRound": False,
+                    "issues": [
+                        {"ref": "rec#02", "path": str(issue.relative_to(root)), "title": "Recovery two", "specPath": ".scratch/rec/spec.md"},
+                    ],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": run_branch,
+                    "baseRef": base_ref,
+                    "isolate": False,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-16",
+                    "commandMode": "real",
+                    "runId": run_id,
+                    "unitId": unit_id,
+                    "stateRoot": str(state_root),
+                    "tier": "reference",
+                    "issueRoleReplacements": {
+                        "rec#02": {
+                            "critic": {"harness": "unsupported_harness", "model": "m1"},
+                        },
+                    },
+                },
+            )
+            self.assertTrue(invalid_run["result"]["blocked"])
+            self.assertEqual("invalid_role_replacement", invalid_run["result"]["reason"])
+
+            # 2. Valid replacement proceeds, logs role.changed, preserves spent corrections and saved defaults
+            valid_run = self.run_workflow(
+                "round-workflow.md",
+                {
+                    "round": 2,
+                    "isFirstRound": False,
+                    "isLastRound": True,
+                    "issues": [
+                        {"ref": "rec#02", "path": str(issue.relative_to(root)), "title": "Recovery two", "specPath": ".scratch/rec/spec.md"},
+                    ],
+                    "models": {"implement": "implement", "review": "review", "critic": "critic"},
+                    "branch": run_branch,
+                    "baseRef": base_ref,
+                    "isolate": False,
+                    "correctionBudget": 2,
+                    "skillDir": str(SKILL_DIR),
+                    "repoRoot": str(root),
+                    "policy": {"git": {"target": "main", "prefix": "gantry/"}, "budget": {"corrections": 2}},
+                    "paths": {},
+                    "date": "2026-09-16",
+                    "commandMode": "real",
+                    "runId": run_id,
+                    "unitId": unit_id,
+                    "stateRoot": str(state_root),
+                    "tier": "reference",
+                    "priorRun": {
+                        "run": run_id,
+                        "issue": "rec#02",
+                        "worktree": str(root),
+                        "branch": run_branch,
+                        "correctionsSpent": 1,
+                    },
+                    "issueRoleReplacements": {
+                        "rec#02": {
+                            "critic": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
+                        },
+                    },
+                    "criticResult": {
+                        "complete": True,
+                        "criteria": self.critic_evidence(root, issue),
+                        "gatesVerdict": "pass",
+                        "gateResult": {"verdict": "pass", "requirements": []},
+                    },
+                },
+            )
+
+            self.assertIsNone(valid_run["error"], valid_run["error"])
+            self.assertEqual("done", valid_run["result"]["results"][0]["outcome"])
+
+            # Verify saved defaults in .gantry/config.json were NOT mutated
+            self.assertEqual(initial_config, json.loads(config_file.read_text(encoding="utf-8")))
+
+            # Verify role.changed was logged
+            events = self.read_run_log_events(state_root, unit_id, run_id)
+            role_changed = next(e for e in events if e.get("event") == "role.changed")
+            self.assertEqual("rec#02", role_changed["issue"])
+            self.assertEqual("critic", role_changed["data"]["role"])
+            self.assertEqual("claude-code", role_changed["data"]["effective"]["harness"])
+            self.assertEqual("claude-3-7-sonnet-20250219", role_changed["data"]["effective"]["model"])
+
+            # Verify spent budget was preserved (started at 1, so outcome carries corrections=1)
+            self.assertEqual(1, valid_run["result"]["results"][0]["corrections"])
+
+    def test_runlog_selection_and_change_events_contain_identity_and_evidence_without_secrets(self) -> None:
+        """Run Log selection and change events contain Issue/role identity and selection evidence without secrets or raw command output."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run_id = "run-events-1"
+            unit_id = "112233445566"
+            log_dir = root / unit_id / "runs"
+            log_dir.mkdir(parents=True)
+            log_path = log_dir / f"{run_id}.jsonl"
+
+            # Valid role.selected event
+            valid_sel = {
+                "ts": "2026-09-16T12:00:00Z",
+                "run": run_id,
+                "event": "role.selected",
+                "issue": "sample#01",
+                "data": {
+                    "role": "critic",
+                    "issue": "sample#01",
+                    "requested": {"harness": "antigravity", "model": "gemini-3.1-pro-high", "effort": "high"},
+                    "effective": {"harness": "antigravity", "model": "gemini-3.1-pro-high", "effort": "high"},
+                    "evidence": {"source": "issue_override"},
+                },
+            }
+            validated_sel = runlog.validate_event(valid_sel)
+            self.assertEqual("sample#01", validated_sel["issue"])
+            self.assertEqual("critic", validated_sel["data"]["role"])
+            runlog.append_event(log_path, validated_sel)
+
+            # Valid role.changed event
+            valid_chg = {
+                "ts": "2026-09-16T12:05:00Z",
+                "run": run_id,
+                "event": "role.changed",
+                "issue": "sample#01",
+                "data": {
+                    "role": "critic",
+                    "issue": "sample#01",
+                    "previous": {"harness": "codex", "model": "gpt-5.2-codex"},
+                    "requested": {"harness": "antigravity", "model": "gemini-3.8-flash-medium"},
+                    "effective": {"harness": "antigravity", "model": "gemini-3.8-flash-medium"},
+                    "evidence": {"source": "explicit_recovery"},
+                },
+            }
+            validated_chg = runlog.validate_event(valid_chg)
+            self.assertEqual("sample#01", validated_chg["issue"])
+            self.assertEqual("critic", validated_chg["data"]["role"])
+            runlog.append_event(log_path, validated_chg)
+
+            # Rejection of prohibited tokens (command, output, diff, secrets)
+            bad_events = [
+                {
+                    "ts": "2026-09-16T12:00:00Z",
+                    "run": run_id,
+                    "event": "role.selected",
+                    "issue": "sample#01",
+                    "data": {
+                        "role": "critic",
+                        "requested": {"harness": "antigravity", "model": "gemini-3.8-flash-medium"},
+                        "effective": {"harness": "antigravity", "model": "gemini-3.8-flash-medium"},
+                        "command": "agy --print",  # prohibited!
+                    },
+                },
+                {
+                    "ts": "2026-09-16T12:00:00Z",
+                    "run": run_id,
+                    "event": "role.selected",
+                    "issue": "sample#01",
+                    "data": {
+                        "role": "critic",
+                        "requested": {"harness": "antigravity", "model": "gemini-3.8-flash-medium"},
+                        "effective": {"harness": "antigravity", "model": "gemini-3.8-flash-medium"},
+                        "output": "raw output from cli",  # prohibited!
+                    },
+                },
+                {
+                    "ts": "2026-09-16T12:00:00Z",
+                    "run": run_id,
+                    "event": "role.changed",
+                    "issue": "sample#01",
+                    "data": {
+                        "role": "critic",
+                        "requested": {"harness": "antigravity", "model": "gemini-3.8-flash-medium"},
+                        "effective": {"harness": "antigravity", "model": "gemini-3.8-flash-medium"},
+                        "diff": "patch content",  # prohibited!
+                    },
+                },
+            ]
+            for bad in bad_events:
+                with self.assertRaises(runlog.EventError):
+                    runlog.validate_event(bad)
+
+
 if __name__ == "__main__":
     unittest.main()
+

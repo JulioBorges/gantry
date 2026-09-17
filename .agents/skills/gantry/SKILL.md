@@ -49,7 +49,13 @@ Before a Run, resolve these values once and pass them as `args` to every referen
    results pass `result.py` contract validation, missing or invalid results trigger Protocol Failure handling,
    unsupported installed versions are rejected, Critic verification fails visibly on permission or tool limitations,
    selection identity is honestly recorded in the Run log, and native or configured automatic model fallback
-   is detected and rejected. Model strength guidance between roles is advisory and does not block valid cross-family selections.
+   is detected and rejected. Runtime execution failures preserve work and pause the affected Issue separately
+   from Critic refutations and protocol failures; independent Issues integrate serially, while the next round
+   waits for explicit recovery without automatic fallback or retry. Explicit Issue-role replacements are
+   validated and recorded via `role.changed`, leave saved repository defaults and running agents unchanged, and
+   preserve spent correction budgets. Run log selection (`role.selected`) and change (`role.changed`) events
+   record requested and effective selection evidence without command outputs or credentials. Model strength
+   guidance between roles is advisory and does not block valid cross-family selections.
 
 Run the standard-library workflow scripts as `python3 <skillDir>/scripts/<script>.py`. `common.py` provides
 the shared Markdown parser and policy resolution; its `--json` path prints the resolved portable runtime.
@@ -145,7 +151,9 @@ Every script provides `--help`, and data-producing paths support `--json`.
   and Spec axes, one review fix pass, then a fresh adversarial Critic. The Critic alone can establish a
   complete delivery. Its refutation consumes at most the correction budget.
 - A multi-Issue round uses one isolated worktree and branch per implementer. Integrate accepted branches
-  serially, run gates after every merge, and stop on a failed integration gate. Create and identify each
+  serially, run gates after every merge, and stop on a failed integration gate. When an Issue execution fails,
+  pause that Issue, preserve its worktree and branch, allow independent accepted Issues to integrate, and block
+  the next round until explicit validated recovery. Create and identify each
   Issue branch through the `git.issueBranch` policy template (default
   `{prefix}{spec}-{number:02d}`), rendered by `common.issue_branch(policy, issue)`.
 - Only after Critic acceptance, green gates and a clean worktree may the orchestrator run
