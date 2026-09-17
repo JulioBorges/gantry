@@ -481,6 +481,8 @@ Preserve the portable workflow contract.
 
     def init_repo(self, root: Path) -> None:
         subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+        subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
 
     def run_workflow(self, filename: str, args: dict) -> dict:
         source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
