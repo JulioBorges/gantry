@@ -7,6 +7,8 @@ import copy
 import json
 import os
 import shutil
+import datetime
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -15,8 +17,101 @@ from typing import Any, Callable
 sys.path.insert(0, str(Path(__file__).parent))
 
 from common import repo_root, resolve_policy
+import result  # noqa: E402
+import runlog  # noqa: E402
 
 SUPPORTED_HARNESSES = {"antigravity", "claude-code", "codex", "opencode"}
+
+MIN_SUPPORTED_VERSIONS = {
+    "antigravity": "1.0.0",
+    "claude-code": "1.0.0",
+    "opencode": "0.1.0",
+    "codex": "0.1.0",
+}
+
+CLI_NAMES = {
+    "antigravity": "agy",
+    "claude-code": "claude",
+    "opencode": "opencode",
+    "codex": "codex",
+}
+
+ROLE_TO_SCHEMA = {
+    "plan": "planner",
+    "planner": "planner",
+    "implement": "implementer",
+    "implementer": "implementer",
+    "review": "reviewer",
+    "reviewer": "reviewer",
+    "critic": "critic",
+    "requirement-critic": "requirement-critic",
+    "plan-critic": "plan-critic",
+    "research": None,
+    "learner": "learner",
+}
+
+
+class UnsupportedHarnessVersionError(Exception):
+    """Raised when an installed harness version is below the supported threshold or invalid."""
+
+
+class ModelFallbackError(Exception):
+    """Raised when native or configured automatic model fallback is detected."""
+
+
+class ProtocolFailureError(Exception):
+    """Raised when an external role result is missing, undecodable or fails the schema contract."""
+
+
+def parse_semver(version_str: str) -> tuple[int, int, int]:
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", version_str)
+    if not match:
+        raise ValueError(f"Cannot parse version string: {version_str!r}")
+    major = int(match.group(1))
+    minor = int(match.group(2))
+    patch = int(match.group(3) or 0)
+    return (major, minor, patch)
+
+
+def validate_harness_version(
+    harness: str,
+    runner: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    cli_name = CLI_NAMES.get(harness, harness)
+    try:
+        if runner:
+            try:
+                proc = runner([cli_name, "--version"])
+            except TypeError:
+                proc = runner([cli_name, "--version"], capture_output=True, text=True, check=False)
+        else:
+            proc = subprocess.run([cli_name, "--version"], capture_output=True, text=True, check=False)
+        if proc.returncode != 0:
+            return {
+                "valid": False,
+                "version": None,
+                "error": f"Harness CLI {cli_name} authentication/execution validation failed: return code {proc.returncode}",
+            }
+        stdout = (proc.stdout or "").strip() or (proc.stderr or "").strip()
+        version_tuple = parse_semver(stdout)
+        min_ver_str = MIN_SUPPORTED_VERSIONS.get(harness, "0.0.0")
+        min_tuple = parse_semver(min_ver_str)
+        if version_tuple < min_tuple:
+            ver_formatted = f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}"
+            return {
+                "valid": False,
+                "version": ver_formatted,
+                "error": f"Unsupported installed version {ver_formatted} for {harness}. Minimum supported is {min_ver_str}.",
+            }
+        ver_formatted = f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}"
+        return {"valid": True, "version": ver_formatted}
+    except Exception as exc:
+        return {
+            "valid": False,
+            "version": None,
+            "error": f"Harness CLI {cli_name} version check failed: {exc}",
+        }
+
 
 BASE_ROLES = ("plan", "implement", "review", "critic")
 DERIVED_ROLES = {
@@ -54,6 +149,11 @@ HARNESS_DEFAULT_MODELS = {
     "claude-code": "claude-3-7-sonnet-20250219",
     "codex": "gpt-5.2-codex",
     "opencode": "claude-3-7-sonnet-20250219",
+}
+
+HARNESS_SUPPORTED_EFFORTS = {
+    "antigravity": ["low", "medium", "high"],
+    "codex": ["low", "medium", "high"],
 }
 
 ENVIRONMENT_DEFAULTS = {
@@ -195,6 +295,8 @@ def validate_selection(
                 supported_efforts = model_meta.get("supportedEfforts")
             except Exception:
                 pass
+        if supported_efforts is None:
+            supported_efforts = HARNESS_SUPPORTED_EFFORTS.get(harness)
         eff_check = validate_effort(model, effort, supported_efforts=supported_efforts)
         if not eff_check["valid"]:
             return {
@@ -211,24 +313,252 @@ def validate_selection(
         }
 
     if check_auth:
-        cli_name = "agy" if harness == "antigravity" else "claude" if harness == "claude-code" else harness
-        if runner:
-            try:
-                proc = runner([cli_name, "--version"])
-                if proc.returncode != 0:
-                    return {
-                        "valid": False,
-                        "role": role,
-                        "error": f"Harness CLI {cli_name} authentication/execution validation failed: return code {proc.returncode}",
-                    }
-            except Exception as exc:
-                return {
-                    "valid": False,
-                    "role": role,
-                    "error": f"Harness CLI {cli_name} execution check failed: {exc}",
-                }
+        ver_check = validate_harness_version(harness, runner=runner)
+        if not ver_check["valid"]:
+            return {
+                "valid": False,
+                "role": role,
+                "error": ver_check["error"],
+            }
 
     return {"valid": True, "role": role}
+
+
+def build_dispatch_command(
+    harness: str,
+    model: str,
+    prompt: str,
+    effort: str | None = None,
+    output_format: str = "json",
+) -> list[str]:
+    """Build the bounded native CLI dispatch command for a role invocation."""
+    h = (harness or "").lower()
+    if h == "antigravity":
+        cmd = ["agy", "--print", "--model", model]
+        if effort:
+            cmd.extend(["--effort", effort])
+        cmd.extend(["--output-format", output_format, "--dangerously-skip-permissions", prompt])
+        return cmd
+    elif h == "claude-code":
+        return ["claude", "-p", prompt, "--model", model, "--dangerously-skip-permissions"]
+    elif h == "opencode":
+        return ["opencode", "run", prompt, "--model", model]
+    elif h == "codex":
+        return ["codex", "exec", prompt, "--model", model]
+    else:
+        raise ValueError(f"Unsupported harness: {harness}")
+
+
+def check_model_fallback(requested_model: str, output_data: dict[str, Any] | str) -> None:
+    """Detect if the harness silently replaced the requested model with a fallback model."""
+    if isinstance(output_data, str):
+        if "fallback" in output_data.lower() and "model" in output_data.lower():
+            fb_match = re.search(r"falling back to (\S+)|fallback model:?\s*(\S+)", output_data, re.IGNORECASE)
+            if fb_match:
+                reported = fb_match.group(1) or fb_match.group(2)
+                raise ModelFallbackError(
+                    f"Automatic model fallback detected: requested {requested_model!r} but fell back to {reported!r}"
+                )
+        try:
+            parsed = json.loads(output_data)
+            if isinstance(parsed, dict):
+                output_data = parsed
+        except Exception:
+            pass
+
+    if isinstance(output_data, dict):
+        reported = output_data.get("model") or output_data.get("effective_model") or output_data.get("actual_model")
+        if reported and str(reported).strip().lower() != requested_model.strip().lower():
+            raise ModelFallbackError(
+                f"Automatic model fallback detected: requested {requested_model!r} but harness used {reported!r}"
+            )
+        if output_data.get("fallback_occurred") or output_data.get("model_fallback"):
+            raise ModelFallbackError(
+                f"Automatic model fallback detected for model {requested_model!r}"
+            )
+
+
+def parse_and_validate_result(
+    role: str,
+    raw_output: str,
+    schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Parse output and validate against the Result Contract; protocol failure on error."""
+    if not raw_output or not raw_output.strip():
+        raise ProtocolFailureError(f"Protocol failure: empty output returned for role {role}")
+
+    text = raw_output.strip()
+    if text.startswith("```json") and text.endswith("```"):
+        text = text[7:-3].strip()
+    elif text.startswith("```") and text.endswith("```"):
+        text = text[3:-3].strip()
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ProtocolFailureError(f"Protocol failure: invalid JSON output for role {role}: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise ProtocolFailureError(f"Protocol failure: expected JSON object for role {role}, got {type(data).__name__}")
+
+    schema_role = ROLE_TO_SCHEMA.get(role, role)
+    if schema_role:
+        if schema is None:
+            try:
+                schema = result.load_schema(schema_role)
+            except Exception as exc:
+                raise ProtocolFailureError(f"Protocol failure: failed to load schema for {schema_role}: {exc}") from exc
+        errors = result.validate(data, schema)
+        if errors:
+            raise ProtocolFailureError(f"Protocol failure: schema validation failed for {role}: {errors}")
+
+    return data
+
+
+def verify_critic_result(critic_result: dict[str, Any]) -> None:
+    """Verify that Critic independently verified criteria and gates without accepting a summary.
+
+    Permission or tool limitations must fail visibly rather than accepting a summary.
+    """
+    if not isinstance(critic_result, dict):
+        raise ProtocolFailureError("Critic result must be a JSON object")
+
+    if critic_result.get("permission_error") or critic_result.get("tool_limitation"):
+        err = critic_result.get("error") or "Critic encountered permission or tool limitation"
+        raise RuntimeError(f"Critic execution failed visibly: {err}")
+
+    if critic_result.get("complete") is True:
+        gate_result = critic_result.get("gateResult")
+        if not gate_result or not isinstance(gate_result, dict):
+            raise ProtocolFailureError("Critic claimed complete=true without required gateResult")
+        if gate_result.get("verdict") != "pass":
+            raise ProtocolFailureError(f"Critic claimed complete=true but gateResult verdict is {gate_result.get('verdict')!r}")
+
+        criteria = critic_result.get("criteria")
+        if not isinstance(criteria, list) or len(criteria) == 0:
+            raise ProtocolFailureError("Critic claimed complete=true with empty criteria list")
+        for c in criteria:
+            if not isinstance(c, dict) or not c.get("met") or not str(c.get("evidence", "")).strip():
+                raise ProtocolFailureError(f"Critic claimed complete=true but criterion lacks verified evidence: {c}")
+
+
+def dispatch_role(
+    role: str,
+    prompt: str,
+    cwd: Path | str,
+    selection: dict[str, Any] | None = None,
+    policy: dict | None = None,
+    run_overrides: dict | None = None,
+    issue_overrides: dict | None = None,
+    environment_defaults: dict | None = None,
+    runner: Callable[..., Any] | None = None,
+    run_id: str | None = None,
+    unit_id: str | None = None,
+    state_root: str | None = None,
+    retry_on_invalid: bool = True,
+) -> dict[str, Any]:
+    """Execute a bounded role invocation in the selected native harness."""
+    cwd_path = Path(cwd).resolve()
+    if not cwd_path.is_dir():
+        raise ValueError(f"Working directory {cwd_path} does not exist")
+
+    eff_selection = selection or resolve_single_role(
+        role,
+        policy=policy,
+        run_overrides=run_overrides,
+        issue_overrides=issue_overrides,
+        environment_defaults=environment_defaults,
+    )
+    harness = eff_selection.get("harness", "")
+    model = eff_selection.get("model", "")
+    effort = eff_selection.get("effort")
+
+    ver_check = validate_harness_version(harness, runner=runner)
+    if not ver_check["valid"]:
+        raise UnsupportedHarnessVersionError(ver_check["error"])
+
+    eff_val = validate_selection(eff_selection, role=role, root=cwd_path, check_auth=False)
+    if not eff_val["valid"]:
+        raise ValueError(eff_val["error"])
+
+    if run_id and unit_id:
+        try:
+            root = runlog.state_root(state_root)
+            log_path = runlog.run_log_path(root, unit_id, run_id)
+            if log_path.exists():
+                event_data = {
+                    "role": role,
+                    "harness": harness,
+                    "model": model,
+                    "cwd": str(cwd_path),
+                }
+                if effort:
+                    event_data["effort"] = effort
+                runlog.append_event(
+                    log_path,
+                    runlog.validate_event({
+                        "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "run": run_id,
+                        "event": "subagent.started",
+                        "data": event_data,
+                    }),
+                )
+        except Exception:
+            pass
+
+    cmd = build_dispatch_command(harness, model, prompt, effort=effort)
+    run_fn = runner or subprocess.run
+    proc = run_fn(cmd, cwd=str(cwd_path), capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        err = (proc.stderr or "").strip() or (proc.stdout or "").strip()
+        raise RuntimeError(f"Harness {harness} execution failed (exit {proc.returncode}): {err}")
+
+    check_model_fallback(model, proc.stdout)
+
+    try:
+        data = parse_and_validate_result(role, proc.stdout)
+        if role in ("critic", "requirement-critic", "plan-critic"):
+            verify_critic_result(data)
+    except ProtocolFailureError as exc:
+        if retry_on_invalid:
+            retry_prompt = f"{prompt}\n\nYour prior result was invalid: {exc}\nReturn the complete {role} result contract."
+            retry_cmd = build_dispatch_command(harness, model, retry_prompt, effort=effort)
+            proc2 = run_fn(retry_cmd, cwd=str(cwd_path), capture_output=True, text=True, check=False)
+            if proc2.returncode != 0:
+                raise RuntimeError(f"Harness {harness} retry failed (exit {proc2.returncode}): {(proc2.stderr or '').strip()}")
+            check_model_fallback(model, proc2.stdout)
+            data = parse_and_validate_result(role, proc2.stdout)
+            if role in ("critic", "requirement-critic", "plan-critic"):
+                verify_critic_result(data)
+        else:
+            raise
+
+    if run_id and unit_id:
+        try:
+            root = runlog.state_root(state_root)
+            log_path = runlog.run_log_path(root, unit_id, run_id)
+            if log_path.exists():
+                event_data = {
+                    "role": role,
+                    "harness": harness,
+                    "model": model,
+                    "result": data,
+                }
+                if effort:
+                    event_data["effort"] = effort
+                runlog.append_event(
+                    log_path,
+                    runlog.validate_event({
+                        "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "run": run_id,
+                        "event": "subagent.stopped",
+                        "data": event_data,
+                    }),
+                )
+        except Exception:
+            pass
+
+    return data
 
 
 def preflight_validate(
@@ -281,6 +611,18 @@ def main() -> int:
     preflight_parser.add_argument("--cwd", default=".", help="repository root path")
     preflight_parser.add_argument("--json", action="store_true", help="output JSON")
 
+    dispatch_parser = subparsers.add_parser("dispatch", help="dispatch bounded role invocation")
+    dispatch_parser.add_argument("--role", required=True, help="role to execute")
+    dispatch_parser.add_argument("--prompt", help="prompt text (or via stdin)")
+    dispatch_parser.add_argument("--cwd", default=".", help="working directory")
+    dispatch_parser.add_argument("--selection", help="JSON selection object with harness, model, effort")
+    dispatch_parser.add_argument("--run-overrides", help="JSON string of run-level overrides")
+    dispatch_parser.add_argument("--issue-overrides", help="JSON string of issue-level overrides")
+    dispatch_parser.add_argument("--run-id", help="Run ID for logging")
+    dispatch_parser.add_argument("--unit-id", help="Unit ID for logging")
+    dispatch_parser.add_argument("--state-root", help="State root directory")
+    dispatch_parser.add_argument("--json", action="store_true", help="output JSON")
+
     args = parser.parse_args()
     root = Path(args.cwd).resolve()
     policy = resolve_policy(root)
@@ -313,6 +655,30 @@ def main() -> int:
                 for err in res["errors"]:
                     print(f"  - {err}", file=sys.stderr)
         return 0 if res["valid"] else 1
+
+    elif args.command == "dispatch":
+        prompt = args.prompt
+        if not prompt:
+            prompt = sys.stdin.read()
+        selection = json.loads(args.selection) if getattr(args, "selection", None) else None
+        try:
+            res = dispatch_role(
+                role=args.role,
+                prompt=prompt,
+                cwd=root,
+                selection=selection,
+                policy=policy,
+                run_overrides=run_ov,
+                issue_overrides=issue_ov,
+                run_id=getattr(args, "run_id", None),
+                unit_id=getattr(args, "unit_id", None),
+                state_root=getattr(args, "state_root", None),
+            )
+            print(json.dumps(res, indent=2))
+            return 0
+        except Exception as exc:
+            print(f"dispatch error: {exc}", file=sys.stderr)
+            return 1
 
     else:
         parser.print_help()

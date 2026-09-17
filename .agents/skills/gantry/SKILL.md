@@ -41,10 +41,15 @@ Before a Run, resolve these values once and pass them as `args` to every referen
    the skill. The manual harness-neutral path carries the same instructions.
 6. `roles` comes from resolving repository defaults under `policy["execution"]["roles"]` overlaid by
    optional Run and Issue overrides via `execution.resolve_roles()`. Preflight validates that every selected
-   combination is supported, executable and authenticated (via `execution.preflight_validate()`), refusing
-   to start implementation when validation fails. Derived roles (`requirement-critic`, `plan-critic`, `learner`
-   inheriting from `critic`, and `research` from `plan`) adopt parent defaults unless explicitly set.
-   Model strength guidance between roles is advisory and does not block valid cross-family selections.
+   combination is supported, executable, meets minimum installed harness version requirements, and authenticated
+   (via `execution.preflight_validate()`), refusing to start implementation when validation fails. Derived roles
+   (`requirement-critic`, `plan-critic`, `learner` inheriting from `critic`, and `research` from `plan`) adopt
+   parent defaults unless explicitly set. Bounded native harness invocations execute roles across Codex CLI,
+   Claude Code, OpenCode, and Antigravity (`agy --print`) while the Host Harness retains coordination. External
+   results pass `result.py` contract validation, missing or invalid results trigger Protocol Failure handling,
+   unsupported installed versions are rejected, Critic verification fails visibly on permission or tool limitations,
+   selection identity is honestly recorded in the Run log, and native or configured automatic model fallback
+   is detected and rejected. Model strength guidance between roles is advisory and does not block valid cross-family selections.
 
 Run the standard-library workflow scripts as `python3 <skillDir>/scripts/<script>.py`. `common.py` provides
 the shared Markdown parser and policy resolution; its `--json` path prints the resolved portable runtime.

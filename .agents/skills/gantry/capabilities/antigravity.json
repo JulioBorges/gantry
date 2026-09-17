@@ -6,7 +6,7 @@
   "per_role_model": true,
   "parallel_round": true,
   "skills_path": ".agents/skills",
-  "hook_events": ["PreToolUse"],
+  "hook_events": ["PreToolUse", "PostToolUse"],
   "payload_fields": ["tool_name", "tool_input", "session_id"],
   "models": {
     "gemini-3.8-flash-medium": {"contextWindow": 1000000},
