@@ -39,9 +39,9 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **32 / 32** |
-| Specs completed | **4 / 4** |
-| Execution waves | **17** |
+| Issues completed | **32 / 37** |
+| Specs completed | **4 / 5** |
+| Execution waves | **21** |
 
 ## Specs
 
@@ -66,7 +66,8 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 10 | `windows-validation` | idea, waiting on a machine | 06 | external: a Windows machine | `install.sh`, `guard.py` path handling, `fixture/README.md` | fixture run on Windows (paths, symlinks, hooks); support declared only after the run is recorded |
 | 11 | `caveman-setup` | **done** | 01 | — | `gantry-setup`, portable policy, coordinating instructions, plan and round workflows, tests and documentation | optional environment-installed Caveman lite for agent messages and summaries; explicit repository opt-in; user-managed installation; once-per-Run fallback warning; artifacts and verification preserved |
 | 12 | `role-execution-selection` | **done** | 01 | — | runtime model discovery, context budget, setup policy, plan and round workflows, Run Log, fixture proof | complete executable model catalog; versioned role defaults; cross-harness roles (Codex, Claude Code, OpenCode, Antigravity); explicit Issue recovery; cross-harness and Antigravity proof |
-| 13 | `gantry-site` | planned | 01 | — | `site/`, `.github/workflows/deploy-pages.yml` | Gantry marketing and showcase site on GitHub Pages; Astro + Tailwind, industrial aesthetic, interactive pipeline simulator island, EN/PT-BR toggle, Playwright tests |
+| 13 | `gantry-site` | **done** | 01 | — | `site/`, `.github/workflows/deploy-pages.yml` | Gantry marketing and showcase site on GitHub Pages; Astro + Tailwind, industrial aesthetic, interactive pipeline simulator island, EN/PT-BR toggle, Playwright tests |
+| 14 | `interactive-dashboard` | approved | 01 | 13 | `scripts/dashboard.py`, dashboard static assets, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | unified multi-project kanban, live agent activity streaming, post-critic human gate with interactive approval, gate verdicts, cycle timer freeze on Done |
 
 ### Spec waves (structural)
 
@@ -75,7 +76,7 @@ Computed from *Blocked by* only, the same way issue waves are computed from `## 
 | Wave | Specs | Meaning |
 |---|---|---|
 | A | 01 | everything else builds on the migration |
-| B | 02, 03, 04, 05, 06, 07, 08, 09, 11, 12, 13 | unblocked the moment 01 is done; the order among them is preference, not dependency |
+| B | 02, 03, 04, 05, 06, 07, 08, 09, 11, 12, 13, 14 | unblocked the moment 01 is done; the order among them is preference, not dependency |
 | C | 10 | needs the installer from 06 (and a machine) |
 
 ### Intended order (one spec at a time)
@@ -109,13 +110,11 @@ and 05, so they are written after a few real run logs exist, not before.
 
 ## Where work can start
 
-Spec 11 (`caveman-setup`) and its three-Issue breakdown are approved. Start with `caveman-setup#01`;
-after it completes, `#02` (planning agents) and `#03` (round agents) can proceed concurrently. Their
-shared coordinating instructions belong to `#01`; each later Issue owns its role-specific workflow.
+Spec 14 (`interactive-dashboard`) and its five-Issue breakdown are approved. Start with `interactive-dashboard#01`
+in Wave 17, which builds upon `gantry-migration#11` and `gantry-site#06` to deliver multi-project aggregation and
+the unified Kanban board with project filtering. Subsequent waves deliver live transcript streaming (Wave 18),
+the post-Critic human gate and structured gate verdicts in parallel (Wave 19), and cycle time freezing (Wave 20).
 The feature is ready for implementation, and no implementation has started as part of publication.
-
-Spec 01 is done. The next planned spec is Spec 02 (`opencode-tier`), which is unblocked now that 01 is
-complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel candidate.
 
 ## Progress by spec
 
@@ -127,6 +126,7 @@ complete. Spec 04 (`gate-presets`) is also unblocked as an independent parallel 
 | 11 | `caveman-setup` | 3/3 | 7–8 |
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
 | 13 | `gantry-site` | 6/6 | 12–16 |
+| 14 | `interactive-dashboard` | 0/5 | 17–20 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -248,5 +248,27 @@ of the others, and an issue never waits on anything in its own wave or a later o
 
 - [x] **`gantry-site#06`** — Configure GitHub Pages deployment workflow and complete E2E validation
   <br>↳ blocked by: gantry-site#05
+
+### Wave 17 — 0/1 done
+
+- [ ] **`interactive-dashboard#01`** — Deliver Unified Kanban Board and Project Selector
+  <br>↳ blocked by: gantry-migration#11, gantry-site#06
+
+### Wave 18 — 0/1 done
+
+- [ ] **`interactive-dashboard#02`** — Stream Live Agent Activity and Render Execution Modal
+  <br>↳ blocked by: interactive-dashboard#01
+
+### Wave 19 — 0/2 done
+
+- [ ] **`interactive-dashboard#03`** — Enforce Post-Critic Human Gate and Interactive Approval
+  <br>↳ blocked by: interactive-dashboard#01, interactive-dashboard#02
+- [ ] **`interactive-dashboard#04`** — Render Structured Gate Verdicts and Full Execution History
+  <br>↳ blocked by: interactive-dashboard#01, interactive-dashboard#02
+
+### Wave 20 — 0/1 done
+
+- [ ] **`interactive-dashboard#05`** — Freeze Cycle Timer on Done and Track Phase Durations
+  <br>↳ blocked by: interactive-dashboard#01, interactive-dashboard#03, interactive-dashboard#04
 
 <!-- END GENERATED: issue checklist -->
