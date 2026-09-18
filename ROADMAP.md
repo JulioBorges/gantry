@@ -110,11 +110,10 @@ and 05, so they are written after a few real run logs exist, not before.
 
 ## Where work can start
 
-Spec 14 (`interactive-dashboard`) and its five-Issue breakdown are approved. Start with `interactive-dashboard#01`
-in Wave 17, which builds upon `gantry-migration#11` and `gantry-site#06` to deliver multi-project aggregation and
-the unified Kanban board with project filtering. Subsequent waves deliver live transcript streaming (Wave 18),
-the post-Critic human gate and structured gate verdicts in parallel (Wave 19), and cycle time freezing (Wave 20).
-The feature is ready for implementation, and no implementation has started as part of publication.
+Wave 17 (`interactive-dashboard#01`) is complete. Work can start on Wave 18 with `interactive-dashboard#02`
+(`Stream Live Agent Activity and Render Execution Modal`), which is unblocked now that `#01` is done.
+Subsequent waves deliver the post-Critic human gate (`#03`) and structured gate verdicts (`#04`) in parallel
+in Wave 19, followed by cycle time freezing (`#05`) in Wave 20.
 
 ## Progress by spec
 

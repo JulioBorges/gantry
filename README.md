@@ -390,9 +390,9 @@ Use [GitHub Issues](https://github.com/JulioBorges/gantry/issues) to describe a
 reproducible problem or propose a change. Delivery Issues used by Gantry itself
 remain local Markdown artifacts.
 
-All changes go through a PR; `main` requires passing CI and maintainer review.
+All changes go through a PR; direct commits to `main` are not accepted.
 Only [JulioBorges](https://github.com/JulioBorges) reviews and merges contributions.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the fork workflow, required gates,
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, branching model, required gates,
 and the documented self-review exception for maintainer PRs.
 
 Before changing the pack, read `PRD.md`, `CONTEXT.md`, `docs/adr/`, and `AGENTS.md`.

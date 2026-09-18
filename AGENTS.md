@@ -1,8 +1,16 @@
 ## Product documents
 
 Read before working on Gantry itself: [`PRD.md`](PRD.md) (what the skill pack is and does), [`CONTEXT.md`](CONTEXT.md)
-(the glossary — use its terms: Issue not PBI, Spec not Living Spec, Run not pipeline) and [`docs/adr/`](docs/adr/)
-(standing decisions; ADR-0004 explains why Gantry is a skill pack and not an engine). The Gantry pack provides the workflow skills in `.agents/skills/` (`gantry`, `gantry-setup`, `gantry-dashboard`).
+(the glossary — use its terms: Issue not PBI, Spec not Living Spec, Run not pipeline), [`docs/adr/`](docs/adr/)
+(standing decisions; ADR-0004 explains why Gantry is a skill pack and not an engine), and [`CONTRIBUTING.md`](CONTRIBUTING.md)
+(contribution workflow and Git rules: `main` never accepts direct commits; all work proceeds on a feature branch). The Gantry pack provides the workflow skills in `.agents/skills/` (`gantry`, `gantry-setup`, `gantry-dashboard`).
+
+## Git Workflow and Branching
+
+Consult [`CONTRIBUTING.md`](CONTRIBUTING.md) for the mandatory Git workflow:
+- The `main` branch does not accept direct commits from any contributor or agent.
+- Work must always be performed on a dedicated branch (`feat/<topic>`, `fix/<topic>`, or `docs/<topic>`).
+- Changes must pass all local verification gates before opening a pull request.
 
 ## Agent skills
 
