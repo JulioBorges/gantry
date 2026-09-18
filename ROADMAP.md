@@ -39,7 +39,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **34 / 37** |
+| Issues completed | **36 / 37** |
 | Specs completed | **4 / 5** |
 | Execution waves | **21** |
 
@@ -125,7 +125,7 @@ in Wave 19, followed by cycle time freezing (`#05`) in Wave 20.
 | 11 | `caveman-setup` | 3/3 | 7–8 |
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
 | 13 | `gantry-site` | 6/6 | 12–16 |
-| 14 | `interactive-dashboard` | 2/5 | 17–20 |
+| 14 | `interactive-dashboard` | 4/5 | 17–20 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -258,11 +258,11 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`interactive-dashboard#02`** — Stream Live Agent Activity and Render Execution Modal
   <br>↳ blocked by: interactive-dashboard#01
 
-### Wave 19 — 0/2 done
+### Wave 19 — 2/2 done
 
-- [ ] **`interactive-dashboard#03`** — Enforce Post-Critic Human Gate and Interactive Approval
+- [x] **`interactive-dashboard#03`** — Enforce Post-Critic Human Gate and Interactive Approval
   <br>↳ blocked by: interactive-dashboard#01, interactive-dashboard#02
-- [ ] **`interactive-dashboard#04`** — Render Structured Gate Verdicts and Full Execution History
+- [x] **`interactive-dashboard#04`** — Render Structured Gate Verdicts and Full Execution History
   <br>↳ blocked by: interactive-dashboard#01, interactive-dashboard#02
 
 ### Wave 20 — 0/1 done

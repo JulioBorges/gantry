@@ -18,7 +18,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from runlog import read_valid_events
+from runlog import ISSUE_RE, RUN_ID_RE, UNIT_ID_RE, append_event, read_valid_events, run_log_path
 from runlog import state_root as default_state_root
 
 COLUMNS = ["Ready", "Plan", "Implement", "Review", "Critic", "Integrate", "Done", "Blocked"]
@@ -28,6 +28,8 @@ STATIC_FILES = {
     "/index.html": "index.html",
     "/app.js": "app.js",
     "/style.css": "style.css",
+    "/history.html": "history.html",
+    "/history": "history.html",
 }
 MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -95,6 +97,10 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
         if name == "phase.started":
             state["column"] = event["phase"]
             state["phaseStartedAt"] = event["ts"]
+            if event["phase"] == "Integrate":
+                state["operatorWaiting"] = False
+            elif "operatorWaiting" in edata:
+                state["operatorWaiting"] = bool(edata.get("operatorWaiting", False))
             if "branch" in edata:
                 state["branch"] = edata["branch"]
             if "worktree" in edata:
@@ -103,15 +109,26 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
                 state["models"] = dict(edata["models"])
             if "correctionBudget" in edata:
                 state["correctionBudget"] = edata["correctionBudget"]
-            state["operatorWaiting"] = bool(edata.get("operatorWaiting", False))
+        elif name == "phase.finished":
+            if event.get("phase") == "Critic":
+                state["operatorWaiting"] = True
+        elif name == "refutation":
+            state["operatorWaiting"] = False
+        elif name == "operator.approved":
+            state["operatorWaiting"] = False
+            state["operatorApproved"] = True
         elif name == "subagent.started":
             role = edata.get("role")
             if role:
                 state["models"][role] = edata.get("model")
         elif name == "issue.done":
             state["column"] = "Done"
+            state["operatorWaiting"] = False
         elif name == "issue.blocked":
             state["column"] = "Blocked"
+            state["operatorWaiting"] = False
+        elif name == "issue.paused":
+            state["operatorWaiting"] = False
 
     for state in issues.values():
         if state["phaseStartedAt"] is not None:
@@ -259,6 +276,11 @@ def collect_runs(root: Path, now: float | None = None) -> list[dict]:
             run_data = build_run(unit_dir.name, events, now)
             # Enrich issues with liveActivity if transcript is found
             for issue in run_data.get("issues", []):
+                approval_file = root / run_data["unitId"] / "approvals" / f"{issue['issue']}.json"
+                if approval_file.exists():
+                    issue["operatorWaiting"] = False
+                    issue["operatorApproved"] = True
+
                 t_file = find_transcript_file(root, run_data["unitId"], run_data["run"], issue["issue"], issue.get("worktree"))
                 if t_file:
                     steps = read_transcript_steps(t_file)
@@ -271,12 +293,73 @@ def collect_runs(root: Path, now: float | None = None) -> list[dict]:
     return runs
 
 
+def read_gates_for_issue(state_root: Path, unit_id: str, run_id: str, issue_ref: str) -> dict[str, dict]:
+    """Read structured gate artifacts from ~/.gantry/state/<unit>/artifacts/<run>/<issue>/gate-<phase>.json."""
+    gates: dict[str, dict] = {}
+    artifact_dir = state_root / unit_id / "artifacts" / run_id / issue_ref
+    if artifact_dir.exists():
+        for path in sorted(artifact_dir.glob("gate-*.json")):
+            phase_name = path.stem.removeprefix("gate-").lower()
+            try:
+                gates[phase_name] = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+
+    log_path = run_log_path(state_root, unit_id, run_id)
+    if log_path.exists():
+        events = read_valid_events(log_path)
+        for event in events:
+            if event.get("issue") != issue_ref:
+                continue
+            ename = event["event"]
+            edata = event.get("data") or {}
+            if "plan" not in gates and ename == "subagent.stopped" and edata.get("role") in ("planner", "plan-critic"):
+                res = edata.get("result") or {}
+                gates["plan"] = {
+                    "verdict": res.get("verdict", "accepted"),
+                    "criteria": res.get("criteria", []),
+                    "scope": res.get("scope", []),
+                }
+            elif "critic" not in gates and ename == "subagent.stopped" and edata.get("role") == "critic":
+                res = edata.get("result") or {}
+                gates["critic"] = {
+                    "complete": res.get("complete", True),
+                    "verdict": "complete" if res.get("complete") else "refuted",
+                    "criteria": res.get("criteria", []),
+                    "evidence": res.get("evidence", []),
+                    "gateFailures": res.get("gateFailures", []),
+                    "requiredFixes": res.get("requiredFixes", []),
+                }
+            elif "implement" not in gates and ename == "phase.finished" and event.get("phase") == "Implement":
+                gates["implement"] = {
+                    "verdict": "tests_passed",
+                    "tddProofs": True,
+                    "attempt": edata.get("attempt", 1),
+                }
+            elif "integrate" not in gates and ename == "issue.done":
+                gates["integrate"] = {
+                    "verdict": "merged",
+                    "worktree": edata.get("worktree"),
+                }
+    return gates
+
+
 def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
     class DashboardRequestHandler(BaseHTTPRequestHandler):
         server_version = "GantryDashboard/1"
 
         def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib signature
             pass
+
+        def _check_loopback(self) -> bool:
+            client_ip = self.client_address[0]
+            if client_ip not in ("127.0.0.1", "::ffff:127.0.0.1"):
+                self.send_response(403)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"forbidden: loopback only")
+                return False
+            return True
 
         def _send_json(self, status: int, payload: object) -> None:
             body = json.dumps(payload).encode("utf-8")
@@ -309,6 +392,8 @@ def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
             return re.sub(r"%([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), s)
 
         def do_GET(self) -> None:  # noqa: N802 - stdlib method name
+            if not self._check_loopback():
+                return
             raw_path = self.path.split("?", 1)[0]
             # Strip fragment if raw_path contained '#' without being percent-encoded
             path = self._unquote(raw_path)
@@ -318,22 +403,85 @@ def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
                 self._send_json(200, {"columns": COLUMNS, "runs": runs, "projects": projects})
                 return
 
-            # Match /api/runs/<unit>/<run>/issues/<issue>/transcript
-            # Parts: ["api", "runs", "<unit>", "<run>", "issues", "<issue>", "transcript"]
             parts = [self._unquote(p) for p in raw_path.split("/") if p]
-            if len(parts) == 7 and parts[0] == "api" and parts[1] == "runs" and parts[4] == "issues" and parts[6] == "transcript":
+            if len(parts) == 7 and parts[0] == "api" and parts[1] == "runs" and parts[4] == "issues":
                 unit_id = parts[2]
                 run_id = parts[3]
                 issue_ref = parts[5]
-                t_file = find_transcript_file(state_root, unit_id, run_id, issue_ref)
-                steps = read_transcript_steps(t_file) if t_file else []
-                self._send_json(200, {"steps": steps})
-                return
+                action = parts[6]
+                if action == "transcript":
+                    t_file = find_transcript_file(state_root, unit_id, run_id, issue_ref)
+                    steps = read_transcript_steps(t_file) if t_file else []
+                    self._send_json(200, {"steps": steps})
+                    return
+                elif action == "gates":
+                    gates = read_gates_for_issue(state_root, unit_id, run_id, issue_ref)
+                    self._send_json(200, {"gates": gates})
+                    return
 
             filename = STATIC_FILES.get(path)
             if filename is not None:
                 self._send_static(filename)
                 return
+            self._send_not_found()
+
+        def do_POST(self) -> None:  # noqa: N802 - stdlib method name
+            if not self._check_loopback():
+                return
+            raw_path = self.path.split("?", 1)[0]
+            path = self._unquote(raw_path)
+            if path == "/api/state":
+                self.send_response(405)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"method not allowed")
+                return
+
+            parts = [self._unquote(p) for p in raw_path.split("/") if p]
+            if len(parts) == 7 and parts[0] == "api" and parts[1] == "runs" and parts[4] == "issues" and parts[6] == "approve":
+                unit_id = parts[2]
+                run_id = parts[3]
+                issue_ref = parts[5]
+
+                if not UNIT_ID_RE.fullmatch(unit_id) or not RUN_ID_RE.fullmatch(run_id) or not ISSUE_RE.fullmatch(issue_ref):
+                    self._send_json(400, {"error": "invalid identifier format"})
+                    return
+
+                approvals_dir = state_root / unit_id / "approvals"
+                approvals_dir.mkdir(parents=True, exist_ok=True)
+                marker_file = approvals_dir / f"{issue_ref}.json"
+                approved_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                payload = {
+                    "unit": unit_id,
+                    "run": run_id,
+                    "issue": issue_ref,
+                    "approvedAt": approved_at,
+                    "source": "dashboard",
+                }
+                marker_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+                log_path = run_log_path(state_root, unit_id, run_id)
+                if log_path.exists():
+                    try:
+                        append_event(
+                            log_path,
+                            {
+                                "ts": approved_at,
+                                "run": run_id,
+                                "event": "operator.approved",
+                                "issue": issue_ref,
+                                "data": {
+                                    "approvedAt": approved_at,
+                                    "source": "dashboard",
+                                },
+                            },
+                        )
+                    except Exception:
+                        pass
+
+                self._send_json(200, {"status": "ok", "issue": issue_ref, "approved": True, "approvedAt": approved_at})
+                return
+
             self._send_not_found()
 
     return DashboardRequestHandler

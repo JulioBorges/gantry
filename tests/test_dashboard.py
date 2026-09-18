@@ -220,6 +220,19 @@ class DashboardHttpServerTests(unittest.TestCase):
         except urllib.error.HTTPError as error:
             return error.code, error.read()
 
+    def post(self, path: str, data: bytes = b"{}") -> tuple[int, bytes]:
+        try:
+            request = urllib.request.Request(
+                f"{self.base_url}{path}",
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as error:
+            return error.code, error.read()
+
     def test_binds_loopback_only(self) -> None:
         self.assertEqual("127.0.0.1", self.server.server_address[0])
         with self.assertRaises(dashboard.DashboardError):
@@ -346,6 +359,93 @@ class DashboardHttpServerTests(unittest.TestCase):
         data = json.loads(body)
         self.assertEqual({"steps": []}, data)
 
+    def test_post_approve_creates_marker_and_appends_runlog(self) -> None:
+        unit = "111122223333"
+        run = "run-appr-01"
+        issue = "sample#01"
+        log_path = self.state_root / unit / "runs" / f"{run}.jsonl"
+        write_event(log_path, started_event(run, 900, iso(30), "/repo/appr"))
+        write_event(log_path, {
+            "ts": iso(20), "run": run, "event": "phase.started",
+            "issue": issue, "phase": "Critic", "data": {"operatorWaiting": True},
+        })
+
+        status, body = self.post(f"/api/runs/{unit}/{run}/issues/{urllib.parse.quote(issue, safe='')}/approve")
+        self.assertEqual(200, status)
+        data = json.loads(body)
+        self.assertEqual("ok", data.get("status"))
+        self.assertTrue(data.get("approved"))
+
+        # Verify marker file
+        marker_file = self.state_root / unit / "approvals" / f"{issue}.json"
+        self.assertTrue(marker_file.exists())
+        marker_data = json.loads(marker_file.read_text(encoding="utf-8"))
+        self.assertEqual(issue, marker_data.get("issue"))
+        self.assertEqual("dashboard", marker_data.get("source"))
+
+        # Verify operator.approved event in run log
+        lines = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+        events = [line["event"] for line in lines]
+        self.assertIn("operator.approved", events)
+
+        # Verify state endpoint reflects approval
+        status, body = self.get("/api/state")
+        self.assertEqual(200, status)
+        state_data = json.loads(body)
+        matched_issue = state_data["runs"][0]["issues"][0]
+        self.assertFalse(matched_issue.get("operatorWaiting", False))
+        self.assertTrue(matched_issue.get("operatorApproved", False))
+
+    def test_post_approve_rejects_invalid_identifiers(self) -> None:
+        # Invalid unit
+        status, _ = self.post(f"/api/runs/bad-unit/run-01/issues/{urllib.parse.quote('sample#01', safe='')}/approve")
+        self.assertEqual(400, status)
+
+        # Invalid issue
+        status, _ = self.post(f"/api/runs/111122223333/run-01/issues/{urllib.parse.quote('bad-issue', safe='')}/approve")
+        self.assertEqual(400, status)
+
+    def test_gates_endpoint_returns_structured_verdicts(self) -> None:
+        unit = "unit-gate000001"
+        run = "run-gate-01"
+        issue = "sample#02"
+        log_path = self.state_root / unit / "runs" / f"{run}.jsonl"
+        write_event(log_path, started_event(run, 900, iso(50), "/repo/gate"))
+
+        # Persist structured artifacts under ~/.gantry/state/<unit>/artifacts/<run>/<issue>/gate-<phase>.json
+        artifacts_dir = self.state_root / unit / "artifacts" / run / issue
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        (artifacts_dir / "gate-plan.json").write_text(json.dumps({
+            "verdict": "accepted",
+            "criteria": ["Criterion 1", "Criterion 2"],
+            "scope": ["Slice 1"],
+        }), encoding="utf-8")
+        (artifacts_dir / "gate-critic.json").write_text(json.dumps({
+            "complete": True,
+            "verdict": "complete",
+            "criteria": ["Criterion 1", "Criterion 2"],
+            "evidence": ["Tests green", "Build clean"],
+        }), encoding="utf-8")
+
+        quoted_issue = urllib.parse.quote(issue, safe="")
+        status, body = self.get(f"/api/runs/{unit}/{run}/issues/{quoted_issue}/gates")
+        self.assertEqual(200, status)
+        data = json.loads(body)
+        self.assertIn("gates", data)
+        self.assertIn("plan", data["gates"])
+        self.assertEqual("accepted", data["gates"]["plan"]["verdict"])
+        self.assertIn("critic", data["gates"])
+        self.assertTrue(data["gates"]["critic"]["complete"])
+
+    def test_history_html_served(self) -> None:
+        status, body = self.get("/history.html")
+        self.assertEqual(200, status)
+        self.assertIn("GANTRY", body.decode("utf-8"))
+        self.assertIn("HISTORY", body.decode("utf-8"))
+
+        status, body = self.get("/history")
+        self.assertEqual(200, status)
+
 
 class DashboardCliTests(unittest.TestCase):
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -413,6 +513,36 @@ class DashboardCliTests(unittest.TestCase):
                 "sys", "tempfile", "threading", "time", "unittest", "urllib", "pathlib",
             },
         )
+
+    def test_wait_gate_script(self) -> None:
+        wait_gate_script = REPO_ROOT / ".agents" / "skills" / "gantry" / "scripts" / "wait_gate.py"
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            unit = "112233445566"
+            run = "run-wait-01"
+            issue = "sample#01"
+
+            # Check without marker exits 1
+            res_check_fail = subprocess.run(
+                [sys.executable, str(wait_gate_script), "--issue", issue, "--unit", unit, "--run", run, "--state-root", str(root), "--check"],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(1, res_check_fail.returncode)
+
+            # Approve via CLI
+            res_approve = subprocess.run(
+                [sys.executable, str(wait_gate_script), "--issue", issue, "--unit", unit, "--run", run, "--state-root", str(root), "--approve"],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(0, res_approve.returncode)
+            self.assertIn('"approved": true', res_approve.stdout.lower())
+
+            # Check with marker exits 0
+            res_check_ok = subprocess.run(
+                [sys.executable, str(wait_gate_script), "--issue", issue, "--unit", unit, "--run", run, "--state-root", str(root), "--check"],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(0, res_check_ok.returncode)
 
 
 if __name__ == "__main__":

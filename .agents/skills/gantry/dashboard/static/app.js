@@ -62,6 +62,21 @@
       card.appendChild(badgesContainer);
     }
 
+    if (issue.operatorWaiting) {
+      const actionBar = document.createElement("div");
+      actionBar.className = "card-action-bar";
+      const approveBtn = document.createElement("button");
+      approveBtn.type = "button";
+      approveBtn.className = "btn-approve-gate";
+      approveBtn.textContent = "Aprovar Gate";
+      approveBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        approveGate(issue, approveBtn);
+      });
+      actionBar.appendChild(approveBtn);
+      card.appendChild(actionBar);
+    }
+
     card.addEventListener("click", function () {
       openExecutionModal(issue);
     });
@@ -369,6 +384,202 @@
     });
   }
 
+  function approveGate(issue, btnEl, onComplete) {
+    if (!issue || !issue.unitId || !issue.run || !issue.issue) return;
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.textContent = "Aprovando...";
+    }
+    const encodedIssue = encodeURIComponent(issue.issue);
+    fetch("/api/runs/" + issue.unitId + "/" + issue.run + "/issues/" + encodedIssue + "/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    })
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (data) {
+        if (btnEl) {
+          btnEl.textContent = "Aprovado ✓";
+          btnEl.classList.add("approved");
+        }
+        issue.operatorWaiting = false;
+        issue.operatorApproved = true;
+        const gateAlert = document.getElementById("modal-gate-alert");
+        if (gateAlert) {
+          gateAlert.className = "gate-alert success";
+          const alertText = document.getElementById("modal-gate-alert-text");
+          if (alertText) alertText.textContent = "✓ Gate aprovado pelo operador. Iniciando integração...";
+        }
+        const activityBadge = document.getElementById("modal-activity-badge");
+        if (activityBadge) {
+          activityBadge.textContent = "GATE APROVADO";
+          activityBadge.className = "badge live";
+        }
+        if (typeof onComplete === "function") {
+          onComplete(data);
+        }
+        poll();
+      })
+      .catch(function () {
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.textContent = "Erro ao Aprovar";
+        }
+      });
+  }
+
+  function renderGates(gates, container) {
+    container.innerHTML = "";
+    if (!gates || Object.keys(gates).length === 0) {
+      container.innerHTML = '<div class="transcript-loading">Nenhum parecer de gate registrado ainda.</div>';
+      return;
+    }
+
+    const phases = [
+      { key: "plan", label: "Gate 1: Planejamento (Plan)", desc: "Critérios de aceitação e escopo planejado" },
+      { key: "implement", label: "Gate 2: Implementação (Implement)", desc: "Provas de TDD e cobertura de testes" },
+      { key: "critic", label: "Gate 3: Avaliação Adversarial (Critic)", desc: "Verificação rigorosa de critérios e evidências" },
+      { key: "integrate", label: "Gate 4: Integração (Integrate)", desc: "Verificação pós-merge e entrega de código" },
+    ];
+
+    phases.forEach(function (phase) {
+      const gdata = gates[phase.key];
+      const card = document.createElement("div");
+      card.className = "gate-card";
+
+      const header = document.createElement("div");
+      header.className = "gate-card-header";
+      const title = document.createElement("span");
+      title.className = "gate-card-title";
+      title.textContent = phase.label;
+      header.appendChild(title);
+
+      const statusBadge = document.createElement("span");
+      if (gdata) {
+        const isPassed = gdata.complete === true || gdata.verdict === "accepted" || gdata.verdict === "complete" || gdata.verdict === "tests_passed" || gdata.verdict === "merged";
+        statusBadge.className = "badge " + (isPassed ? "live" : "stale");
+        statusBadge.textContent = isPassed ? "APROVADO" : "PENDENTE / REFUTADO";
+      } else {
+        statusBadge.className = "badge";
+        statusBadge.textContent = "NÃO INICIADO";
+      }
+      header.appendChild(statusBadge);
+      card.appendChild(header);
+
+      const body = document.createElement("div");
+      body.className = "gate-card-body";
+
+      if (!gdata) {
+        body.innerHTML = '<div style="color: var(--slate-500); font-style: italic;">Aguardando execução desta fase.</div>';
+      } else {
+        if (phase.key === "plan") {
+          const scopeDiv = document.createElement("div");
+          scopeDiv.className = "gate-metric";
+          scopeDiv.innerHTML = '<span class="gate-metric-label">Escopo Planejado:</span><span>' + (Array.isArray(gdata.scope) ? gdata.scope.length + " itens" : (gdata.scope || "Definido")) + '</span>';
+          body.appendChild(scopeDiv);
+
+          if (gdata.criteria && Array.isArray(gdata.criteria)) {
+            const critDiv = document.createElement("div");
+            critDiv.innerHTML = '<div class="gate-metric-label">Critérios Avaliados:</div>';
+            const list = document.createElement("ul");
+            list.className = "gate-checklist";
+            gdata.criteria.forEach(function (c) {
+              const li = document.createElement("li");
+              li.className = "gate-checklist-item";
+              li.textContent = "✓ " + (typeof c === "string" ? c : c.text || JSON.stringify(c));
+              list.appendChild(li);
+            });
+            critDiv.appendChild(list);
+            body.appendChild(critDiv);
+          }
+        } else if (phase.key === "implement") {
+          const tddDiv = document.createElement("div");
+          tddDiv.className = "gate-metric";
+          tddDiv.innerHTML = '<span class="gate-metric-label">TDD Proofs:</span><span>' + (gdata.tddProofs ? "Passou (Red-Green Verificado)" : (gdata.verdict || "Concluído")) + '</span>';
+          body.appendChild(tddDiv);
+
+          if (gdata.attempt) {
+            const attDiv = document.createElement("div");
+            attDiv.className = "gate-metric";
+            attDiv.innerHTML = '<span class="gate-metric-label">Tentativas:</span><span>' + gdata.attempt + '</span>';
+            body.appendChild(attDiv);
+          }
+        } else if (phase.key === "critic") {
+          const compDiv = document.createElement("div");
+          compDiv.className = "gate-metric";
+          compDiv.innerHTML = '<span class="gate-metric-label">Veredito Adversarial:</span><span>' + (gdata.complete ? "Aprovado (Zero Refutações)" : "Refutado") + '</span>';
+          body.appendChild(compDiv);
+
+          if (gdata.evidence && Array.isArray(gdata.evidence) && gdata.evidence.length > 0) {
+            const evDiv = document.createElement("div");
+            evDiv.innerHTML = '<div class="gate-metric-label">Evidências de Verificação:</div>';
+            const list = document.createElement("ul");
+            list.className = "gate-checklist";
+            gdata.evidence.forEach(function (e) {
+              const li = document.createElement("li");
+              li.className = "gate-checklist-item";
+              li.textContent = "✓ " + (typeof e === "string" ? e : JSON.stringify(e));
+              list.appendChild(li);
+            });
+            evDiv.appendChild(list);
+            body.appendChild(evDiv);
+          }
+
+          if (gdata.gateFailures && Array.isArray(gdata.gateFailures) && gdata.gateFailures.length > 0) {
+            const failDiv = document.createElement("div");
+            failDiv.innerHTML = '<div class="gate-metric-label" style="color: var(--red-alert)">Falhas Detectadas:</div>';
+            const list = document.createElement("ul");
+            list.className = "gate-checklist";
+            gdata.gateFailures.forEach(function (f) {
+              const li = document.createElement("li");
+              li.className = "gate-checklist-item";
+              li.style.color = "var(--red-alert)";
+              li.textContent = "✗ " + (typeof f === "string" ? f : JSON.stringify(f));
+              list.appendChild(li);
+            });
+            failDiv.appendChild(list);
+            body.appendChild(failDiv);
+          }
+        } else if (phase.key === "integrate") {
+          const intDiv = document.createElement("div");
+          intDiv.className = "gate-metric";
+          intDiv.innerHTML = '<span class="gate-metric-label">Status de Integração:</span><span>' + (gdata.verdict === "merged" ? "Merge Concluído com Sucesso" : (gdata.verdict || "Concluído")) + '</span>';
+          body.appendChild(intDiv);
+          if (gdata.worktree) {
+            const wtDiv = document.createElement("div");
+            wtDiv.className = "gate-metric";
+            wtDiv.innerHTML = '<span class="gate-metric-label">Worktree:</span><span>' + gdata.worktree + '</span>';
+            body.appendChild(wtDiv);
+          }
+        }
+      }
+
+      card.appendChild(body);
+      container.appendChild(card);
+    });
+  }
+
+  function fetchModalGates(issue) {
+    if (!issue || !issue.unitId || !issue.run || !issue.issue) return;
+    const container = document.getElementById("gates-container");
+    if (!container) return;
+
+    const encodedIssue = encodeURIComponent(issue.issue);
+    fetch("/api/runs/" + issue.unitId + "/" + issue.run + "/issues/" + encodedIssue + "/gates", { cache: "no-store" })
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (data) {
+        if (activeModalIssue && activeModalIssue.issue === issue.issue) {
+          renderGates(data.gates || {}, container);
+        }
+      })
+      .catch(function () {
+        // Keep existing on error
+      });
+  }
+
   function fetchModalTranscript(issue) {
     if (!issue || !issue.unitId || !issue.run || !issue.issue) return;
     const container = document.getElementById("modal-transcript-container");
@@ -417,15 +628,60 @@
     document.getElementById("modal-meta-run").textContent = "RUN: " + (issue.run || "-");
     document.getElementById("modal-meta-branch").textContent = "BRANCH: " + (issue.branch || "-");
 
-    const container = document.getElementById("modal-transcript-container");
-    container.innerHTML = '<div class="transcript-loading">Loading transcript steps...</div>';
+    // Gate alert strip
+    const gateAlert = document.getElementById("modal-gate-alert");
+    const modalApproveBtn = document.getElementById("modal-approve-btn");
+    if (gateAlert && modalApproveBtn) {
+      if (issue.operatorWaiting) {
+        gateAlert.className = "gate-alert";
+        gateAlert.classList.remove("hidden");
+        modalApproveBtn.disabled = false;
+        modalApproveBtn.textContent = "Aprovar Gate";
+        modalApproveBtn.onclick = function () {
+          approveGate(issue, modalApproveBtn);
+        };
+      } else {
+        gateAlert.classList.add("hidden");
+      }
+    }
+
+    // Default to gates tab
+    const tabGates = document.getElementById("tab-btn-gates");
+    const tabHistory = document.getElementById("tab-btn-history");
+    const paneGates = document.getElementById("tab-content-gates");
+    const paneHistory = document.getElementById("tab-content-history");
+    if (tabGates && tabHistory && paneGates && paneHistory) {
+      tabGates.classList.add("active");
+      tabHistory.classList.remove("active");
+      paneGates.classList.remove("hidden");
+      paneHistory.classList.add("hidden");
+    }
+
+    // Popout button
+    const popoutBtn = document.getElementById("btn-popout-history");
+    if (popoutBtn) {
+      popoutBtn.onclick = function () {
+        const url = "/history.html?unit=" + encodeURIComponent(issue.unitId) + "&run=" + encodeURIComponent(issue.run) + "&issue=" + encodeURIComponent(issue.issue);
+        window.open(url, "_blank");
+      };
+    }
+
+    const gatesContainer = document.getElementById("gates-container");
+    if (gatesContainer) gatesContainer.innerHTML = '<div class="transcript-loading">Carregando pareceres dos gates...</div>';
+
+    const transcriptContainer = document.getElementById("modal-transcript-container");
+    if (transcriptContainer) transcriptContainer.innerHTML = '<div class="transcript-loading">Awaiting transcript events...</div>';
 
     modal.classList.remove("hidden");
 
+    fetchModalGates(issue);
     fetchModalTranscript(issue);
     if (modalPollInterval) clearInterval(modalPollInterval);
     modalPollInterval = setInterval(function () {
-      if (activeModalIssue) fetchModalTranscript(activeModalIssue);
+      if (activeModalIssue) {
+        fetchModalGates(activeModalIssue);
+        fetchModalTranscript(activeModalIssue);
+      }
     }, POLL_INTERVAL_MS);
   }
 
@@ -471,6 +727,27 @@
         closeExecutionModal();
       }
     });
+
+    const tabGates = document.getElementById("tab-btn-gates");
+    const tabHistory = document.getElementById("tab-btn-history");
+    const paneGates = document.getElementById("tab-content-gates");
+    const paneHistory = document.getElementById("tab-content-history");
+
+    if (tabGates && tabHistory && paneGates && paneHistory) {
+      tabGates.addEventListener("click", function () {
+        tabGates.classList.add("active");
+        tabHistory.classList.remove("active");
+        paneGates.classList.remove("hidden");
+        paneHistory.classList.add("hidden");
+      });
+
+      tabHistory.addEventListener("click", function () {
+        tabHistory.classList.add("active");
+        tabGates.classList.remove("active");
+        paneHistory.classList.remove("hidden");
+        paneGates.classList.add("hidden");
+      });
+    }
   }
 
   function poll() {

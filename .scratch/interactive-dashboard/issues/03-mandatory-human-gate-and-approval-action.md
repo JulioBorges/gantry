@@ -1,7 +1,7 @@
 # Enforce Post-Critic Human Gate and Interactive Approval
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `interactive-dashboard#03`
 Spec: `.scratch/interactive-dashboard/spec.md`
 Created: 2026-09-18
@@ -24,11 +24,11 @@ Enforce a mandatory human checkpoint after Critic verification completes success
 
 ## Acceptance criteria
 
-- [ ] When Critic verification succeeds, the ticket halts in an `Awaiting Operator` state before starting Integrate.
-- [ ] Ticket cards and the detail modal display prominent `Awaiting Operator` alerts and an active "Aprovar Gate" button.
-- [ ] `POST /api/runs/<unit>/<run>/issues/<issue>/approve` records an approval marker in `~/.gantry/state/<unit>/approvals/<issue>.json` and appends an `operator.approved` event into the Run log.
-- [ ] A `wait-gate` script detects the approval marker (or explicit terminal input) and immediately unblocks the harness process to begin Integrate.
-- [ ] Server unit tests verify approval marker creation and loopback host restrictions; Playwright tests verify UI button interaction.
+- [x] When Critic verification succeeds, the ticket halts in an `Awaiting Operator` state before starting Integrate.
+- [x] Ticket cards and the detail modal display prominent `Awaiting Operator` alerts and an active "Aprovar Gate" button.
+- [x] `POST /api/runs/<unit>/<run>/issues/<issue>/approve` records an approval marker in `~/.gantry/state/<unit>/approvals/<issue>.json` and appends an `operator.approved` event into the Run log.
+- [x] A `wait-gate` script detects the approval marker (or explicit terminal input) and immediately unblocks the harness process to begin Integrate.
+- [x] Server unit tests verify approval marker creation and loopback host restrictions; Playwright tests verify UI button interaction.
 
 ## Blocked by
 

@@ -70,9 +70,31 @@
         <span id="modal-meta-run" class="meta-item">RUN: -</span>
         <span id="modal-meta-branch" class="meta-item">BRANCH: -</span>
       </div>
+      <div id="modal-gate-alert" class="gate-alert hidden">
+        <div class="gate-alert-content">
+          <span class="gate-alert-icon">⚠️</span>
+          <span id="modal-gate-alert-text">Critic verificado com sucesso. Aguardando aprovação do operador para iniciar Integração.</span>
+        </div>
+        <button id="modal-approve-btn" class="btn-approve-gate" type="button">Aprovar Gate</button>
+      </div>
+      <div class="modal-tabs">
+        <button id="tab-btn-gates" class="modal-tab active" type="button" data-tab="gates">Pareceres dos Gates</button>
+        <button id="tab-btn-history" class="modal-tab" type="button" data-tab="history">Histórico Completo</button>
+      </div>
       <div class="modal-body">
-        <div id="modal-transcript-container" class="transcript-stream">
-          <div class="transcript-loading">Awaiting transcript events...</div>
+        <div id="tab-content-gates" class="tab-pane active">
+          <div id="gates-container" class="gates-container">
+            <div class="transcript-loading">Carregando pareceres dos gates...</div>
+          </div>
+        </div>
+        <div id="tab-content-history" class="tab-pane hidden">
+          <div class="history-toolbar">
+            <span class="history-hint">Passos, ferramentas e logs do transcript</span>
+            <button id="btn-popout-history" class="btn-popout" type="button">Abrir em Nova Janela ↗</button>
+          </div>
+          <div id="modal-transcript-container" class="transcript-stream">
+            <div class="transcript-loading">Awaiting transcript events...</div>
+          </div>
         </div>
       </div>
     </div>

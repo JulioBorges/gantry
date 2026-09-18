@@ -163,4 +163,78 @@ test.describe('Dashboard Theme & Design Visual Regression Check', () => {
       await expect(modal).toHaveClass(/hidden/);
     }
   });
+
+  test('should support tab navigation between Pareceres dos Gates and Histórico Completo in modal', async ({ page }) => {
+    try {
+      const response = await page.goto('http://127.0.0.1:4600/', { timeout: 3000 });
+      if (!response || !response.ok()) {
+        test.skip(true, 'Local dashboard server is not active on port 4600');
+        return;
+      }
+    } catch {
+      test.skip(true, 'Local dashboard server is not active on port 4600');
+      return;
+    }
+
+    const modal = page.locator('#execution-modal');
+    const tabGates = page.locator('#tab-btn-gates');
+    const tabHistory = page.locator('#tab-btn-history');
+    const paneGates = page.locator('#tab-content-gates');
+    const paneHistory = page.locator('#tab-content-history');
+    const popoutBtn = page.locator('#btn-popout-history');
+
+    const cards = page.locator('.card');
+    const cardCount = await cards.count();
+    if (cardCount > 0) {
+      await cards.first().click();
+      await expect(modal).toBeVisible();
+
+      // 1. Gates tab active by default
+      await expect(tabGates).toBeVisible();
+      await expect(tabGates).toHaveClass(/active/);
+      await expect(paneGates).toBeVisible();
+      await expect(paneGates).not.toHaveClass(/hidden/);
+
+      // 2. Click history tab
+      await expect(tabHistory).toBeVisible();
+      await tabHistory.click();
+      await expect(tabHistory).toHaveClass(/active/);
+      await expect(tabGates).not.toHaveClass(/active/);
+      await expect(paneHistory).toBeVisible();
+      await expect(paneHistory).not.toHaveClass(/hidden/);
+      await expect(paneGates).toHaveClass(/hidden/);
+
+      // 3. Verify popout button in history toolbar
+      await expect(popoutBtn).toBeVisible();
+      await expect(popoutBtn).toContainText('Abrir em Nova Janela');
+
+      // 4. Switch back to gates tab
+      await tabGates.click();
+      await expect(tabGates).toHaveClass(/active/);
+      await expect(paneGates).toBeVisible();
+
+      await page.locator('#modal-close-btn').click();
+    }
+  });
+
+  test('should render standalone history page at /history.html', async ({ page }) => {
+    try {
+      const response = await page.goto('http://127.0.0.1:4600/history.html', { timeout: 3000 });
+      if (!response || !response.ok()) {
+        test.skip(true, 'Local dashboard server is not active on port 4600');
+        return;
+      }
+    } catch {
+      test.skip(true, 'Local dashboard server is not active on port 4600');
+      return;
+    }
+
+    const brandTitle = page.locator('.brand-title');
+    await expect(brandTitle).toBeVisible();
+    await expect(brandTitle).toContainText('GANTRY');
+    await expect(brandTitle).toContainText('HISTORY');
+
+    const container = page.locator('#history-transcript-container');
+    await expect(container).toBeVisible();
+  });
 });

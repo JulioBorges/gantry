@@ -906,6 +906,7 @@ let integrationStopped = false
 let cancelReason = null
 for (const delivery of deliveries) {
   if (delivery.outcome !== 'accepted') continue
+  await runWorkflowCommand(`python3 "${scripts}/wait_gate.py" ${delivery.ref} --unit "${A.unitId}" --run "${A.runId}"`)
   if (integrationStopped) {
     delivery.outcome = 'integration_pending'
     continue
