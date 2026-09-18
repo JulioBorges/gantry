@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import re
 import sys
 import threading
 import time
@@ -157,6 +158,90 @@ def collect_projects(root: Path, runs: list[dict] | None = None) -> list[dict]:
     return sorted(projects_by_unit.values(), key=lambda p: p["name"].lower())
 
 
+def find_transcript_file(state_root: Path, unit_id: str, run_id: str, issue_ref: str, worktree: str | None = None) -> Path | None:
+    """Find transcript.jsonl under state root, worktree, or harness session logs."""
+    # 1. State root transcripts location: ~/.gantry/state/<unit>/transcripts/<run>/<issue>/transcript.jsonl
+    p1 = state_root / unit_id / "transcripts" / run_id / issue_ref / "transcript.jsonl"
+    if p1.exists():
+        return p1
+
+    # 2. State root artifact/session location
+    p2 = state_root / unit_id / "runs" / f"{run_id}.transcript.jsonl"
+    if p2.exists():
+        return p2
+
+    # 3. State root issue transcript: ~/.gantry/state/<unit>/transcripts/<issue>/transcript.jsonl
+    p3 = state_root / unit_id / "transcripts" / issue_ref / "transcript.jsonl"
+    if p3.exists():
+        return p3
+
+    # 4. Worktree-local logs: <worktree>/.system_generated/logs/transcript.jsonl
+    if worktree:
+        wt_path = Path(worktree)
+        p4 = wt_path / ".system_generated" / "logs" / "transcript.jsonl"
+        if p4.exists():
+            return p4
+        p5 = wt_path / ".gantry" / "transcripts" / f"{issue_ref}.jsonl"
+        if p5.exists():
+            return p5
+
+    # 5. Check if active marker in repo/worktree matches this run
+    if worktree:
+        marker_file = Path(worktree) / ".git" / "gantry" / "current-run.json"
+        if marker_file.exists():
+            try:
+                mdata = json.loads(marker_file.read_text(encoding="utf-8"))
+                if mdata.get("run") == run_id:
+                    brain_root = Path.home() / ".gemini" / "antigravity-cli" / "brain"
+                    if brain_root.exists():
+                        candidates = sorted(brain_root.glob("*/.system_generated/logs/transcript.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+                        if candidates:
+                            return candidates[0]
+            except (OSError, json.JSONDecodeError):
+                pass
+
+    return None
+
+
+def read_transcript_steps(transcript_path: Path | None) -> list[dict]:
+    """Read transcript steps safely without throwing."""
+    if not transcript_path or not transcript_path.exists():
+        return []
+    steps: list[dict] = []
+    try:
+        with transcript_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    steps.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        return []
+    return steps
+
+
+def derive_live_activity(steps: list[dict], operator_waiting: bool = False) -> str | None:
+    """Derive live activity status badge from latest transcript steps."""
+    if operator_waiting:
+        return "Awaiting Operator"
+    if not steps:
+        return None
+    for step in reversed(steps):
+        tool_calls = step.get("tool_calls")
+        if tool_calls and isinstance(tool_calls, list) and len(tool_calls) > 0:
+            tool_name = tool_calls[-1].get("name", "tool")
+            return f"Tool: {tool_name}"
+        thinking = step.get("thinking")
+        if thinking and isinstance(thinking, str) and thinking.strip():
+            return "Thinking..."
+        if step.get("type") == "PLANNER_RESPONSE":
+            return "Thinking..."
+    return None
+
+
 def collect_runs(root: Path, now: float | None = None) -> list[dict]:
     """Read every Run log under every execution unit's state root."""
     now = time.time() if now is None else now
@@ -171,7 +256,18 @@ def collect_runs(root: Path, now: float | None = None) -> list[dict]:
             events = read_valid_events(log_path)
             if not events or events[0]["event"] != "run.started":
                 continue
-            runs.append(build_run(unit_dir.name, events, now))
+            run_data = build_run(unit_dir.name, events, now)
+            # Enrich issues with liveActivity if transcript is found
+            for issue in run_data.get("issues", []):
+                t_file = find_transcript_file(root, run_data["unitId"], run_data["run"], issue["issue"], issue.get("worktree"))
+                if t_file:
+                    steps = read_transcript_steps(t_file)
+                    activity = derive_live_activity(steps, issue.get("operatorWaiting", False))
+                    if activity:
+                        issue["liveActivity"] = activity
+                elif issue.get("operatorWaiting"):
+                    issue["liveActivity"] = "Awaiting Operator"
+            runs.append(run_data)
     return runs
 
 
@@ -209,13 +305,31 @@ def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(body)
 
+        def _unquote(self, s: str) -> str:
+            return re.sub(r"%([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), s)
+
         def do_GET(self) -> None:  # noqa: N802 - stdlib method name
-            path = self.path.split("?", 1)[0]
+            raw_path = self.path.split("?", 1)[0]
+            # Strip fragment if raw_path contained '#' without being percent-encoded
+            path = self._unquote(raw_path)
             if path == "/api/state":
                 runs = collect_runs(state_root)
                 projects = collect_projects(state_root, runs)
                 self._send_json(200, {"columns": COLUMNS, "runs": runs, "projects": projects})
                 return
+
+            # Match /api/runs/<unit>/<run>/issues/<issue>/transcript
+            # Parts: ["api", "runs", "<unit>", "<run>", "issues", "<issue>", "transcript"]
+            parts = [self._unquote(p) for p in raw_path.split("/") if p]
+            if len(parts) == 7 and parts[0] == "api" and parts[1] == "runs" and parts[4] == "issues" and parts[6] == "transcript":
+                unit_id = parts[2]
+                run_id = parts[3]
+                issue_ref = parts[5]
+                t_file = find_transcript_file(state_root, unit_id, run_id, issue_ref)
+                steps = read_transcript_steps(t_file) if t_file else []
+                self._send_json(200, {"steps": steps})
+                return
+
             filename = STATIC_FILES.get(path)
             if filename is not None:
                 self._send_static(filename)
@@ -223,6 +337,7 @@ def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
             self._send_not_found()
 
     return DashboardRequestHandler
+
 
 
 def create_server(host: str, port: int, state_root: Path) -> ThreadingHTTPServer:

@@ -28,6 +28,9 @@
 
     if (issue.operatorWaiting) {
       title.appendChild(badge("AWAITING OPERATOR", "waiting"));
+    } else if (issue.liveActivity) {
+      const isThinking = issue.liveActivity.toLowerCase().indexOf("thinking") !== -1;
+      title.appendChild(badge(issue.liveActivity, isThinking ? "waiting" : "live"));
     }
     card.appendChild(title);
 
@@ -58,6 +61,11 @@
     if (badgesContainer.children.length > 0) {
       card.appendChild(badgesContainer);
     }
+
+    card.addEventListener("click", function () {
+      openExecutionModal(issue);
+    });
+
     return card;
   }
 
@@ -255,6 +263,184 @@
     root.appendChild(section);
   }
 
+  let activeModalIssue = null;
+  let modalPollInterval = null;
+
+  function formatDiff(content) {
+    const container = document.createElement("div");
+    container.className = "diff-record";
+    const title = document.createElement("div");
+    title.className = "tool-name";
+    title.textContent = "CODE CHANGES / DIFF";
+    container.appendChild(title);
+
+    const diffEl = document.createElement("pre");
+    diffEl.className = "diff-content";
+    const lines = (content || "").split("\n");
+    lines.forEach(function (line) {
+      const lineSpan = document.createElement("span");
+      if (line.startsWith("+")) {
+        lineSpan.className = "diff-line-add";
+      } else if (line.startsWith("-")) {
+        lineSpan.className = "diff-line-del";
+      } else if (line.startsWith("@@") || line.startsWith("diff") || line.startsWith("index")) {
+        lineSpan.className = "diff-line-info";
+      }
+      lineSpan.textContent = line + "\n";
+      diffEl.appendChild(lineSpan);
+    });
+    container.appendChild(diffEl);
+    return container;
+  }
+
+  function renderTranscriptSteps(steps, container) {
+    container.innerHTML = "";
+    if (!steps || steps.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "transcript-loading";
+      empty.textContent = "No transcript steps recorded yet.";
+      container.appendChild(empty);
+      return;
+    }
+
+    steps.forEach(function (step) {
+      // 1. Collapsible thinking block
+      if (step.thinking && typeof step.thinking === "string") {
+        const block = document.createElement("div");
+        block.className = "thinking-block";
+
+        const header = document.createElement("div");
+        header.className = "thinking-header";
+        const headerText = document.createElement("span");
+        headerText.textContent = "MODEL REASONING (THINKING)";
+        const toggleText = document.createElement("span");
+        toggleText.className = "thinking-toggle";
+        toggleText.textContent = "[+] EXPAND";
+        header.appendChild(headerText);
+        header.appendChild(toggleText);
+
+        const content = document.createElement("div");
+        content.className = "thinking-content collapsed";
+        content.textContent = step.thinking;
+
+        header.addEventListener("click", function () {
+          const isCollapsed = content.classList.contains("collapsed");
+          if (isCollapsed) {
+            content.classList.remove("collapsed");
+            toggleText.textContent = "[-] COLLAPSE";
+          } else {
+            content.classList.add("collapsed");
+            toggleText.textContent = "[+] EXPAND";
+          }
+        });
+
+        block.appendChild(header);
+        block.appendChild(content);
+        container.appendChild(block);
+      }
+
+      // 2. Tool calls
+      if (step.tool_calls && Array.isArray(step.tool_calls)) {
+        step.tool_calls.forEach(function (tool) {
+          const toolEl = document.createElement("div");
+          toolEl.className = "tool-record";
+
+          const nameEl = document.createElement("div");
+          nameEl.className = "tool-name";
+          nameEl.textContent = "TOOL: " + (tool.name || "unknown");
+          toolEl.appendChild(nameEl);
+
+          if (tool.args) {
+            const argsEl = document.createElement("pre");
+            argsEl.className = "tool-args";
+            argsEl.textContent = JSON.stringify(tool.args, null, 2);
+            toolEl.appendChild(argsEl);
+          }
+          container.appendChild(toolEl);
+        });
+      }
+
+      // 3. Diff or output content
+      if (step.content && typeof step.content === "string") {
+        if (step.content.includes("diff --git") || step.content.includes("--- a/") || step.content.includes("+added line")) {
+          container.appendChild(formatDiff(step.content));
+        }
+      }
+    });
+  }
+
+  function fetchModalTranscript(issue) {
+    if (!issue || !issue.unitId || !issue.run || !issue.issue) return;
+    const container = document.getElementById("modal-transcript-container");
+    if (!container) return;
+
+    const encodedIssue = encodeURIComponent(issue.issue);
+    fetch("/api/runs/" + issue.unitId + "/" + issue.run + "/issues/" + encodedIssue + "/transcript", { cache: "no-store" })
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (data) {
+        if (activeModalIssue && activeModalIssue.issue === issue.issue) {
+          renderTranscriptSteps(data.steps || [], container);
+        }
+      })
+      .catch(function () {
+        // Leave previous state on error
+      });
+  }
+
+  function openExecutionModal(issue) {
+    activeModalIssue = issue;
+    const modal = document.getElementById("execution-modal");
+    if (!modal) return;
+
+    document.getElementById("modal-issue-title").textContent = "ISSUE: " + issue.issue;
+    const phaseBadge = document.getElementById("modal-phase-badge");
+    phaseBadge.textContent = issue.column;
+    phaseBadge.className = "badge tier";
+
+    const activityBadge = document.getElementById("modal-activity-badge");
+    if (issue.operatorWaiting) {
+      activityBadge.textContent = "AWAITING OPERATOR";
+      activityBadge.className = "badge waiting";
+      activityBadge.style.display = "inline-flex";
+    } else if (issue.liveActivity) {
+      activityBadge.textContent = issue.liveActivity;
+      activityBadge.className = "badge live";
+      activityBadge.style.display = "inline-flex";
+    } else {
+      activityBadge.style.display = "none";
+    }
+
+    document.getElementById("modal-meta-project").textContent = "PROJECT: " + (issue.project || issue.unitId || "-");
+    document.getElementById("modal-meta-unit").textContent = "UNIT: " + (issue.unitId || "-");
+    document.getElementById("modal-meta-run").textContent = "RUN: " + (issue.run || "-");
+    document.getElementById("modal-meta-branch").textContent = "BRANCH: " + (issue.branch || "-");
+
+    const container = document.getElementById("modal-transcript-container");
+    container.innerHTML = '<div class="transcript-loading">Loading transcript steps...</div>';
+
+    modal.classList.remove("hidden");
+
+    fetchModalTranscript(issue);
+    if (modalPollInterval) clearInterval(modalPollInterval);
+    modalPollInterval = setInterval(function () {
+      if (activeModalIssue) fetchModalTranscript(activeModalIssue);
+    }, POLL_INTERVAL_MS);
+  }
+
+  function closeExecutionModal() {
+    activeModalIssue = null;
+    if (modalPollInterval) {
+      clearInterval(modalPollInterval);
+      modalPollInterval = null;
+    }
+    const modal = document.getElementById("execution-modal");
+    if (modal) {
+      modal.classList.add("hidden");
+    }
+  }
+
   function setupEvents() {
     const select = document.getElementById("project-select");
     if (select) {
@@ -265,6 +451,26 @@
         }
       });
     }
+
+    const closeBtn = document.getElementById("modal-close-btn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", closeExecutionModal);
+    }
+
+    const modal = document.getElementById("execution-modal");
+    if (modal) {
+      modal.addEventListener("click", function (e) {
+        if (e.target === modal) {
+          closeExecutionModal();
+        }
+      });
+    }
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && activeModalIssue) {
+        closeExecutionModal();
+      }
+    });
   }
 
   function poll() {

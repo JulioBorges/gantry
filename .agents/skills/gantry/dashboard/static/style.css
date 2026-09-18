@@ -556,3 +556,219 @@ body {
     grid-template-columns: repeat(2, minmax(130px, 1fr));
   }
 }
+
+/* Modal Backdrop & Dialog */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(5, 7, 10, 0.85);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1.5rem;
+}
+
+.modal-backdrop.hidden {
+  display: none !important;
+}
+
+.modal-dialog {
+  background-color: var(--obsidian-900);
+  border: 1px solid var(--obsidian-600);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8);
+  width: 100%;
+  max-width: 900px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 2px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--obsidian-700);
+  background-color: var(--obsidian-950);
+}
+
+.modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.modal-diamond {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background-color: var(--amber-glow);
+  transform: rotate(45deg);
+  box-shadow: 0 0 8px rgba(255, 153, 0, 0.6);
+}
+
+.modal-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--slate-100);
+}
+
+.modal-close {
+  background: transparent;
+  border: 1px solid var(--obsidian-700);
+  color: var(--slate-400);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  border-color: var(--amber-accent);
+  color: var(--slate-100);
+}
+
+.modal-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.5rem 1.25rem;
+  background-color: var(--obsidian-850);
+  border-bottom: 1px solid var(--obsidian-700);
+  font-size: 11px;
+  color: var(--slate-400);
+}
+
+.modal-meta-strip .meta-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.modal-body {
+  padding: 1.25rem;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.transcript-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.transcript-loading {
+  color: var(--slate-500);
+  font-style: italic;
+}
+
+/* Collapsible Thinking Block */
+.thinking-block {
+  border: 1px solid var(--obsidian-700);
+  background-color: var(--obsidian-950);
+  border-radius: 2px;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--obsidian-850);
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--amber-accent);
+}
+
+.thinking-header:hover {
+  background-color: var(--obsidian-800);
+}
+
+.thinking-content {
+  padding: 0.75rem;
+  border-top: 1px solid var(--obsidian-700);
+  font-size: 12px;
+  color: var(--slate-300);
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.thinking-content.collapsed {
+  display: none;
+}
+
+/* Tool Call Records */
+.tool-record {
+  border: 1px solid var(--obsidian-700);
+  background-color: var(--obsidian-950);
+  padding: 0.75rem;
+  border-left: 3px solid var(--purple-accent);
+}
+
+.tool-name {
+  font-weight: 700;
+  color: var(--slate-100);
+  margin-bottom: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tool-args {
+  background-color: var(--obsidian-900);
+  border: 1px solid var(--obsidian-800);
+  padding: 0.5rem;
+  font-size: 11px;
+  color: var(--slate-300);
+  overflow-x: auto;
+  margin-bottom: 0.4rem;
+}
+
+/* Diffs and Code Changes */
+.diff-record {
+  border: 1px solid var(--obsidian-700);
+  background-color: var(--obsidian-950);
+  border-left: 3px solid var(--green-ok);
+  padding: 0.75rem;
+}
+
+.diff-content {
+  background-color: var(--obsidian-900);
+  border: 1px solid var(--obsidian-800);
+  padding: 0.5rem;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-x: auto;
+}
+
+.diff-line-add {
+  color: var(--green-ok);
+  background-color: var(--green-dim);
+  display: block;
+}
+
+.diff-line-del {
+  color: var(--red-alert);
+  background-color: var(--red-dim);
+  display: block;
+}
+
+.diff-line-info {
+  color: var(--slate-500);
+  display: block;
+}
+
+.card {
+  cursor: pointer;
+}

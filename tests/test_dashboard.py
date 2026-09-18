@@ -301,6 +301,51 @@ class DashboardHttpServerTests(unittest.TestCase):
         self.assertEqual("unit-proj0001", payload["projects"][0]["unitId"])
         self.assertEqual("MyProject", payload["runs"][0]["issues"][0]["project"])
 
+    def test_transcript_endpoint_and_live_activity_from_harness(self) -> None:
+        unit = "unit-trans0001"
+        run = "run-trans"
+        issue = "issue#02"
+        log_path = self.state_root / unit / "runs" / f"{run}.jsonl"
+        write_event(log_path, started_event(run, 900, iso(20), "/repo/trans"))
+
+        # Setup transcript file in ~/.gantry/state/<unit>/transcripts/<run>/<issue>/transcript.jsonl
+        transcript_dir = self.state_root / unit / "transcripts" / run / issue
+        transcript_dir.mkdir(parents=True, exist_ok=True)
+        transcript_file = transcript_dir / "transcript.jsonl"
+        with transcript_file.open("w", encoding="utf-8") as f:
+            f.write(json.dumps({"step_index": 0, "type": "USER_INPUT", "content": "Start work"}) + "\n")
+            f.write(json.dumps({"step_index": 1, "type": "PLANNER_RESPONSE", "thinking": "Analyzing requirements carefully...", "tool_calls": [{"name": "run_command", "args": {"CommandLine": "git status"}}]}) + "\n")
+            f.write(json.dumps({"step_index": 2, "type": "GENERIC", "content": "git diff content\n+added line\n-removed line"}) + "\n")
+
+        # Query state to check live activity derived from latest step
+        write_event(log_path, {
+            "ts": iso(10), "run": run, "event": "phase.started",
+            "issue": issue, "phase": "Implement", "data": {},
+        })
+
+        quoted_issue = urllib.parse.quote(issue, safe="")
+        status, body = self.get(f"/api/runs/{unit}/{run}/issues/{quoted_issue}/transcript")
+        self.assertEqual(200, status)
+        data = json.loads(body)
+        self.assertIn("steps", data)
+        self.assertEqual(3, len(data["steps"]))
+        self.assertEqual("Analyzing requirements carefully...", data["steps"][1]["thinking"])
+        self.assertEqual("run_command", data["steps"][1]["tool_calls"][0]["name"])
+
+        # Check /api/state reflects live activity badge
+        status, body = self.get("/api/state")
+        self.assertEqual(200, status)
+        state_data = json.loads(body)
+        matched_issue = state_data["runs"][0]["issues"][0]
+        self.assertEqual("Tool: run_command", matched_issue.get("liveActivity"))
+
+    def test_transcript_endpoint_returns_empty_when_missing(self) -> None:
+        quoted_issue = urllib.parse.quote("none#01", safe="")
+        status, body = self.get(f"/api/runs/unit-none/run-none/issues/{quoted_issue}/transcript")
+        self.assertEqual(200, status)
+        data = json.loads(body)
+        self.assertEqual({"steps": []}, data)
+
 
 class DashboardCliTests(unittest.TestCase):
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -343,7 +388,7 @@ class DashboardCliTests(unittest.TestCase):
             imports,
             {
                 "__future__", "argparse", "datetime", "http", "json", "pathlib",
-                "runlog", "sys", "threading", "time", "urllib",
+                "re", "runlog", "sys", "threading", "time",
             },
         )
 

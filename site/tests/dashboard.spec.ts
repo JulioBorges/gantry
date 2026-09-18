@@ -109,4 +109,58 @@ test.describe('Dashboard Theme & Design Visual Regression Check', () => {
       }
     }
   });
+
+  test('should open execution modal on card click, render live activity badges and toggle thinking block', async ({ page }) => {
+    try {
+      const response = await page.goto('http://127.0.0.1:4600/', { timeout: 3000 });
+      if (!response || !response.ok()) {
+        test.skip(true, 'Local dashboard server is not active on port 4600');
+        return;
+      }
+    } catch {
+      test.skip(true, 'Local dashboard server is not active on port 4600');
+      return;
+    }
+
+    // Ensure modal element exists in DOM
+    const modal = page.locator('#execution-modal');
+    await expect(modal).toHaveCount(1);
+    await expect(modal).toHaveClass(/hidden/);
+
+    const cards = page.locator('.card');
+    const cardCount = await cards.count();
+    if (cardCount > 0) {
+      const firstCard = cards.first();
+      // Click first card to open modal
+      await firstCard.click();
+      await expect(modal).toBeVisible();
+      await expect(modal).not.toHaveClass(/hidden/);
+
+      // Verify modal header and metadata
+      const modalTitle = page.locator('#modal-issue-title');
+      await expect(modalTitle).toBeVisible();
+      await expect(modalTitle).toContainText('ISSUE:');
+
+      // Check if thinking blocks exist in transcript, test toggle
+      const thinkingHeader = page.locator('.thinking-header').first();
+      if (await thinkingHeader.count() > 0) {
+        await expect(thinkingHeader).toBeVisible();
+        const thinkingContent = page.locator('.thinking-content').first();
+        await expect(thinkingContent).toHaveClass(/collapsed/);
+
+        // Click to expand
+        await thinkingHeader.click();
+        await expect(thinkingContent).not.toHaveClass(/collapsed/);
+
+        // Click to collapse
+        await thinkingHeader.click();
+        await expect(thinkingContent).toHaveClass(/collapsed/);
+      }
+
+      // Close modal using close button
+      const closeBtn = page.locator('#modal-close-btn');
+      await closeBtn.click();
+      await expect(modal).toHaveClass(/hidden/);
+    }
+  });
 });
