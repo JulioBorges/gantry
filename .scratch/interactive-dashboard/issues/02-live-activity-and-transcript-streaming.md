@@ -1,7 +1,7 @@
 # Stream Live Agent Activity and Render Execution Modal
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `interactive-dashboard#02`
 Spec: `.scratch/interactive-dashboard/spec.md`
 Created: 2026-09-18
@@ -24,11 +24,11 @@ Provide live agent activity visibility on ticket cards and within an interactive
 
 ## Acceptance criteria
 
-- [ ] Ticket cards display live activity badges indicating current status (`Thinking...`, `Tool: <name>`, `Awaiting Operator`).
-- [ ] Clicking any ticket card opens an execution detail modal.
-- [ ] An endpoint `GET /api/runs/<unit>/<run>/issues/<issue>/transcript` streams incremental transcript steps (thoughts, tool calls, and diffs) discovered from the harness session.
-- [ ] The modal renders model reasoning in collapsible thinking blocks, formatted tool call records, and code changes with syntax highlighting.
-- [ ] Playwright tests verify modal opening, live badge display, and collapsible block interactions.
+- [x] Ticket cards display live activity badges indicating current status (`Thinking...`, `Tool: <name>`, `Awaiting Operator`).
+- [x] Clicking any ticket card opens an execution detail modal.
+- [x] An endpoint `GET /api/runs/<unit>/<run>/issues/<issue>/transcript` streams incremental transcript steps (thoughts, tool calls, and diffs) discovered from the harness session.
+- [x] The modal renders model reasoning in collapsible thinking blocks, formatted tool call records, and code changes with syntax highlighting.
+- [x] Playwright tests verify modal opening, live badge display, and collapsible block interactions.
 
 ## Blocked by
 
