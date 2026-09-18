@@ -1,7 +1,7 @@
 # Deliver Unified Kanban Board and Project Selector
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `interactive-dashboard#01`
 Spec: `.scratch/interactive-dashboard/spec.md`
 Created: 2026-09-18
@@ -25,11 +25,11 @@ Unify multi-project Run state into a single 8-column Kanban board with a top pro
 
 ## Acceptance criteria
 
-- [ ] `dashboard.py` collects all active execution units under the state root and exposes project metadata and runs via `GET /api/state`.
-- [ ] The dashboard header displays a project dropdown selector defaulting to `ALL` alongside individual project options.
-- [ ] In `ALL` mode, a single unified set of 8 columns renders all tickets aggregated across all projects, each card carrying a distinct project badge.
-- [ ] Selecting a specific project filters the 8-column board to show only tickets belonging to that project.
-- [ ] Automated tests in `tests/test_dashboard.py` and Playwright tests in `site/tests/dashboard.spec.ts` pass.
+- [x] `dashboard.py` collects all active execution units under the state root and exposes project metadata and runs via `GET /api/state`.
+- [x] The dashboard header displays a project dropdown selector defaulting to `ALL` alongside individual project options.
+- [x] In `ALL` mode, a single unified set of 8 columns renders all tickets aggregated across all projects, each card carrying a distinct project badge.
+- [x] Selecting a specific project filters the 8-column board to show only tickets belonging to that project.
+- [x] Automated tests in `tests/test_dashboard.py` and Playwright tests in `site/tests/dashboard.spec.ts` pass.
 
 ## Blocked by
 

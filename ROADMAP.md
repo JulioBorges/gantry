@@ -39,7 +39,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **32 / 37** |
+| Issues completed | **33 / 37** |
 | Specs completed | **4 / 5** |
 | Execution waves | **21** |
 
@@ -126,7 +126,7 @@ The feature is ready for implementation, and no implementation has started as pa
 | 11 | `caveman-setup` | 3/3 | 7–8 |
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
 | 13 | `gantry-site` | 6/6 | 12–16 |
-| 14 | `interactive-dashboard` | 0/5 | 17–20 |
+| 14 | `interactive-dashboard` | 1/5 | 17–20 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -249,9 +249,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-site#06`** — Configure GitHub Pages deployment workflow and complete E2E validation
   <br>↳ blocked by: gantry-site#05
 
-### Wave 17 — 0/1 done
+### Wave 17 — 1/1 done
 
-- [ ] **`interactive-dashboard#01`** — Deliver Unified Kanban Board and Project Selector
+- [x] **`interactive-dashboard#01`** — Deliver Unified Kanban Board and Project Selector
   <br>↳ blocked by: gantry-migration#11, gantry-site#06
 
 ### Wave 18 — 0/1 done
