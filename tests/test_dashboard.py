@@ -158,6 +158,45 @@ class DashboardHelperTests(unittest.TestCase):
             self.assertTrue(by_unit["unit-stale000001"]["stale"])
             self.assertFalse(by_unit["unit-fresh000001"]["stale"])
 
+    def test_collect_projects_and_issue_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log_a = root / "unit-alpha" / "runs" / "run-a.jsonl"
+            write_event(log_a, started_event("run-a", 900, iso(50), "/repo/AlphaProject"))
+            write_event(log_a, {
+                "ts": iso(40), "run": "run-a", "event": "phase.started",
+                "issue": "alpha#01", "phase": "Implement", "data": {},
+            })
+
+            log_b = root / "unit-beta" / "runs" / "run-b.jsonl"
+            write_event(log_b, started_event("run-b", 900, iso(50), "/repo/BetaProject"))
+            write_event(log_b, {
+                "ts": iso(30), "run": "run-b", "event": "phase.started",
+                "issue": "beta#01", "phase": "Review", "data": {},
+            })
+
+            (root / "unit-gamma").mkdir(parents=True, exist_ok=True)
+
+            runs = dashboard.collect_runs(root)
+            projects = dashboard.collect_projects(root, runs)
+
+            by_unit_runs = {run["unitId"]: run for run in runs}
+            issue_a = by_unit_runs["unit-alpha"]["issues"][0]
+            self.assertEqual("AlphaProject", issue_a["project"])
+            self.assertEqual("unit-alpha", issue_a["unitId"])
+            self.assertEqual("run-a", issue_a["run"])
+
+            projects_by_id = {p["unitId"]: p for p in projects}
+            self.assertIn("unit-alpha", projects_by_id)
+            self.assertEqual("AlphaProject", projects_by_id["unit-alpha"]["name"])
+            self.assertEqual("/repo/AlphaProject", projects_by_id["unit-alpha"]["repositoryRoot"])
+
+            self.assertIn("unit-beta", projects_by_id)
+            self.assertEqual("BetaProject", projects_by_id["unit-beta"]["name"])
+
+            self.assertIn("unit-gamma", projects_by_id)
+            self.assertEqual("unit-gamma", projects_by_id["unit-gamma"]["name"])
+
 
 class DashboardHttpServerTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -242,6 +281,25 @@ class DashboardHttpServerTests(unittest.TestCase):
                 break
             time.sleep(0.1)
         self.assertTrue(seen, "the dashboard did not reflect the appended event within two seconds")
+
+    def test_api_state_exposes_projects_metadata_and_columns(self) -> None:
+        log_path = self.state_root / "unit-proj0001" / "runs" / "run-p1.jsonl"
+        write_event(log_path, started_event("run-p1", 900, iso(10), "/repo/MyProject"))
+        write_event(log_path, {
+            "ts": iso(5), "run": "run-p1", "event": "phase.started",
+            "issue": "proj#01", "phase": "Ready", "data": {},
+        })
+
+        status, body = self.get("/api/state")
+        self.assertEqual(200, status)
+        payload = json.loads(body)
+        self.assertIn("columns", payload)
+        self.assertIn("runs", payload)
+        self.assertIn("projects", payload)
+        self.assertEqual(1, len(payload["projects"]))
+        self.assertEqual("MyProject", payload["projects"][0]["name"])
+        self.assertEqual("unit-proj0001", payload["projects"][0]["unitId"])
+        self.assertEqual("MyProject", payload["runs"][0]["issues"][0]["project"])
 
 
 class DashboardCliTests(unittest.TestCase):

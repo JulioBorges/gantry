@@ -60,6 +60,9 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
     activity_events = [event for event in events if event["event"] not in IGNORED_FOR_ACTIVITY]
     last_activity_ts = _parse_ts(activity_events[-1]["ts"]) if activity_events else _parse_ts(started["ts"])
 
+    repo_root = data.get("repositoryRoot", "")
+    project_name = Path(repo_root).name if repo_root else unit_id
+
     issues: dict[str, dict] = {}
     compaction_at = None
     for event in events[1:]:
@@ -81,6 +84,10 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
                 "correctionBudget": None,
                 "phaseStartedAt": None,
                 "operatorWaiting": False,
+                "project": project_name,
+                "unitId": unit_id,
+                "run": started["run"],
+                "repositoryRoot": repo_root,
             },
         )
         edata = event.get("data") or {}
@@ -122,6 +129,32 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
         "compactionAt": compaction_at,
         "issues": sorted(issues.values(), key=lambda item: item["issue"]),
     }
+
+
+def collect_projects(root: Path, runs: list[dict] | None = None) -> list[dict]:
+    """Collect project metadata across all execution units."""
+    if runs is None:
+        runs = collect_runs(root)
+    projects_by_unit: dict[str, dict] = {}
+    for run in runs:
+        unit_id = run["unitId"]
+        repo_root = run.get("repositoryRoot", "")
+        name = Path(repo_root).name if repo_root else unit_id
+        if unit_id not in projects_by_unit:
+            projects_by_unit[unit_id] = {
+                "unitId": unit_id,
+                "name": name,
+                "repositoryRoot": repo_root,
+            }
+    if root.exists():
+        for unit_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+            if unit_dir.name not in projects_by_unit:
+                projects_by_unit[unit_dir.name] = {
+                    "unitId": unit_dir.name,
+                    "name": unit_dir.name,
+                    "repositoryRoot": "",
+                }
+    return sorted(projects_by_unit.values(), key=lambda p: p["name"].lower())
 
 
 def collect_runs(root: Path, now: float | None = None) -> list[dict]:
@@ -179,7 +212,9 @@ def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:  # noqa: N802 - stdlib method name
             path = self.path.split("?", 1)[0]
             if path == "/api/state":
-                self._send_json(200, {"columns": COLUMNS, "runs": collect_runs(state_root)})
+                runs = collect_runs(state_root)
+                projects = collect_projects(state_root, runs)
+                self._send_json(200, {"columns": COLUMNS, "runs": runs, "projects": projects})
                 return
             filename = STATIC_FILES.get(path)
             if filename is not None:

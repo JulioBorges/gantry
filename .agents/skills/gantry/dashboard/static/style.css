@@ -134,6 +134,50 @@ body {
   font-weight: 600;
 }
 
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.project-selector-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.selector-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--amber-accent);
+  letter-spacing: 0.05em;
+}
+
+.project-select {
+  background-color: var(--obsidian-850);
+  color: var(--slate-100);
+  border: 1px solid var(--obsidian-700);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0.25rem 0.6rem;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.project-select:hover,
+.project-select:focus {
+  border-color: var(--amber-glow);
+  box-shadow: 0 0 6px rgba(255, 153, 0, 0.3);
+}
+
+.project-select option {
+  background-color: var(--obsidian-900);
+  color: var(--slate-100);
+}
+
 .header-status {
   display: flex;
   align-items: center;
@@ -455,6 +499,13 @@ body {
 .badge.branch {
   border-color: var(--obsidian-700);
   color: var(--slate-400);
+}
+
+.badge.project {
+  border-color: rgba(255, 153, 0, 0.4);
+  color: var(--amber-glow);
+  background-color: var(--amber-dim);
+  font-weight: 700;
 }
 
 /* Footer */

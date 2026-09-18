@@ -53,4 +53,60 @@ test.describe('Dashboard Theme & Design Visual Regression Check', () => {
     // 7. Verify No Console Errors
     expect(consoleErrors).toEqual([]);
   });
+
+  test('should display project selector defaulting to ALL and filter unified kanban board', async ({ page }) => {
+    try {
+      const response = await page.goto('http://127.0.0.1:4600/', { timeout: 3000 });
+      if (!response || !response.ok()) {
+        test.skip(true, 'Local dashboard server is not active on port 4600');
+        return;
+      }
+    } catch {
+      test.skip(true, 'Local dashboard server is not active on port 4600');
+      return;
+    }
+
+    // 1. Verify Project selector exists and defaults to ALL
+    const projectSelect = page.locator('#project-select');
+    await expect(projectSelect).toBeVisible();
+    await expect(projectSelect).toHaveValue('ALL');
+
+    // 2. Wait for columns to appear
+    await page.waitForSelector('.swimlane', { timeout: 3000 });
+    const columns = page.locator('.column');
+    await expect(columns).toHaveCount(8);
+
+    // 3. Verify options contain ALL
+    const options = await projectSelect.locator('option').allInnerTexts();
+    expect(options).toContain('ALL');
+
+    // 4. Verify cards have project badges and test filtering if cards exist
+    const cards = page.locator('.card');
+    const cardCount = await cards.count();
+    if (cardCount > 0) {
+      const firstCardBadge = cards.first().locator('.badge.project');
+      await expect(firstCardBadge).toBeVisible();
+
+      // If multiple options exist, test filtering
+      const projectOptions = await projectSelect.locator('option').all();
+      if (projectOptions.length > 1) {
+        const targetValue = await projectOptions[1].getAttribute('value');
+        if (targetValue && targetValue !== 'ALL') {
+          await projectSelect.selectOption(targetValue);
+          await expect(page.locator('.column')).toHaveCount(8);
+
+          const filteredCards = page.locator('.card');
+          const filteredCount = await filteredCards.count();
+          for (let i = 0; i < filteredCount; i++) {
+            await expect(filteredCards.nth(i)).toHaveAttribute('data-unit-id', targetValue);
+          }
+
+          // Switch back to ALL
+          await projectSelect.selectOption('ALL');
+          await expect(page.locator('.column')).toHaveCount(8);
+          await expect(page.locator('.card')).toHaveCount(cardCount);
+        }
+      }
+    }
+  });
 });
