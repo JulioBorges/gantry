@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **43 / 48** |
-| Specs completed | **6 / 8** |
+| Issues completed | **44 / 48** |
+| Specs completed | **7 / 8** |
 | Execution waves | **27** |
 
 ## Specs
@@ -69,7 +69,7 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 13 | `gantry-site` | **done** | 01 | — | `site/`, `.github/workflows/deploy-pages.yml` | Gantry marketing and showcase site on GitHub Pages; Astro + Tailwind, industrial aesthetic, interactive pipeline simulator island, EN/PT-BR toggle, Playwright tests |
 | 14 | `interactive-dashboard` | **done** | 01 | 13 | `scripts/dashboard.py`, dashboard static assets, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | unified multi-project kanban, live agent activity streaming, post-critic human gate with interactive approval, gate verdicts, cycle timer freeze on Done |
 | 15 | `dashboard-lifecycle` | **done** | 01, 14 | 14 | `scripts/dashboard.py`, dashboard static assets, `SKILL.md`, `reference/round-workflow.md`, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | daemon lifecycle controls (`status`, `start --daemon`, `stop`), `POST /api/shutdown`, web UI shutdown button and modal, Gantry round workflow prompts |
-| 16 | `gantry-plan` | approved | 01 | 14 | `.agents/skills/gantry-plan/`, `.agents/skills/gantry/`, `scripts/runlog.py`, `tests/` | Socratic gate planning skill (grill-me style), tracer-bullet vertical slicing (to-issues style), Plan column kanban telemetry, and gantry delegation |
+| 16 | `gantry-plan` | **done** | 01 | 14 | `.agents/skills/gantry-plan/`, `.agents/skills/gantry/`, `scripts/runlog.py`, `tests/` | Socratic gate planning skill (grill-me style), tracer-bullet vertical slicing (to-issues style), Plan column kanban telemetry, and gantry delegation |
 
 ### Spec waves (structural)
 
@@ -129,7 +129,7 @@ Work can start on Wave 22 with:
 | 13 | `gantry-site` | 6/6 | 12–16 |
 | 14 | `interactive-dashboard` | 5/5 | 17–20 |
 | 15 | `dashboard-lifecycle` | 3/3 | 20–21 |
-| 16 | `gantry-plan` | 3/4 | 20–22 |
+| 16 | `gantry-plan` | 4/4 | 20–22 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -287,9 +287,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-plan#03`** — Implement tracer-bullet vertical slicing engine with automated gates and operator quizzing
   <br>↳ blocked by: gantry-plan#01
 
-### Wave 22 — 0/1 done
+### Wave 22 — 1/1 done
 
-- [ ] **`gantry-plan#04`** — Package gantry-plan skill, wire gantry delegation, and execution handoff
+- [x] **`gantry-plan#04`** — Package gantry-plan skill, wire gantry delegation, and execution handoff
   <br>↳ blocked by: gantry-plan#02, gantry-plan#03
 
 ### Wave 23 — 0/1 done

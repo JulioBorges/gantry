@@ -1,7 +1,7 @@
 # Package gantry-plan skill, wire gantry delegation, and execution handoff
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-plan#04`
 Spec: `.scratch/gantry-plan/spec.md`
 Created: 2026-09-19
@@ -33,12 +33,12 @@ Create the standalone `gantry-plan` skill pack, integrate delegation from `gantr
 
 ## Acceptance criteria
 
-- [ ] `.agents/skills/gantry-plan/SKILL.md` is registered and valid.
-- [ ] `.agents/skills/gantry/SKILL.md` delegates free-text goals and unplanned specs to `gantry-plan`.
-- [ ] Operator approval transitions issues to `ready-for-agent` and updates `ROADMAP.md` waves.
-- [ ] `roadmap.py check` passes with zero drift.
-- [ ] Standalone invocation offers interactive handoff to `gantry`; delegated invocation continues automatically.
-- [ ] Integration tests in `tests/test_gantry_plan.py` pass cleanly.
+- [x] `.agents/skills/gantry-plan/SKILL.md` is registered and valid.
+- [x] `.agents/skills/gantry/SKILL.md` delegates free-text goals and unplanned specs to `gantry-plan`.
+- [x] Operator approval transitions issues to `ready-for-agent` and updates `ROADMAP.md` waves.
+- [x] `roadmap.py check` passes with zero drift.
+- [x] Standalone invocation offers interactive handoff to `gantry`; delegated invocation continues automatically.
+- [x] Integration tests in `tests/test_gantry_plan.py` pass cleanly.
 
 ## Blocked by
 

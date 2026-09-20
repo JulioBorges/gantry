@@ -1,7 +1,7 @@
 # Spec: Gantry Plan Socratic Gating and Vertical Slicing
 
 Type: spec
-Status: ready-for-agent
+Status: done
 Map: `ROADMAP.md` (spec 16)
 Source: `/grill-me` session; PRD.md §2; ADR-0001, ADR-0004
 Created: 2026-09-19
