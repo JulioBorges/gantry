@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **47 / 48** |
-| Specs completed | **7 / 8** |
+| Issues completed | **48 / 48** |
+| Specs completed | **8 / 8** |
 | Execution waves | **27** |
 
 ## Specs
@@ -123,7 +123,7 @@ Work can start on Wave 22 with:
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
 | 01 | `gantry-migration` | 18/18 | 0–6 |
-| 08 | `codex-tier` | 3/4 | 23–26 |
+| 08 | `codex-tier` | 4/4 | 23–26 |
 | 11 | `caveman-setup` | 3/3 | 7–8 |
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
 | 13 | `gantry-site` | 6/6 | 12–16 |
@@ -307,9 +307,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`codex-tier#03`** — Codex host orchestration reference workflow and hybrid dispatch validation
   <br>↳ blocked by: codex-tier#02
 
-### Wave 26 — 0/1 done
+### Wave 26 — 1/1 done
 
-- [ ] **`codex-tier#04`** — Update PRD, README, documentation, and Astro site harness matrix for Codex
+- [x] **`codex-tier#04`** — Update PRD, README, documentation, and Astro site harness matrix for Codex
   <br>↳ blocked by: codex-tier#03
 
 <!-- END GENERATED: issue checklist -->

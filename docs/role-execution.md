@@ -107,6 +107,55 @@ Recover from execution failure:
 ## Support Tiers
 
 - **Reference Tier**: Claude Code (full-loop proven on reference fixture).
-- **Supported Tier**: OpenCode (planned).
-- **Compatible Tier**: Codex CLI, Antigravity (`agy`).
+- **Supported Tier**: Codex CLI (hybrid runner via `codex exec`, independent Critic verification, defense-in-depth git hooks), Antigravity (`agy`), OpenCode (planned).
+- **Compatible Tier**: Cursor.
 - Do not claim unsupported tiers or automatic cross-harness parity.
+
+## Codex Installation, Setup, and Supported Capabilities
+
+### Installation Commands
+
+Ensure the Codex CLI is installed and available on `PATH`:
+
+```sh
+npm install -g @openai/codex
+```
+
+Verify authentication and login status:
+
+```sh
+codex login
+codex login status
+```
+
+Verify installed version meets the minimum requirement (`0.1.0`):
+
+```sh
+codex --version
+```
+
+### Setup Options
+
+Configure repository execution policy for Codex:
+
+```sh
+# Automated setup specifying Codex harness
+python3 .agents/skills/gantry/scripts/setup.py --harness codex
+
+# Or via npm installer
+npx @julioborges/gantry add --agent codex --yes
+```
+
+Setup actions executed:
+1. Detects `codex` CLI on `PATH` or `.codex` directory.
+2. Writes `execution.hostHarness: "codex"` and default role mappings (`gpt-5.2-codex`) to `.gantry/config.json`.
+3. Verifies model discovery via `python3 .agents/skills/gantry/scripts/discovery.py codex`.
+4. Injects Codex host orchestration rules and defense-in-depth git hooks into `AGENTS.md`.
+
+### Supported Capabilities
+
+- **Tier**: Supported.
+- **Process Runner**: Hybrid subprocess runner executing bounded CLI invocations (`codex exec <prompt> --model <model>`) with timeout and error capture.
+- **Per-Role Models**: Supports role-specific models (`gpt-5.2-codex`, `gpt-5-codex`) and reasoning effort levels (`low`, `medium`, `high`).
+- **Independent Verification**: Works with independent Critic models across harnesses (ADR-0006) to verify acceptance criteria and quality gates (`acceptance.py`, `gates.py`).
+- **Defense in Depth**: Protects repository branches and `ROADMAP.md` via tracked git hooks (`pre-commit`, `pre-push`) and adversarial Critic refutation.

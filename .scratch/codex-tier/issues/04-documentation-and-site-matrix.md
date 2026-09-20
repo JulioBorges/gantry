@@ -1,7 +1,7 @@
 # Update PRD, README, documentation, and Astro site harness matrix for Codex
 
 Type: issue
-Status: ready
+Status: done
 Slice: `codex-tier#04`
 Spec: `.scratch/codex-tier/spec.md`
 Created: 2026-09-20
@@ -25,10 +25,10 @@ Harmonize all user-facing documentation, product specifications, and website sho
 
 ## Acceptance criteria
 
-- [ ] `PRD.md` updates the harness matrix to declare Codex under Supported Tier with hybrid runner and Critic verification.
-- [ ] `README.md` and `docs/role-execution.md` describe Codex installation commands, setup options, and supported capabilities.
-- [ ] `site/src/components/HarnessMatrix.astro` and `site/src/i18n/translations.ts` present synchronized Supported status in EN and PT-BR.
-- [ ] Automated Playwright tests (`site/tests/narrative.spec.ts`, `site/tests/hero.spec.ts`, `site/tests/a11y.spec.ts`) pass cleanly.
+- [x] `PRD.md` updates the harness matrix to declare Codex under Supported Tier with hybrid runner and Critic verification.
+- [x] `README.md` and `docs/role-execution.md` describe Codex installation commands, setup options, and supported capabilities.
+- [x] `site/src/components/HarnessMatrix.astro` and `site/src/i18n/translations.ts` present synchronized Supported status in EN and PT-BR.
+- [x] Automated Playwright tests (`site/tests/narrative.spec.ts`, `site/tests/hero.spec.ts`, `site/tests/a11y.spec.ts`) pass cleanly.
 
 ## Blocked by
 

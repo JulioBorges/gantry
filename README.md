@@ -349,8 +349,14 @@ The current [capability files](.agents/skills/gantry/capabilities/) declare:
 | Tier | Harness | Declared capabilities |
 |---|---|---|
 | Reference | Claude Code | Parallel rounds, native structured output, worktree isolation, per-role models, hooks |
+| Supported | Codex | Hybrid process runner (`codex exec`), per-role model selection, independent Critic verification, defense-in-depth git hooks |
 | Supported | OpenCode | Per-role models and plugin hooks; script-validated results; manually managed isolation |
-| Compatible | Codex | Manually driven chain and script-validated results; no hooks or native parallel rounds declared |
+
+### Codex setup and capabilities
+
+- **Installation**: Ensure the Codex CLI is available on `PATH` (`npm install -g @openai/codex`), authenticated via `codex login` (verified with `codex login status`), meeting the minimum version requirement (`0.1.0`).
+- **Setup Options**: Configure the repository using `python3 .agents/skills/gantry/scripts/setup.py --harness codex` or `npx @julioborges/gantry add --agent codex --yes`. Setup records `execution.hostHarness: "codex"` in `.gantry/config.json`, selects verified default models (`gpt-5.2-codex`), and injects Codex host orchestration and defense-in-depth git hooks into `AGENTS.md`.
+- **Supported Capabilities**: Supported tier with bounded subprocess execution (`codex exec`), per-role model and effort configuration (`low`, `medium`, `high`), Result Contract verification (`result.py`), independent adversarial Critic verification (`acceptance.py`, `gates.py`), and defense-in-depth git hooks.
 
 Use the host's available features without assuming parity. Every final Run
 report states its declared tier. Gantry does not provide session security or

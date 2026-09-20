@@ -531,7 +531,7 @@ export const translations: Record<Locale, Dictionary> = {
       opencodeNotes:
         'Plugin hooks wiring for guard.py, sequential and parallel rounds, verified against OpenCode test harnesses.',
       codexNotes:
-        'Direct CLI runner with per-role model arguments, independent Critic verification proven on real runs.',
+        'Supported tier. Direct CLI runner with per-role model arguments, independent Critic verification proven on real runs.',
       antigravityNotes:
         'Supported tier. Hook guard integration via .agents/hooks.json and agy execution verified in local test suite.',
       cursorNotes:
@@ -891,7 +891,7 @@ export const translations: Record<Locale, Dictionary> = {
       opencodeNotes:
         'Integração de hooks via plugin para guard.py, rodadas sequenciais e paralelas, verificado contra test harnesses do OpenCode.',
       codexNotes:
-        'Runner CLI direto com argumentos de modelo por função, verificação independente de Crítico comprovada em execuções reais.',
+        'Tier Suportado. Runner CLI direto com argumentos de modelo por função, verificação independente de Crítico comprovada em execuções reais.',
       antigravityNotes:
         'Tier Suportado. Integração de hooks via .agents/hooks.json e execução agy verificada na suite de testes local.',
       cursorNotes:

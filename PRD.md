@@ -160,8 +160,8 @@ Support is declared per harness in `capabilities/<harness>.json` — `hooks`, `s
 | Tier | Harness | How the loop runs |
 |---|---|---|
 | Reference | Claude Code | `Workflow` tool from the templates' inline scripts; native `schema`; `isolation: 'worktree'`; guard hooks via `settings.json` |
+| Supported | Codex CLI | Hybrid process runner (`codex exec`) with ADR-0006 cross-harness dispatch; per-role model selection; independent Critic verification; defense-in-depth git hooks |
 | Supported | OpenCode | skills read natively from `.agents/skills`; subagents with `model` per role; hooks through a generated plugin; `result.py` mandatory; rounds parallel when the primary agent can, else sequential |
-| Compatible | Codex CLI | skills native; hooks when the version enables them; chain driven by hand from the prompt functions; per-role model when the version supports it — setup detects and says |
 
 `fixture/` is a minimal repository with one spec, a few issues and real gates, used to exercise every tier with real agents. Acceptance for v1:
 
