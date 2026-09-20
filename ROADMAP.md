@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **36 / 48** |
-| Specs completed | **4 / 8** |
+| Issues completed | **39 / 48** |
+| Specs completed | **5 / 8** |
 | Execution waves | **27** |
 
 ## Specs
@@ -67,7 +67,7 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 11 | `caveman-setup` | **done** | 01 | — | `gantry-setup`, portable policy, coordinating instructions, plan and round workflows, tests and documentation | optional environment-installed Caveman lite for agent messages and summaries; explicit repository opt-in; user-managed installation; once-per-Run fallback warning; artifacts and verification preserved |
 | 12 | `role-execution-selection` | **done** | 01 | — | runtime model discovery, context budget, setup policy, plan and round workflows, Run Log, fixture proof | complete executable model catalog; versioned role defaults; cross-harness roles (Codex, Claude Code, OpenCode, Antigravity); explicit Issue recovery; cross-harness and Antigravity proof |
 | 13 | `gantry-site` | **done** | 01 | — | `site/`, `.github/workflows/deploy-pages.yml` | Gantry marketing and showcase site on GitHub Pages; Astro + Tailwind, industrial aesthetic, interactive pipeline simulator island, EN/PT-BR toggle, Playwright tests |
-| 14 | `interactive-dashboard` | approved | 01 | 13 | `scripts/dashboard.py`, dashboard static assets, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | unified multi-project kanban, live agent activity streaming, post-critic human gate with interactive approval, gate verdicts, cycle timer freeze on Done |
+| 14 | `interactive-dashboard` | **done** | 01 | 13 | `scripts/dashboard.py`, dashboard static assets, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | unified multi-project kanban, live agent activity streaming, post-critic human gate with interactive approval, gate verdicts, cycle timer freeze on Done |
 | 15 | `dashboard-lifecycle` | approved | 01, 14 | 14 | `scripts/dashboard.py`, dashboard static assets, `SKILL.md`, `reference/round-workflow.md`, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | daemon lifecycle controls (`status`, `start --daemon`, `stop`), `POST /api/shutdown`, web UI shutdown button and modal, Gantry round workflow prompts |
 | 16 | `gantry-plan` | approved | 01 | 14 | `.agents/skills/gantry-plan/`, `.agents/skills/gantry/`, `scripts/runlog.py`, `tests/` | Socratic gate planning skill (grill-me style), tracer-bullet vertical slicing (to-issues style), Plan column kanban telemetry, and gantry delegation |
 
@@ -112,10 +112,12 @@ and 05, so they are written after a few real run logs exist, not before.
 
 ## Where work can start
 
-Wave 17 (`interactive-dashboard#01`) is complete. Work can start on Wave 18 with `interactive-dashboard#02`
-(`Stream Live Agent Activity and Render Execution Modal`), which is unblocked now that `#01` is done.
-Subsequent waves deliver the post-Critic human gate (`#03`) and structured gate verdicts (`#04`) in parallel
-in Wave 19, followed by cycle time freezing (`#05`) in Wave 20.
+Wave 20 is complete (`interactive-dashboard#05`, `dashboard-lifecycle#01`, `gantry-plan#01`). Spec 14 (`interactive-dashboard`) is now fully delivered.
+Work can start on Wave 21 in parallel with:
+- `dashboard-lifecycle#02` (`Add Web UI Shutdown Action and Stopped State`)
+- `dashboard-lifecycle#03` (`Integrate Round Workflow Lifecycle Hooks and Skill Automation`)
+- `gantry-plan#02` (`Implement Socratic Gate planning engine for free-text goals`)
+- `gantry-plan#03` (`Implement tracer-bullet vertical slicing engine with automated gates and operator quizzing`)
 
 ## Progress by spec
 
@@ -128,9 +130,9 @@ in Wave 19, followed by cycle time freezing (`#05`) in Wave 20.
 | 11 | `caveman-setup` | 3/3 | 7–8 |
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
 | 13 | `gantry-site` | 6/6 | 12–16 |
-| 14 | `interactive-dashboard` | 4/5 | 17–20 |
-| 15 | `dashboard-lifecycle` | 0/3 | 20–21 |
-| 16 | `gantry-plan` | 0/4 | 20–22 |
+| 14 | `interactive-dashboard` | 5/5 | 17–20 |
+| 15 | `dashboard-lifecycle` | 1/3 | 20–21 |
+| 16 | `gantry-plan` | 1/4 | 20–22 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -270,12 +272,12 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`interactive-dashboard#04`** — Render Structured Gate Verdicts and Full Execution History
   <br>↳ blocked by: interactive-dashboard#01, interactive-dashboard#02
 
-### Wave 20 — 0/3 done
+### Wave 20 — 3/3 done
 
-- [ ] **`interactive-dashboard#05`** — Freeze Cycle Timer on Done and Track Phase Durations
+- [x] **`interactive-dashboard#05`** — Freeze Cycle Timer on Done and Track Phase Durations
   <br>↳ blocked by: interactive-dashboard#01, interactive-dashboard#03, interactive-dashboard#04
-- [ ] **`dashboard-lifecycle#01`** — Implement CLI Lifecycle Commands and Shutdown HTTP Endpoint _(no blockers)_
-- [ ] **`gantry-plan#01`** — Prefactor and add planning milestone telemetry in runlog and dashboard _(no blockers)_
+- [x] **`dashboard-lifecycle#01`** — Implement CLI Lifecycle Commands and Shutdown HTTP Endpoint _(no blockers)_
+- [x] **`gantry-plan#01`** — Prefactor and add planning milestone telemetry in runlog and dashboard _(no blockers)_
 
 ### Wave 21 — 0/4 done
 

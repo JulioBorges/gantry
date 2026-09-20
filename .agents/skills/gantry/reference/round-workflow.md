@@ -906,12 +906,23 @@ let integrationStopped = false
 let cancelReason = null
 for (const delivery of deliveries) {
   if (delivery.outcome !== 'accepted') continue
-  await runWorkflowCommand(`python3 "${scripts}/wait_gate.py" ${delivery.ref} --unit "${A.unitId}" --run "${A.runId}"`)
+  if (A.unitId && A.runId && A.waitGate) {
+    const stateRootArg = A.stateRoot ? ` --state-root "${A.stateRoot}"` : ''
+    await runWorkflowCommand(`python3 "${scripts}/wait_gate.py" ${delivery.ref} --unit "${A.unitId}" --run "${A.runId}"${stateRootArg}`)
+  }
   if (integrationStopped) {
     delivery.outcome = 'integration_pending'
     continue
   }
-  if (A.isolate) {
+  const strategy = (A.policy && A.policy.delivery && A.policy.delivery.strategy) || 'branch-merge'
+  if (strategy === 'pull-request') {
+    const target = (A.policy && A.policy.git && A.policy.git.target) || 'main'
+    try {
+      await runWorkflowCommand(`gh pr view "${delivery.branch}" --json state -q .state`)
+    } catch {
+      await runWorkflowCommand(`git merge-base --is-ancestor "${delivery.branch}" "${target}"`)
+    }
+  } else if (A.isolate) {
     if (!delivery.branch) {
       delivery.outcome = 'integration_failed'
       integrationStopped = true
@@ -938,7 +949,7 @@ for (const delivery of deliveries) {
     await runWorkflowCommand(`git add -- ROADMAP.md "${delivery.issuePath}"`)
     await runWorkflowCommand(`git commit -m "gantry: complete ${delivery.ref}"`)
     delivery.outcome = 'done'
-    await appendRunEvent('issue.done', delivery.ref, undefined, { worktree: delivery.worktree })
+    await appendRunEvent('issue.done', delivery.ref, undefined, { worktree: delivery.worktree, strategy })
   } catch {
     delivery.outcome = 'integration_failed'
     integrationStopped = true

@@ -1,7 +1,7 @@
 # Implement CLI Lifecycle Commands and Shutdown HTTP Endpoint
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `dashboard-lifecycle#01`
 Spec: `.scratch/dashboard-lifecycle/spec.md`
 Created: 2026-09-19
@@ -25,12 +25,12 @@ Add daemonized lifecycle management to `dashboard.py` and a graceful shutdown HT
 
 ## Acceptance criteria
 
-- [ ] `dashboard.py` provides `status`, `start --daemon`, and `stop` subcommands alongside existing `serve`.
-- [ ] `status` accurately reports running state, PID, port, and URL with `--json` support.
-- [ ] `start --daemon` spawns background server, verifies loopback readiness, and writes `~/.gantry/state/dashboard.json`.
-- [ ] `stop` invokes `POST /api/shutdown`, verifies socket closure and process termination, and cleans up metadata.
-- [ ] `POST /api/shutdown` rejects non-loopback requests with 403 and triggers asynchronous server shutdown.
-- [ ] Unit tests in `tests/test_dashboard.py` validate daemon start, status reporting, stopping, and port release using standard library only.
+- [x] `dashboard.py` provides `status`, `start --daemon`, and `stop` subcommands alongside existing `serve`.
+- [x] `status` accurately reports running state, PID, port, and URL with `--json` support.
+- [x] `start --daemon` spawns background server, verifies loopback readiness, and writes `~/.gantry/state/dashboard.json`.
+- [x] `stop` invokes `POST /api/shutdown`, verifies socket closure and process termination, and cleans up metadata.
+- [x] `POST /api/shutdown` rejects non-loopback requests with 403 and triggers asynchronous server shutdown.
+- [x] Unit tests in `tests/test_dashboard.py` validate daemon start, status reporting, stopping, and port release using standard library only.
 
 ## Blocked by
 

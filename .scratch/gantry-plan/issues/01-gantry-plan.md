@@ -1,7 +1,7 @@
 # Prefactor and add planning milestone telemetry in runlog and dashboard
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-plan#01`
 Spec: `.scratch/gantry-plan/spec.md`
 Created: 2026-09-19
@@ -25,11 +25,11 @@ When `gantry-plan` starts, it initializes tracking for the spec milestone using 
 
 ## Acceptance criteria
 
-- [ ] `runlog.py append` accepts `phase.started` with `issue="<slug>#00"`, `phase="Plan"`, and `data={"operatorWaiting": true}`.
-- [ ] `dashboard.py` places `<slug>#00` in the `Plan` column and displays `liveActivity: "Awaiting Operator"` when `operatorWaiting` is true.
-- [ ] Logging `operator.approved` updates the `<slug>#00` state in `dashboard.py` clearing `operatorWaiting`.
-- [ ] Logging `issue.done` for `<slug>#00` transitions the card to `Done` and freezes cycle time.
-- [ ] Unit tests in `tests/test_runlog.py` and `tests/test_dashboard.py` pass cleanly.
+- [x] `runlog.py append` accepts `phase.started` with `issue="<slug>#00"`, `phase="Plan"`, and `data={"operatorWaiting": true}`.
+- [x] `dashboard.py` places `<slug>#00` in the `Plan` column and displays `liveActivity: "Awaiting Operator"` when `operatorWaiting` is true.
+- [x] Logging `operator.approved` updates the `<slug>#00` state in `dashboard.py` clearing `operatorWaiting`.
+- [x] Logging `issue.done` for `<slug>#00` transitions the card to `Done` and freezes cycle time.
+- [x] Unit tests in `tests/test_runlog.py` and `tests/test_dashboard.py` pass cleanly.
 
 ## Blocked by
 

@@ -11,10 +11,16 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import re
+import socket
+import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -504,6 +510,14 @@ def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
                 self.wfile.write(b"method not allowed")
                 return
 
+            if path == "/api/shutdown":
+                self._send_json(200, {"status": "shutting_down"})
+                def _async_shutdown() -> None:
+                    time.sleep(0.1)
+                    self.server.shutdown()
+                threading.Thread(target=_async_shutdown, daemon=True).start()
+                return
+
             parts = [self._unquote(p) for p in raw_path.split("/") if p]
             if len(parts) == 7 and parts[0] == "api" and parts[1] == "runs" and parts[4] == "issues" and parts[6] == "approve":
                 unit_id = parts[2]
@@ -563,8 +577,219 @@ def create_server(host: str, port: int, state_root: Path) -> ThreadingHTTPServer
     return server
 
 
+def dashboard_state_path(state_root: Path) -> Path:
+    return state_root / "dashboard.json"
+
+
+def write_dashboard_state(state_root: Path, host: str, port: int, pid: int) -> None:
+    state_file = dashboard_state_path(state_root)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "running": True,
+        "host": host,
+        "port": port,
+        "pid": pid,
+        "stateRoot": str(state_root),
+        "url": f"http://{host}:{port}",
+    }
+    state_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def remove_dashboard_state(state_root: Path) -> None:
+    state_file = dashboard_state_path(state_root)
+    try:
+        state_file.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def is_pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def is_port_in_use(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+            return False
+        except OSError:
+            return True
+
+
+def probe_dashboard(host: str, port: int, timeout: float = 1.0) -> bool:
+    try:
+        req = urllib.request.Request(f"http://{host}:{port}/api/state")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                return isinstance(data, dict) and "columns" in data and "runs" in data
+    except Exception:
+        return False
+    return False
+
+
+def get_dashboard_status(state_root: Path, host: str = "127.0.0.1", port: int = 4600) -> dict:
+    state_file = dashboard_state_path(state_root)
+    if state_file.exists():
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            pid = data.get("pid")
+            h = data.get("host", host)
+            p = data.get("port", port)
+            alive = isinstance(pid, int) and is_pid_alive(pid)
+            responding = probe_dashboard(h, p, timeout=0.5)
+            if alive and responding:
+                return {
+                    "running": True,
+                    "host": h,
+                    "port": p,
+                    "pid": pid,
+                    "stateRoot": str(state_root),
+                    "url": f"http://{h}:{p}",
+                }
+            else:
+                remove_dashboard_state(state_root)
+        except Exception:
+            remove_dashboard_state(state_root)
+
+    if probe_dashboard(host, port, timeout=0.5):
+        return {
+            "running": True,
+            "host": host,
+            "port": port,
+            "pid": None,
+            "stateRoot": str(state_root),
+            "url": f"http://{host}:{port}",
+        }
+
+    return {
+        "running": False,
+        "host": host,
+        "port": port,
+        "pid": None,
+        "stateRoot": str(state_root),
+        "url": None,
+    }
+
+
+def start_daemon(host: str, port: int, state_root: Path) -> dict:
+    require_loopback_host(host)
+    current = get_dashboard_status(state_root, host, port)
+    if current["running"]:
+        return current
+
+    if is_port_in_use(host, port):
+        raise DashboardError(f"port {port} is occupied by an alien process")
+
+    cmd = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "serve",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--state-root",
+        str(state_root),
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+    deadline = time.time() + 5.0
+    ready = False
+    while time.time() < deadline:
+        if probe_dashboard(host, port, timeout=0.5):
+            ready = True
+            break
+        time.sleep(0.1)
+
+    if not ready:
+        try:
+            proc.terminate()
+        except OSError:
+            pass
+        raise DashboardError(f"timed out waiting for dashboard daemon on port {port}")
+
+    write_dashboard_state(state_root, host, port, proc.pid)
+    return {
+        "running": True,
+        "host": host,
+        "port": port,
+        "pid": proc.pid,
+        "stateRoot": str(state_root),
+        "url": f"http://{host}:{port}",
+    }
+
+
+def stop_daemon(host: str, port: int, state_root: Path) -> dict:
+    current = get_dashboard_status(state_root, host, port)
+    target_host = current.get("host") or host
+    target_port = current.get("port") or port
+    pid = current.get("pid")
+
+    if not current["running"] and not is_port_in_use(target_host, target_port):
+        remove_dashboard_state(state_root)
+        return {
+            "running": False,
+            "host": target_host,
+            "port": target_port,
+            "pid": None,
+            "stateRoot": str(state_root),
+            "stopped": False,
+        }
+
+    try:
+        req = urllib.request.Request(
+            f"http://{target_host}:{target_port}/api/shutdown",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            pass
+    except Exception:
+        pass
+
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        if not is_port_in_use(target_host, target_port):
+            break
+        time.sleep(0.1)
+
+    if pid and is_pid_alive(pid):
+        try:
+            os.kill(pid, 15)
+            time.sleep(0.2)
+            if is_pid_alive(pid):
+                os.kill(pid, 9)
+        except OSError:
+            pass
+
+    remove_dashboard_state(state_root)
+    return {
+        "running": False,
+        "host": target_host,
+        "port": target_port,
+        "pid": None,
+        "stateRoot": str(state_root),
+        "stopped": True,
+    }
+
+
 def serve(host: str, port: int, state_root: Path) -> None:
     server = create_server(host, port, state_root)
+    write_dashboard_state(state_root, host, server.server_port, os.getpid())
     print(json.dumps({"host": host, "port": server.server_port, "stateRoot": str(state_root)}))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -572,25 +797,88 @@ def serve(host: str, port: int, state_root: Path) -> None:
         thread.join()
     except KeyboardInterrupt:
         server.shutdown()
+    finally:
+        remove_dashboard_state(state_root)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
+
     serve_parser = subparsers.add_parser("serve", help="serve the read-only kanban dashboard")
     serve_parser.add_argument("--host", default="127.0.0.1", help="must be 127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=4600, help="TCP port, 0 for an ephemeral port")
     serve_parser.add_argument("--state-root", help="override ~/.gantry/state")
+
+    status_parser = subparsers.add_parser("status", help="check dashboard running status")
+    status_parser.add_argument("--host", default="127.0.0.1", help="host to check (default 127.0.0.1)")
+    status_parser.add_argument("--port", type=int, default=4600, help="TCP port to check (default 4600)")
+    status_parser.add_argument("--state-root", help="override ~/.gantry/state")
+    status_parser.add_argument("--json", action="store_true", help="output status in JSON")
+
+    start_parser = subparsers.add_parser("start", help="start dashboard server")
+    start_parser.add_argument("--daemon", action="store_true", default=False, help="run in background daemon mode")
+    start_parser.add_argument("--host", default="127.0.0.1", help="must be 127.0.0.1")
+    start_parser.add_argument("--port", type=int, default=4600, help="TCP port (default 4600)")
+    start_parser.add_argument("--state-root", help="override ~/.gantry/state")
+    start_parser.add_argument("--json", action="store_true", help="output status in JSON")
+
+    stop_parser = subparsers.add_parser("stop", help="stop running dashboard server")
+    stop_parser.add_argument("--host", default="127.0.0.1", help="host (default 127.0.0.1)")
+    stop_parser.add_argument("--port", type=int, default=4600, help="TCP port (default 4600)")
+    stop_parser.add_argument("--state-root", help="override ~/.gantry/state")
+    stop_parser.add_argument("--json", action="store_true", help="output status in JSON")
+
     args = parser.parse_args(argv)
+    state_root = Path(args.state_root).expanduser().resolve() if getattr(args, "state_root", None) else default_state_root(None)
 
     if args.command == "serve":
-        state_root = Path(args.state_root).expanduser().resolve() if args.state_root else default_state_root(None)
         try:
             serve(args.host, args.port, state_root)
         except DashboardError as error:
             print(f"dashboard error: {error}", file=sys.stderr)
             return 1
         return 0
+
+    elif args.command == "status":
+        try:
+            st = get_dashboard_status(state_root, args.host, args.port)
+            if args.json:
+                print(json.dumps(st))
+            else:
+                if st["running"]:
+                    print(f"Dashboard is running at {st['url']} (PID: {st['pid']})")
+                else:
+                    print("Dashboard is not running.")
+        except DashboardError as error:
+            print(f"dashboard error: {error}", file=sys.stderr)
+            return 1
+        return 0
+
+    elif args.command == "start":
+        try:
+            res = start_daemon(args.host, args.port, state_root)
+            if args.json:
+                print(json.dumps(res))
+            else:
+                print(f"Dashboard started on {res['url']} (PID: {res['pid']})")
+        except DashboardError as error:
+            print(f"dashboard error: {error}", file=sys.stderr)
+            return 1
+        return 0
+
+    elif args.command == "stop":
+        try:
+            res = stop_daemon(args.host, args.port, state_root)
+            if args.json:
+                print(json.dumps(res))
+            else:
+                print("Dashboard stopped.")
+        except DashboardError as error:
+            print(f"dashboard error: {error}", file=sys.stderr)
+            return 1
+        return 0
+
     return 2
 
 

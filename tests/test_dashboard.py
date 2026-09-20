@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import ast
 import datetime
+import io
 import json
+import socket
 import subprocess
 import sys
 import tempfile
@@ -264,6 +266,59 @@ class DashboardHelperTests(unittest.TestCase):
             issue_2 = runs_2[0]["issues"][0]
             self.assertEqual(issue_1["totalCycleSeconds"] + 50, issue_2["totalCycleSeconds"])
             self.assertEqual(issue_1["phaseDurations"]["Implement"] + 50, issue_2["phaseDurations"]["Implement"])
+
+    def test_planning_milestone_telemetry_in_dashboard(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log = root / "unit-plan0000001" / "runs" / "run-plan.jsonl"
+            t_plan_start = iso(100)
+            t_approved = iso(60)
+            t_done = iso(20)
+
+            write_event(log, started_event("run-plan", 900, t_plan_start, "/repo/plan"))
+            write_event(log, {
+                "ts": t_plan_start,
+                "run": "run-plan",
+                "event": "phase.started",
+                "issue": "my-feature#00",
+                "phase": "Plan",
+                "data": {"operatorWaiting": True},
+            })
+
+            # Check dashboard placing my-feature#00 in Plan with Awaiting Operator
+            runs = dashboard.collect_runs(root, now=time.time())
+            issue = runs[0]["issues"][0]
+            self.assertEqual("Plan", issue["column"])
+            self.assertTrue(issue["operatorWaiting"])
+            self.assertEqual("Awaiting Operator", issue["liveActivity"])
+
+            # Log operator.approved
+            write_event(log, {
+                "ts": t_approved,
+                "run": "run-plan",
+                "event": "operator.approved",
+                "issue": "my-feature#00",
+                "data": {"source": "interview"},
+            })
+            runs2 = dashboard.collect_runs(root, now=time.time())
+            issue2 = runs2[0]["issues"][0]
+            self.assertFalse(issue2["operatorWaiting"])
+            self.assertNotEqual("Awaiting Operator", issue2.get("liveActivity"))
+
+            # Log issue.done
+            write_event(log, {
+                "ts": t_done,
+                "run": "run-plan",
+                "event": "issue.done",
+                "issue": "my-feature#00",
+                "data": {"strategy": "branch-merge"},
+            })
+            runs3 = dashboard.collect_runs(root, now=time.time())
+            issue3 = runs3[0]["issues"][0]
+            self.assertEqual("Done", issue3["column"])
+            self.assertFalse(issue3["operatorWaiting"])
+            self.assertEqual(t_done, issue3["completedAt"])
+            self.assertEqual(80, issue3["totalCycleSeconds"])
 
 
 class DashboardHttpServerTests(unittest.TestCase):
@@ -533,6 +588,25 @@ class DashboardHttpServerTests(unittest.TestCase):
         status, body = self.get("/history")
         self.assertEqual(200, status)
 
+    def test_post_shutdown_triggers_graceful_shutdown(self) -> None:
+        status, body = self.post("/api/shutdown")
+        self.assertEqual(200, status)
+        data = json.loads(body)
+        self.assertEqual("shutting_down", data.get("status"))
+        self.thread.join(timeout=3)
+        self.assertFalse(self.thread.is_alive())
+
+    def test_post_shutdown_rejects_non_loopback(self) -> None:
+        handler_class = dashboard.make_handler(self.state_root)
+        dummy = handler_class.__new__(handler_class)
+        dummy.client_address = ("192.168.1.100", 54321)
+        dummy.send_response = lambda code: setattr(dummy, "status_sent", code)
+        dummy.send_header = lambda *a: None
+        dummy.end_headers = lambda: None
+        dummy.wfile = io.BytesIO()
+        self.assertFalse(dummy._check_loopback())
+        self.assertEqual(403, getattr(dummy, "status_sent", None))
+
 
 class DashboardCliTests(unittest.TestCase):
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -574,8 +648,8 @@ class DashboardCliTests(unittest.TestCase):
         self.assertLessEqual(
             imports,
             {
-                "__future__", "argparse", "datetime", "http", "json", "pathlib",
-                "re", "runlog", "sys", "threading", "time",
+                "__future__", "argparse", "datetime", "http", "json", "os", "pathlib",
+                "re", "runlog", "socket", "subprocess", "sys", "threading", "time", "urllib",
             },
         )
 
@@ -596,10 +670,83 @@ class DashboardCliTests(unittest.TestCase):
         self.assertLessEqual(
             imports,
             {
-                "__future__", "ast", "dashboard", "datetime", "json", "subprocess",
+                "__future__", "ast", "dashboard", "datetime", "io", "json", "socket", "subprocess",
                 "sys", "tempfile", "threading", "time", "unittest", "urllib", "pathlib",
             },
         )
+
+    def test_status_reports_not_running_when_inactive(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            result = self.run_cli("status", "--port", "4820", "--state-root", str(temp), "--json")
+            self.assertEqual(0, result.returncode)
+            data = json.loads(result.stdout)
+            self.assertFalse(data["running"])
+            self.assertIsNone(data["pid"])
+            self.assertEqual(4820, data["port"])
+
+    def test_status_cleans_up_stale_pid(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            state_file = root / "dashboard.json"
+            state_file.write_text(json.dumps({
+                "running": True,
+                "host": "127.0.0.1",
+                "port": 4821,
+                "pid": 99999999,
+                "stateRoot": str(root),
+            }))
+            self.assertTrue(state_file.exists())
+            result = self.run_cli("status", "--port", "4821", "--state-root", str(temp), "--json")
+            self.assertEqual(0, result.returncode)
+            data = json.loads(result.stdout)
+            self.assertFalse(data["running"])
+            self.assertFalse(state_file.exists())
+
+    def test_start_daemon_fails_when_port_occupied_by_alien_process(self) -> None:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        alien_port = sock.getsockname()[1]
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                result = self.run_cli("start", "--daemon", "--port", str(alien_port), "--state-root", str(temp))
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("alien process", result.stderr)
+        finally:
+            sock.close()
+
+    def test_daemon_start_status_and_stop_lifecycle(self) -> None:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("127.0.0.1", 0))
+        free_port = sock.getsockname()[1]
+        sock.close()
+
+        with tempfile.TemporaryDirectory() as temp:
+            # 1. Start daemon
+            start_res = self.run_cli("start", "--daemon", "--port", str(free_port), "--state-root", str(temp), "--json")
+            self.assertEqual(0, start_res.returncode, start_res.stderr)
+            start_data = json.loads(start_res.stdout)
+            self.assertTrue(start_data["running"])
+            pid = start_data["pid"]
+            self.assertIsInstance(pid, int)
+
+            # 2. Check status
+            status_res = self.run_cli("status", "--port", str(free_port), "--state-root", str(temp), "--json")
+            self.assertEqual(0, status_res.returncode)
+            status_data = json.loads(status_res.stdout)
+            self.assertTrue(status_data["running"])
+            self.assertEqual(pid, status_data["pid"])
+
+            # 3. Stop daemon
+            stop_res = self.run_cli("stop", "--port", str(free_port), "--state-root", str(temp), "--json")
+            self.assertEqual(0, stop_res.returncode)
+            stop_data = json.loads(stop_res.stdout)
+            self.assertTrue(stop_data["stopped"])
+
+            # 4. Check status after stop
+            status_after = self.run_cli("status", "--port", str(free_port), "--state-root", str(temp), "--json")
+            self.assertEqual(0, status_after.returncode)
+            self.assertFalse(json.loads(status_after.stdout)["running"])
 
     def test_wait_gate_script(self) -> None:
         wait_gate_script = REPO_ROOT / ".agents" / "skills" / "gantry" / "scripts" / "wait_gate.py"

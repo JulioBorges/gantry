@@ -1,7 +1,7 @@
 # Freeze Cycle Timer on Done and Track Phase Durations
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `interactive-dashboard#05`
 Spec: `.scratch/interactive-dashboard/spec.md`
 Created: 2026-09-18
@@ -24,11 +24,11 @@ Freeze the elapsed delivery timer when an issue completes the Integrate phase an
 
 ## Acceptance criteria
 
-- [ ] When an issue transitions to `issue.done`, the elapsed timer ceases incrementing and fixes the final completion timestamp.
-- [ ] Done cards render a frozen total cycle time badge formatted in human-readable units (e.g., `Total: 14m 20s`).
-- [ ] The detail modal displays a breakdown of elapsed time spent in each individual phase (Plan, Implement, Review, Critic, Integrate).
-- [ ] Delivery integration strategy (PR vs branch merge) configured in `.gantry/config.json` is respected, transitioning to Done only upon verified merge.
-- [ ] Unit tests verify time calculations for finished issues and Playwright tests verify the frozen badge display.
+- [x] When an issue transitions to `issue.done`, the elapsed timer ceases incrementing and fixes the final completion timestamp.
+- [x] Done cards render a frozen total cycle time badge formatted in human-readable units (e.g., `Total: 14m 20s`).
+- [x] The detail modal displays a breakdown of elapsed time spent in each individual phase (Plan, Implement, Review, Critic, Integrate).
+- [x] Delivery integration strategy (PR vs branch merge) configured in `.gantry/config.json` is respected, transitioning to Done only upon verified merge.
+- [x] Unit tests verify time calculations for finished issues and Playwright tests verify the frozen badge display.
 
 ## Blocked by
 

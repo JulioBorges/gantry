@@ -488,12 +488,14 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
             "shlex",
             "shutil",
             "skipscan",
+            "socket",
             "subprocess",
             "sys",
             "tempfile",
             "threading",
             "time",
             "typing",
+            "urllib",
         }
         for script in sorted(SCRIPTS.glob("*.py")):
             tree = ast.parse(script.read_text(encoding="utf-8"), filename=str(script))
