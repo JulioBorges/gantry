@@ -137,6 +137,15 @@ continuation) can pick it up. "Blocked" here names a Run-log fact about this att
 projection — status authority stays in Issue files, per this Issue's contract, and only `roadmap.py done`
 (after Critic acceptance) ever changes an Issue's `Status:` line.
 
+## Dashboard lifecycle hooks
+
+Before the `Implement` phase begins in any round, the workflow queries `dashboard.py status --json`:
+- If inactive, it prompts the operator asking whether to start the dashboard (`dashboard.py start --daemon`). If approved, it launches the daemon and displays the URL; if declined, it proceeds without prompting again.
+- If already active, it logs the active URL without prompting.
+
+Immediately after the `Integrate` step completes at the end of each round:
+- The workflow queries `dashboard.py status --json`. If active, it prompts the operator asking whether to terminate the dashboard (`dashboard.py stop`). If approved, it terminates the server daemon.
+
 ## Executable Claude Code Workflow
 
 This Workflow script is the executable chain. It creates one Implementer chain per Issue; `pipeline`
@@ -671,6 +680,30 @@ async function implement(issue, feedback, previous) {
   return result && result.worktree === assigned.worktree && result.branch === assigned.branch ? result : null
 }
 
+// Pre-implementation dashboard check
+if (typeof prompt === 'function' && !A.skipDashboardPrompt) {
+  const dashCheck = await runCommand(`python3 "${scripts}/dashboard.py" status --json`, { cwd: A.repoRoot })
+  let dashStatus = null
+  if (dashCheck && dashCheck.exitCode === 0 && dashCheck.stdout && dashCheck.stdout.trim()) {
+    try { dashStatus = JSON.parse(dashCheck.stdout) } catch (e) {}
+  }
+  if (dashStatus && dashStatus.running) {
+    log(`Dashboard active at ${dashStatus.url}`)
+  } else if (dashStatus && !dashStatus.running) {
+    const askStart = await prompt('The dashboard is currently inactive. Would you like to start it in the background (dashboard.py start --daemon)? (yes/no)')
+    if (askStart && askStart.toLowerCase().trim() === 'yes') {
+      const startRes = await runCommand(`python3 "${scripts}/dashboard.py" start --daemon`, { cwd: A.repoRoot })
+      if (startRes && startRes.exitCode === 0) {
+        const recheck = await runCommand(`python3 "${scripts}/dashboard.py" status --json`, { cwd: A.repoRoot })
+        try {
+          const recheckStatus = JSON.parse(recheck.stdout)
+          log(`Dashboard started at ${recheckStatus.url}`)
+        } catch (e) {}
+      }
+    }
+  }
+}
+
 const results = await pipeline(
   A.issues,
   issue => implement(issue, null, null),
@@ -956,6 +989,23 @@ for (const delivery of deliveries) {
     cancelReason = { issue: delivery.ref, reason: 'integration_commit_failed' }
   }
 }
+
+// Post-integration dashboard check
+if (typeof prompt === 'function' && !A.skipDashboardPrompt) {
+  const postDashCmd = await runCommand(`python3 "${scripts}/dashboard.py" status --json`, { cwd: A.repoRoot })
+  let postDashStatus = null
+  if (postDashCmd && postDashCmd.exitCode === 0 && postDashCmd.stdout && postDashCmd.stdout.trim()) {
+    try { postDashStatus = JSON.parse(postDashCmd.stdout) } catch (e) {}
+  }
+  if (postDashStatus && postDashStatus.running) {
+    const askStop = await prompt('Integration complete. Would you like to shut down the background dashboard server (dashboard.py stop)? (yes/no)')
+    if (askStop && askStop.toLowerCase().trim() === 'yes') {
+      await runCommand(`python3 "${scripts}/dashboard.py" stop`, { cwd: A.repoRoot })
+      log('Dashboard stopped.')
+    }
+  }
+}
+
 await appendRunEvent('round.finished', undefined, undefined, { round: A.round })
 if (integrationStopped) {
   await appendRunEvent('run.cancelled', cancelReason && cancelReason.issue, undefined, {

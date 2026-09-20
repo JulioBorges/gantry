@@ -3237,6 +3237,7 @@ Slice: `legacy#07`
             "shutil",
             "skipscan",
             "socket",
+            "spec",
             "subprocess",
             "sys",
             "tempfile",
@@ -3246,7 +3247,7 @@ Slice: `legacy#07`
             "urllib",
         }
         self.assertEqual(
-            {"acceptance.py", "budget.py", "caveman.py", "cleanup.py", "common.py", "dashboard.py", "discovery.py", "execution.py", "frontier.py", "gates.py", "guard.py", "learner.py", "result.py", "roadmap.py", "runlog.py", "setup.py", "spec.py", "wait_gate.py"},
+            {"acceptance.py", "budget.py", "caveman.py", "cleanup.py", "common.py", "dashboard.py", "discovery.py", "execution.py", "frontier.py", "gates.py", "guard.py", "learner.py", "plan.py", "result.py", "roadmap.py", "runlog.py", "setup.py", "spec.py", "wait_gate.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         git_hooks = SKILL_DIR / "hooks" / "git"

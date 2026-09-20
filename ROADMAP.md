@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **39 / 48** |
-| Specs completed | **5 / 8** |
+| Issues completed | **43 / 48** |
+| Specs completed | **6 / 8** |
 | Execution waves | **27** |
 
 ## Specs
@@ -68,7 +68,7 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 12 | `role-execution-selection` | **done** | 01 | — | runtime model discovery, context budget, setup policy, plan and round workflows, Run Log, fixture proof | complete executable model catalog; versioned role defaults; cross-harness roles (Codex, Claude Code, OpenCode, Antigravity); explicit Issue recovery; cross-harness and Antigravity proof |
 | 13 | `gantry-site` | **done** | 01 | — | `site/`, `.github/workflows/deploy-pages.yml` | Gantry marketing and showcase site on GitHub Pages; Astro + Tailwind, industrial aesthetic, interactive pipeline simulator island, EN/PT-BR toggle, Playwright tests |
 | 14 | `interactive-dashboard` | **done** | 01 | 13 | `scripts/dashboard.py`, dashboard static assets, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | unified multi-project kanban, live agent activity streaming, post-critic human gate with interactive approval, gate verdicts, cycle timer freeze on Done |
-| 15 | `dashboard-lifecycle` | approved | 01, 14 | 14 | `scripts/dashboard.py`, dashboard static assets, `SKILL.md`, `reference/round-workflow.md`, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | daemon lifecycle controls (`status`, `start --daemon`, `stop`), `POST /api/shutdown`, web UI shutdown button and modal, Gantry round workflow prompts |
+| 15 | `dashboard-lifecycle` | **done** | 01, 14 | 14 | `scripts/dashboard.py`, dashboard static assets, `SKILL.md`, `reference/round-workflow.md`, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | daemon lifecycle controls (`status`, `start --daemon`, `stop`), `POST /api/shutdown`, web UI shutdown button and modal, Gantry round workflow prompts |
 | 16 | `gantry-plan` | approved | 01 | 14 | `.agents/skills/gantry-plan/`, `.agents/skills/gantry/`, `scripts/runlog.py`, `tests/` | Socratic gate planning skill (grill-me style), tracer-bullet vertical slicing (to-issues style), Plan column kanban telemetry, and gantry delegation |
 
 ### Spec waves (structural)
@@ -112,12 +112,9 @@ and 05, so they are written after a few real run logs exist, not before.
 
 ## Where work can start
 
-Wave 20 is complete (`interactive-dashboard#05`, `dashboard-lifecycle#01`, `gantry-plan#01`). Spec 14 (`interactive-dashboard`) is now fully delivered.
-Work can start on Wave 21 in parallel with:
-- `dashboard-lifecycle#02` (`Add Web UI Shutdown Action and Stopped State`)
-- `dashboard-lifecycle#03` (`Integrate Round Workflow Lifecycle Hooks and Skill Automation`)
-- `gantry-plan#02` (`Implement Socratic Gate planning engine for free-text goals`)
-- `gantry-plan#03` (`Implement tracer-bullet vertical slicing engine with automated gates and operator quizzing`)
+Wave 21 is complete (`dashboard-lifecycle#02`, `dashboard-lifecycle#03`, `gantry-plan#02`, `gantry-plan#03`). Spec 15 (`dashboard-lifecycle`) is now fully delivered.
+Work can start on Wave 22 with:
+- `gantry-plan#04` (`Package gantry-plan skill, wire gantry delegation, and execution handoff`)
 
 ## Progress by spec
 
@@ -131,8 +128,8 @@ Work can start on Wave 21 in parallel with:
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
 | 13 | `gantry-site` | 6/6 | 12–16 |
 | 14 | `interactive-dashboard` | 5/5 | 17–20 |
-| 15 | `dashboard-lifecycle` | 1/3 | 20–21 |
-| 16 | `gantry-plan` | 1/4 | 20–22 |
+| 15 | `dashboard-lifecycle` | 3/3 | 20–21 |
+| 16 | `gantry-plan` | 3/4 | 20–22 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -279,15 +276,15 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`dashboard-lifecycle#01`** — Implement CLI Lifecycle Commands and Shutdown HTTP Endpoint _(no blockers)_
 - [x] **`gantry-plan#01`** — Prefactor and add planning milestone telemetry in runlog and dashboard _(no blockers)_
 
-### Wave 21 — 0/4 done
+### Wave 21 — 4/4 done
 
-- [ ] **`dashboard-lifecycle#02`** — Add Web UI Shutdown Action and Stopped State
+- [x] **`dashboard-lifecycle#02`** — Add Web UI Shutdown Action and Stopped State
   <br>↳ blocked by: dashboard-lifecycle#01
-- [ ] **`dashboard-lifecycle#03`** — Integrate Round Workflow Lifecycle Hooks and Skill Automation
+- [x] **`dashboard-lifecycle#03`** — Integrate Round Workflow Lifecycle Hooks and Skill Automation
   <br>↳ blocked by: dashboard-lifecycle#01
-- [ ] **`gantry-plan#02`** — Implement Socratic Gate planning engine for free-text goals
+- [x] **`gantry-plan#02`** — Implement Socratic Gate planning engine for free-text goals
   <br>↳ blocked by: gantry-plan#01
-- [ ] **`gantry-plan#03`** — Implement tracer-bullet vertical slicing engine with automated gates and operator quizzing
+- [x] **`gantry-plan#03`** — Implement tracer-bullet vertical slicing engine with automated gates and operator quizzing
   <br>↳ blocked by: gantry-plan#01
 
 ### Wave 22 — 0/1 done

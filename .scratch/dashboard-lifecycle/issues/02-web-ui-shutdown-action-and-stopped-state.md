@@ -1,7 +1,7 @@
 # Add Web UI Shutdown Action and Stopped State
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `dashboard-lifecycle#02`
 Spec: `.scratch/dashboard-lifecycle/spec.md`
 Created: 2026-09-19
@@ -27,12 +27,12 @@ Provide an in-browser shutdown button in the dashboard rig header:
 
 ## Acceptance criteria
 
-- [ ] The dashboard rig header displays a prominent shutdown button.
-- [ ] Clicking the shutdown button presents an explicit confirmation dialog.
-- [ ] Confirming shutdown sends a `POST` request to `/api/shutdown`.
-- [ ] Upon shutdown confirmation, frontend polling of `/api/state` stops immediately.
-- [ ] An overlay or status banner displays "SERVER STOPPED" and indicates disconnected state.
-- [ ] Playwright E2E tests in `site/tests/dashboard.spec.ts` validate button display, confirmation, and state transition.
+- [x] The dashboard rig header displays a prominent shutdown button.
+- [x] Clicking the shutdown button presents an explicit confirmation dialog.
+- [x] Confirming shutdown sends a `POST` request to `/api/shutdown`.
+- [x] Upon shutdown confirmation, frontend polling of `/api/state` stops immediately.
+- [x] An overlay or status banner displays "SERVER STOPPED" and indicates disconnected state.
+- [x] Playwright E2E tests in `site/tests/dashboard.spec.ts` validate button display, confirmation, and state transition.
 
 ## Blocked by
 

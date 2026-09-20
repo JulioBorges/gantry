@@ -792,9 +792,80 @@
       });
     }
 
+    function openShutdownModal() {
+      const modal = document.getElementById("shutdown-modal");
+      if (modal) {
+        modal.classList.remove("hidden");
+      }
+    }
+
+    function closeShutdownModal() {
+      const modal = document.getElementById("shutdown-modal");
+      if (modal) {
+        modal.classList.add("hidden");
+      }
+    }
+
+    function handleConfirmShutdown() {
+      isServerStopped = true;
+      if (pollIntervalId) {
+        clearInterval(pollIntervalId);
+        pollIntervalId = null;
+      }
+      fetch("/api/shutdown", { method: "POST" })
+        .catch(function () {
+          // Server process may terminate immediately
+        });
+      closeShutdownModal();
+      const overlay = document.getElementById("server-stopped-overlay");
+      if (overlay) {
+        overlay.classList.remove("hidden");
+      }
+      const statusText = document.querySelector(".status-text");
+      if (statusText) {
+        statusText.textContent = "SERVER STOPPED // OFFLINE";
+      }
+      const statusIndicator = document.querySelector(".status-indicator");
+      if (statusIndicator) {
+        statusIndicator.classList.add("stopped");
+      }
+    }
+
+    const btnShutdown = document.getElementById("btn-shutdown");
+    if (btnShutdown) {
+      btnShutdown.addEventListener("click", openShutdownModal);
+    }
+
+    const shutdownCloseBtn = document.getElementById("shutdown-close-btn");
+    if (shutdownCloseBtn) {
+      shutdownCloseBtn.addEventListener("click", closeShutdownModal);
+    }
+
+    const shutdownCancelBtn = document.getElementById("shutdown-cancel-btn");
+    if (shutdownCancelBtn) {
+      shutdownCancelBtn.addEventListener("click", closeShutdownModal);
+    }
+
+    const shutdownConfirmBtn = document.getElementById("shutdown-confirm-btn");
+    if (shutdownConfirmBtn) {
+      shutdownConfirmBtn.addEventListener("click", handleConfirmShutdown);
+    }
+
+    const shutdownModal = document.getElementById("shutdown-modal");
+    if (shutdownModal) {
+      shutdownModal.addEventListener("click", function (e) {
+        if (e.target === shutdownModal) {
+          closeShutdownModal();
+        }
+      });
+    }
+
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape" && activeModalIssue) {
-        closeExecutionModal();
+      if (e.key === "Escape") {
+        if (activeModalIssue) {
+          closeExecutionModal();
+        }
+        closeShutdownModal();
       }
     });
 
@@ -820,7 +891,11 @@
     }
   }
 
+  let pollIntervalId = null;
+  let isServerStopped = false;
+
   function poll() {
+    if (isServerStopped) return;
     fetch("/api/state", { cache: "no-store" })
       .then(function (response) {
         return response.json();
@@ -833,5 +908,5 @@
 
   setupEvents();
   poll();
-  setInterval(poll, POLL_INTERVAL_MS);
+  pollIntervalId = setInterval(poll, POLL_INTERVAL_MS);
 })();

@@ -12,8 +12,14 @@ changed from the dashboard.
 
 ## Open the dashboard
 
+### Foreground server
 ```
 python3 <skillDir>/../gantry/scripts/dashboard.py serve
+```
+
+### Background daemon
+```
+python3 <skillDir>/../gantry/scripts/dashboard.py start --daemon
 ```
 
 - Binds `127.0.0.1` only; the script refuses any other `--host` value and exits non-zero
@@ -24,6 +30,17 @@ python3 <skillDir>/../gantry/scripts/dashboard.py serve
   one clone shares that state root); pass `--state-root` to point at a different one, for
   example when inspecting a fixture.
 - Open `http://127.0.0.1:<port>/` in a browser once the server is listening.
+
+## Daemon subcommands and status
+
+- Query status: `python3 <skillDir>/../gantry/scripts/dashboard.py status [--json]`
+- Terminate daemon: `python3 <skillDir>/../gantry/scripts/dashboard.py stop`
+
+## Round lifecycle hooks
+
+Gantry's round workflow automates dashboard lifecycle checks:
+- **Pre-implementation hook**: Prior to starting the `Implement` phase, the workflow checks `dashboard.py status --json`. If inactive, it asks the operator whether to launch the dashboard with `dashboard.py start --daemon`. If approved, it launches the daemon and displays the URL. If the operator declines, it proceeds without prompting again. If already active, it logs the active URL without prompting.
+- **Post-integration hook**: After completing `Integrate`, if `dashboard.py status --json` reports active, it asks the operator whether to terminate the dashboard with `dashboard.py stop`. If approved, it cleanly stops the daemon.
 
 ## What you see
 
@@ -51,5 +68,7 @@ tests.
 
 ## Stopping the server
 
-`Ctrl-C` in the terminal running `dashboard.py serve` stops it; nothing it does needs
-cleanup, because it never wrote anything.
+- For the foreground server: `Ctrl-C` in the terminal running `dashboard.py serve`.
+- For the daemon: `python3 <skillDir>/../gantry/scripts/dashboard.py stop`.
+- From the browser: click the **SHUTDOWN** button in the dashboard rig header and confirm in the dialog.
+

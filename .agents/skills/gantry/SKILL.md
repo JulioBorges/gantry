@@ -158,6 +158,12 @@ Every script provides `--help`, and data-producing paths support `--json`.
   `{prefix}{spec}-{number:02d}`), rendered by `common.issue_branch(policy, issue)`.
 - Only after Critic acceptance, green gates and a clean worktree may the orchestrator run
   `roadmap.py done <ref>`. Never hand-edit Issue status, criteria checkboxes or the roadmap.
+- Round dashboard hooks automate lifecycle visibility: before the `Implement` phase begins in any round,
+  the workflow queries `python3 <skillDir>/scripts/dashboard.py status --json`. If inactive, it asks the operator
+  whether to start the dashboard (`dashboard.py start --daemon`) and displays the URL on approval, proceeding
+  without prompts if declined; if already active, it logs the URL without prompting. Immediately after `Integrate`
+  completes at round end, it queries `dashboard.py status --json`: if active, it prompts the operator asking
+  whether to terminate the server daemon (`dashboard.py stop`).
 - At the end of a Run, execute `python3 <skillDir>/scripts/cleanup.py --plan --json` from the Run worktree
   and present its JSON output as the actual, read-only cleanup plan for the operator's authorization.
   Only after explicit Cleanup Authorization may the workflow pass that unchanged JSON to

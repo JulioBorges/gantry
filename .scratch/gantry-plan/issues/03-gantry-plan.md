@@ -1,7 +1,7 @@
 # Implement tracer-bullet vertical slicing engine with automated gates and operator quizzing
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-plan#03`
 Spec: `.scratch/gantry-plan/spec.md`
 Created: 2026-09-19
@@ -30,13 +30,13 @@ When invoked with a spec:
 
 ## Acceptance criteria
 
-- [ ] Slicing engine validates the input spec with `spec.py --check` before decomposing.
-- [ ] Decomposes requirements into vertical tracer bullets with prefactoring identified in the earliest slice.
-- [ ] Draft issues are written to `.scratch/<slug>/issues/NN-<slug>.md` with valid Gantry headers, `### Files to read`, criteria, and acyclic `## Blocked by`.
-- [ ] Context budget is measured for each issue with `budget.py` and flagged if over budget.
-- [ ] Plan Critic audits the draft issues and reports actionable findings.
-- [ ] Slicing presents a quiz to the operator covering granularity, dependencies, and split/merges.
-- [ ] Unit tests in `tests/test_gantry_plan.py` verify tracer-bullet generation, budget validation, and DAG acyclicity.
+- [x] Slicing engine validates the input spec with `spec.py --check` before decomposing.
+- [x] Decomposes requirements into vertical tracer bullets with prefactoring identified in the earliest slice.
+- [x] Draft issues are written to `.scratch/<slug>/issues/NN-<slug>.md` with valid Gantry headers, `### Files to read`, criteria, and acyclic `## Blocked by`.
+- [x] Context budget is measured for each issue with `budget.py` and flagged if over budget.
+- [x] Plan Critic audits the draft issues and reports actionable findings.
+- [x] Slicing presents a quiz to the operator covering granularity, dependencies, and split/merges.
+- [x] Unit tests in `tests/test_gantry_plan.py` verify tracer-bullet generation, budget validation, and DAG acyclicity.
 
 ## Blocked by
 

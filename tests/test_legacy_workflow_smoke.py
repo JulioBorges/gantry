@@ -489,6 +489,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
             "shutil",
             "skipscan",
             "socket",
+            "spec",
             "subprocess",
             "sys",
             "tempfile",

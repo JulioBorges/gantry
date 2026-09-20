@@ -349,5 +349,91 @@ test.describe('Dashboard Theme & Design Visual Regression Check', () => {
     await card.screenshot({ path: 'site/test-results/worktree-card.png' });
     await page.screenshot({ path: 'site/test-results/full-dashboard.png' });
   });
+
+  test('should display shutdown button, open confirmation dialog, and transition to stopped state on confirmation', async ({ page }) => {
+    let statePollCount = 0;
+    let shutdownCalled = false;
+
+    await page.route('**/api/state', async (route) => {
+      statePollCount++;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          columns: ['Ready', 'Plan', 'Implement', 'Review', 'Critic', 'Integrate', 'Done', 'Blocked'],
+          projects: [{ unitId: 'unit-shut-01', name: 'ShutdownProject', repositoryRoot: '/repo/shut' }],
+          runs: [],
+        }),
+      });
+    });
+
+    await page.route('**/api/shutdown', async (route) => {
+      if (route.request().method() === 'POST') {
+        shutdownCalled = true;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ status: 'shutting_down' }),
+        });
+      } else {
+        await route.abort();
+      }
+    });
+
+    try {
+      const response = await page.goto('http://127.0.0.1:4600/', { timeout: 3000 });
+      if (!response || !response.ok()) {
+        test.skip(true, 'Local dashboard server is not active on port 4600');
+        return;
+      }
+    } catch {
+      test.skip(true, 'Local dashboard server is not active on port 4600');
+      return;
+    }
+
+    // 1. Verify shutdown button in header controls
+    const shutdownBtn = page.locator('#btn-shutdown');
+    await expect(shutdownBtn).toBeVisible();
+    await expect(shutdownBtn).toHaveText('SHUTDOWN');
+
+    // 2. Click shutdown button to open modal
+    const shutdownModal = page.locator('#shutdown-modal');
+    await expect(shutdownModal).toHaveClass(/hidden/);
+    await shutdownBtn.click();
+    await expect(shutdownModal).toBeVisible();
+    await expect(shutdownModal).not.toHaveClass(/hidden/);
+    await expect(page.locator('#shutdown-modal-title')).toHaveText('SHUTDOWN SERVER');
+
+    // 3. Test cancellation closes modal
+    const cancelBtn = page.locator('#shutdown-cancel-btn');
+    await cancelBtn.click();
+    await expect(shutdownModal).toHaveClass(/hidden/);
+    expect(shutdownCalled).toBe(false);
+
+    // 4. Reopen and confirm shutdown
+    await shutdownBtn.click();
+    await expect(shutdownModal).toBeVisible();
+
+    const initialPollCount = statePollCount;
+    const confirmBtn = page.locator('#shutdown-confirm-btn');
+    await confirmBtn.click();
+
+    // 5. Verify shutdown POST was dispatched
+    expect(shutdownCalled).toBe(true);
+    await expect(shutdownModal).toHaveClass(/hidden/);
+
+    // 6. Verify SERVER STOPPED overlay is visible
+    const stoppedOverlay = page.locator('#server-stopped-overlay');
+    await expect(stoppedOverlay).toBeVisible();
+    await expect(page.locator('.stopped-heading')).toHaveText('SERVER STOPPED');
+    await expect(page.locator('.stopped-subtext')).toContainText('DISCONNECTED');
+
+    // 7. Verify polling stopped: wait 1500ms and verify poll count did not increase
+    await page.waitForTimeout(1500);
+    expect(statePollCount).toBeLessThanOrEqual(initialPollCount + 1);
+
+    // Visual screenshot verification
+    await page.screenshot({ path: 'site/test-results/server-stopped.png' });
+  });
 });
 

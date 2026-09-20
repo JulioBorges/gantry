@@ -1,7 +1,7 @@
 # Integrate Round Workflow Lifecycle Hooks and Skill Automation
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `dashboard-lifecycle#03`
 Spec: `.scratch/dashboard-lifecycle/spec.md`
 Created: 2026-09-19
@@ -26,11 +26,11 @@ Automate dashboard lifecycle prompts and execution across Gantry's round workflo
 
 ## Acceptance criteria
 
-- [ ] `reference/round-workflow.md` specifies pre-implementation check: if inactive, prompt operator to start dashboard via `dashboard.py start --daemon`.
-- [ ] `reference/round-workflow.md` specifies post-integration check: if active, prompt operator to stop dashboard via `dashboard.py stop`.
-- [ ] Inactive dashboard at round start does not prompt if operator declines, proceeding with execution.
-- [ ] Already active dashboard at round start displays the URL without prompting.
-- [ ] Documentation in `SKILL.md` and `gantry-dashboard/SKILL.md` reflects daemon subcommands (`start --daemon`, `status`, `stop`) and round hooks.
+- [x] `reference/round-workflow.md` specifies pre-implementation check: if inactive, prompt operator to start dashboard via `dashboard.py start --daemon`.
+- [x] `reference/round-workflow.md` specifies post-integration check: if active, prompt operator to stop dashboard via `dashboard.py stop`.
+- [x] Inactive dashboard at round start does not prompt if operator declines, proceeding with execution.
+- [x] Already active dashboard at round start displays the URL without prompting.
+- [x] Documentation in `SKILL.md` and `gantry-dashboard/SKILL.md` reflects daemon subcommands (`start --daemon`, `status`, `stop`) and round hooks.
 
 ## Blocked by
 

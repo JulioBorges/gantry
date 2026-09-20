@@ -1,7 +1,7 @@
 # Implement Socratic Gate planning engine for free-text goals
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-plan#02`
 Spec: `.scratch/gantry-plan/spec.md`
 Created: 2026-09-19
@@ -31,12 +31,12 @@ For each question, the engine recommends a vetted default answer based on codeba
 
 ## Acceptance criteria
 
-- [ ] Socratic Gate engine accepts a free-text goal and generates a slug for the feature.
-- [ ] Engine explores codebase context and structures questions across Problem, Architecture, Scope, and Criteria phases with recommended answers.
-- [ ] Run log events mark `<slug>#00` with `phase: "Plan"` and `data.operatorWaiting: true` during interview pauses.
-- [ ] Spec synthesizer outputs `.scratch/<slug>/spec.md` with Blueprint, Contract (DoD, guardrails, scenarios), Out of Scope, and Changelog.
-- [ ] `python3 .agents/skills/gantry/scripts/spec.py --check <specPath>` passes on the generated spec.
-- [ ] Unit tests in `tests/test_gantry_plan.py` verify the Socratic gate lifecycle and spec generation.
+- [x] Socratic Gate engine accepts a free-text goal and generates a slug for the feature.
+- [x] Engine explores codebase context and structures questions across Problem, Architecture, Scope, and Criteria phases with recommended answers.
+- [x] Run log events mark `<slug>#00` with `phase: "Plan"` and `data.operatorWaiting: true` during interview pauses.
+- [x] Spec synthesizer outputs `.scratch/<slug>/spec.md` with Blueprint, Contract (DoD, guardrails, scenarios), Out of Scope, and Changelog.
+- [x] `python3 .agents/skills/gantry/scripts/spec.py --check <specPath>` passes on the generated spec.
+- [x] Unit tests in `tests/test_gantry_plan.py` verify the Socratic gate lifecycle and spec generation.
 
 ## Blocked by
 

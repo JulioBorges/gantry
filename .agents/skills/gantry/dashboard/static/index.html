@@ -24,6 +24,7 @@
             <option value="ALL">ALL</option>
           </select>
         </div>
+        <button id="btn-shutdown" class="btn-shutdown" type="button" aria-label="Shutdown Server">SHUTDOWN</button>
       </div>
       <div class="header-status">
         <span class="status-indicator"></span>
@@ -105,6 +106,36 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Shutdown Confirmation Modal -->
+  <div id="shutdown-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="shutdown-modal-title">
+    <div class="modal-dialog modal-dialog-sm">
+      <div class="modal-header">
+        <div class="modal-header-left">
+          <span class="modal-diamond alert-diamond"></span>
+          <h2 id="shutdown-modal-title" class="modal-title">SHUTDOWN SERVER</h2>
+        </div>
+        <button id="shutdown-close-btn" class="modal-close" aria-label="Close modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="shutdown-message">Are you sure you want to shut down the Gantry dashboard server? Active state polling will stop and the server process will terminate.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="shutdown-cancel-btn" class="btn-secondary" type="button">CANCEL</button>
+        <button id="shutdown-confirm-btn" class="btn-danger" type="button">CONFIRM SHUTDOWN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Server Stopped Overlay / Banner -->
+  <div id="server-stopped-overlay" class="stopped-overlay hidden" role="alert">
+    <div class="stopped-card">
+      <span class="stopped-icon">⏹</span>
+      <h2 class="stopped-heading">SERVER STOPPED</h2>
+      <p class="stopped-subtext">DISCONNECTED // DAEMON TERMINATED</p>
+      <div class="stopped-hint">Restart via CLI: <code>python3 .agents/skills/gantry/scripts/dashboard.py start --daemon</code></div>
     </div>
   </div>
 
