@@ -1,7 +1,7 @@
 # Codex host orchestration reference workflow and hybrid dispatch validation
 
 Type: issue
-Status: ready
+Status: done
 Slice: `codex-tier#03`
 Spec: `.scratch/codex-tier/spec.md`
 Created: 2026-09-20
@@ -24,10 +24,10 @@ Document and validate the executable workflow for Codex acting as Host Harness. 
 
 ## Acceptance criteria
 
-- [ ] Reference workflow documentation in `.agents/skills/gantry/reference/` details Codex host orchestration and hybrid role dispatch.
-- [ ] Bounded command dispatch via `execution.build_dispatch_command()` and execution runners handles prompt delivery and timeout/error isolation.
-- [ ] Role results returned from `codex exec` conform to `result.py` contracts, with robust parsing for markdown and JSON delimiters.
-- [ ] End-to-end integration tests verify a simulated Codex host run with cross-harness Critic, testing refusal when prompt invariants or git hooks are violated.
+- [x] Reference workflow documentation in `.agents/skills/gantry/reference/` details Codex host orchestration and hybrid role dispatch.
+- [x] Bounded command dispatch via `execution.build_dispatch_command()` and execution runners handles prompt delivery and timeout/error isolation.
+- [x] Role results returned from `codex exec` conform to `result.py` contracts, with robust parsing for markdown and JSON delimiters.
+- [x] End-to-end integration tests verify a simulated Codex host run with cross-harness Critic, testing refusal when prompt invariants or git hooks are violated.
 
 ## Blocked by
 
