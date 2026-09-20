@@ -147,6 +147,12 @@ Every script provides `--help`, and data-producing paths support `--json`.
 - Planning creates draft Issues and never edits `ROADMAP.md`. Present drafts and the critic verdict, then
   stop. Only explicit operator approval permits `roadmap.py status <ref> ready-for-agent`, followed by
   `roadmap.py waves` and `roadmap.py check`.
+- **Delegation to `gantry-plan`**: When `gantry` is invoked with a free-text goal (e.g. a quoted string
+  like `"add webhook support"`) or an unplanned spec (a spec without implementation issues in
+  `.scratch/<slug>/issues/` or whose status is `draft`), it automatically delegates to `gantry-plan`.
+  `gantry-plan` executes the Socratic Gate interview or spec validation, tracer-bullet vertical slicing,
+  token budget audit, Plan Critic validation, and operator approval transition. Once approved, delegated
+  execution automatically advances into the round implementation loop without prompting to start `gantry`.
 - Each Issue follows `reference/round-workflow.md`: a fresh TDD implementer, a reviewer on both standards
   and Spec axes, one review fix pass, then a fresh adversarial Critic. The Critic alone can establish a
   complete delivery. Its refutation consumes at most the correction budget.

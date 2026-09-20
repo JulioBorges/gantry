@@ -379,6 +379,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
             REPO_ROOT / ".agents" / "skills" / "gantry",
             REPO_ROOT / ".agents" / "skills" / "gantry-setup",
             REPO_ROOT / ".agents" / "skills" / "gantry-dashboard",
+            REPO_ROOT / ".agents" / "skills" / "gantry-plan",
         ]
         for skill in skills:
             self.assertTrue(skill.is_dir())
@@ -394,7 +395,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
             harness_skills = REPO_ROOT / harness / "skills"
             self.assertTrue(harness_skills.exists(), f"missing {harness}/skills")
             names = sorted([item.name for item in harness_skills.iterdir() if not item.name.startswith(".")])
-            self.assertEqual(["gantry", "gantry-dashboard", "gantry-setup"], names)
+            self.assertEqual(["gantry", "gantry-dashboard", "gantry-plan", "gantry-setup"], names)
             for name in names:
                 target = harness_skills / name
                 self.assertTrue(target.is_dir())

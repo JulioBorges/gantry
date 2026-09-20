@@ -30,6 +30,7 @@
     ".agents/skills/gantry",
     ".agents/skills/gantry-setup",
     ".agents/skills/gantry-dashboard",
+    ".agents/skills/gantry-plan",
     "assets/gantry.png",
     "README.md",
     "LICENSE",

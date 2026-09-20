@@ -322,5 +322,198 @@ Scenario: Connect to stream
         data_check = json.loads(res_check.stdout)
         self.assertTrue(data_check.get("valid"))
 
+
+class GantryPlanSkillAndDelegationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.repo_root = Path(self.temp_dir)
+        subprocess.run(["git", "init", "--quiet", str(self.repo_root)], check=True)
+
+        # Setup basic roadmap
+        self.roadmap_path = self.repo_root / "ROADMAP.md"
+        self.roadmap_path.write_text(
+            """# Roadmap
+
+| Metric | Value |
+|---|---|
+| Issues completed | **0 / 0** |
+| Specs completed | **0 / 0** |
+| Execution waves | **0** |
+
+<!-- BEGIN GENERATED: spec progress -->
+
+<!-- END GENERATED: spec progress -->
+
+<!-- BEGIN GENERATED: issue checklist -->
+
+<!-- END GENERATED: issue checklist -->
+""",
+            encoding="utf-8"
+        )
+
+        # Setup valid spec
+        self.slug = "sample-feature"
+        spec_dir = self.repo_root / ".scratch" / self.slug
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        self.spec_path = spec_dir / "spec.md"
+        self.spec_path.write_text(f"""# Spec: Sample Feature
+
+Type: spec
+Status: ready-for-agent
+Map: `ROADMAP.md` (spec 01)
+Source: PRD.md §1
+Created: 2026-09-20
+
+## Blueprint
+
+### Context
+
+Sample feature context.
+
+### Architecture
+
+Sample architecture.
+
+### Constraints
+
+Zero external dependencies.
+
+## Contract
+
+### Definition of Done
+
+- [ ] Prefactor architecture
+- [ ] Implement core functionality
+
+### Regression Guardrails
+
+- Existing tests pass
+
+### Scenarios
+
+```gherkin
+Scenario: Verify feature
+  Given ready state
+  When executed
+  Then passes
+```
+
+## Out of Scope
+
+- Remote integration
+
+## Changelog
+
+- 2026-09-20 — Initial
+""", encoding="utf-8")
+
+        # Slice issues in draft status
+        slicer = plan.SlicingEngine(self.spec_path, repo_root=self.repo_root)
+        self.issues = slicer.slice()
+        self.written_files = slicer.write_issues(self.issues)
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_gantry_plan_skill_registration_and_frontmatter(self):
+        skill_file = REPO_ROOT / ".agents" / "skills" / "gantry-plan" / "SKILL.md"
+        self.assertTrue(skill_file.exists(), "SKILL.md does not exist for gantry-plan")
+        content = skill_file.read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("---\n"))
+        parts = content.split("---", 2)
+        self.assertGreaterEqual(len(parts), 3)
+        frontmatter = parts[1]
+        self.assertIn("name: gantry-plan", frontmatter)
+        self.assertIn("description:", frontmatter)
+        self.assertIn("argument-hint:", frontmatter)
+        self.assertIn("<spec-slug | spec-path | \"free-text goal\">", frontmatter)
+
+    def test_gantry_skill_delegation_instructions(self):
+        gantry_skill = REPO_ROOT / ".agents" / "skills" / "gantry" / "SKILL.md"
+        self.assertTrue(gantry_skill.exists())
+        content = gantry_skill.read_text(encoding="utf-8")
+        self.assertIn("gantry-plan", content)
+        self.assertIn("free-text goal", content)
+        self.assertIn("unplanned spec", content)
+
+    def test_approve_plan_transitions_issues_and_updates_roadmap(self):
+        # Verify initial status is draft
+        for path in self.written_files:
+            self.assertIn("Status: draft", path.read_text(encoding="utf-8"))
+
+        res = plan.approve_plan(self.slug, repo_root=self.repo_root)
+        self.assertTrue(res["valid"])
+        self.assertEqual(len(self.issues), len(res["updated_issues"]))
+
+        # Verify issues are now ready-for-agent
+        for path in self.written_files:
+            self.assertIn("Status: ready-for-agent", path.read_text(encoding="utf-8"))
+
+        # Verify roadmap.py check passes with zero drift
+        res_check = subprocess.run(
+            [sys.executable, str(SCRIPTS_DIR / "roadmap.py"), "check", "--json"],
+            capture_output=True,
+            text=True,
+            cwd=self.repo_root
+        )
+        self.assertEqual(0, res_check.returncode, res_check.stdout + res_check.stderr)
+        data = json.loads(res_check.stdout)
+        self.assertEqual([], data.get("drift", []))
+
+    def test_approve_plan_with_telemetry_records_milestone_done(self):
+        state_dir = self.repo_root / ".state"
+        unit_id = "test-unit"
+        run_id = "test-run"
+        runlog_path = state_dir / unit_id / "runs" / f"{run_id}.jsonl"
+        runlog_path.parent.mkdir(parents=True, exist_ok=True)
+        runlog_path.write_text(
+            json.dumps({
+                "ts": "2026-09-20T12:00:00Z",
+                "run": run_id,
+                "event": "run.started",
+                "data": {
+                    "repositoryRoot": str(self.repo_root),
+                    "policyHash": "abc123",
+                    "tier": "reference",
+                    "staleAfterSeconds": 900
+                }
+            }) + "\n",
+            encoding="utf-8"
+        )
+
+        res = plan.approve_plan(
+            self.slug,
+            repo_root=self.repo_root,
+            unit_id=unit_id,
+            run_id=run_id,
+            state_root=state_dir
+        )
+        self.assertTrue(res["valid"])
+
+        events = [json.loads(line) for line in runlog_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        done_events = [e for e in events if e.get("event") == "issue.done" and e.get("issue") == f"{self.slug}#00"]
+        self.assertEqual(1, len(done_events))
+        self.assertEqual("Plan", done_events[0]["phase"])
+
+    def test_approve_plan_cli_flag(self):
+        res = subprocess.run(
+            [sys.executable, str(SCRIPTS_DIR / "plan.py"), "--approve", self.slug, "--json"],
+            capture_output=True,
+            text=True,
+            cwd=self.repo_root
+        )
+        self.assertEqual(0, res.returncode, res.stdout + res.stderr)
+        data = json.loads(res.stdout)
+        self.assertTrue(data.get("valid"))
+        self.assertEqual(self.slug, data.get("slug"))
+
+    def test_standalone_vs_delegated_handoff_contract(self):
+        skill_file = REPO_ROOT / ".agents" / "skills" / "gantry-plan" / "SKILL.md"
+        content = skill_file.read_text(encoding="utf-8")
+        self.assertIn("Execution Handoff", content)
+        self.assertIn("Standalone Invocation", content)
+        self.assertIn("Delegated Invocation", content)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -23,7 +23,7 @@ test('published tarball installs all three skills through npx', () => {
     ], root));
     const paths = pack.files.map(file => file.path);
     assert.equal(pack.name, '@julioborges/gantry');
-    for (const skill of ['gantry', 'gantry-setup', 'gantry-dashboard']) {
+    for (const skill of ['gantry', 'gantry-setup', 'gantry-dashboard', 'gantry-plan']) {
       assert.ok(paths.includes(`.agents/skills/${skill}/SKILL.md`));
     }
     assert.ok(paths.includes('.agents/skills/gantry/scripts/frontier.py'));
@@ -39,9 +39,9 @@ test('published tarball installs all three skills through npx', () => {
     assert.equal(run('npx', ['--no-install', 'gantry', '--version'], temp).trim(), manifest.version);
     assert.match(run('npx', ['--no-install', 'gantry', '--help'], temp), /gantry add/);
     const listing = run('npx', ['--no-install', 'gantry', 'add', '--list'], temp);
-    assert.match(stripVTControlCharacters(listing), /Found 3 skills/);
+    assert.match(stripVTControlCharacters(listing), /Found 4 skills/);
     run('npx', ['--no-install', 'gantry', 'add', '--agent', 'codex', '--yes'], temp);
-    for (const skill of ['gantry', 'gantry-setup', 'gantry-dashboard']) {
+    for (const skill of ['gantry', 'gantry-setup', 'gantry-dashboard', 'gantry-plan']) {
       const installed = join(temp, '.agents/skills', skill, 'SKILL.md');
       assert.match(readFileSync(installed, 'utf8'), new RegExp(`name: ${skill}\\n`));
       assert.ok(realpathSync(installed).startsWith(realpathSync(temp)));

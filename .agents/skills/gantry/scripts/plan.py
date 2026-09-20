@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 # Support direct execution and relative import
@@ -506,15 +507,108 @@ Created: {item['created']}
         ]
 
 
+def approve_plan(
+    slug: str,
+    repo_root: Path | None = None,
+    unit_id: str | None = None,
+    run_id: str | None = None,
+    state_root: Path | None = None,
+) -> dict:
+    """Transition approved draft issues to ready-for-agent and update roadmap waves."""
+    repo = Path(repo_root).resolve() if repo_root else common.repo_root().resolve()
+    issue_dir = repo / ".scratch" / slug / "issues"
+    if not issue_dir.exists():
+        raise FileNotFoundError(f"Issue directory not found: {issue_dir}")
+
+    updated_issues = []
+    for issue_file in sorted(issue_dir.glob("*.md")):
+        parsed = common.parse_issue(issue_file)
+        ref = parsed.ref
+        if not ref:
+            continue
+        res = subprocess.run(
+            [sys.executable, str(SCRIPTS_DIR / "roadmap.py"), "status", ref, "ready-for-agent"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode != 0:
+            raise RuntimeError(f"Failed to update status for {ref}: {res.stderr or res.stdout}")
+        updated_issues.append(ref)
+
+    res_waves = subprocess.run(
+        [sys.executable, str(SCRIPTS_DIR / "roadmap.py"), "waves", "--json"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res_waves.returncode != 0:
+        raise RuntimeError(f"Failed to recompute waves: {res_waves.stderr or res_waves.stdout}")
+    waves_info = json.loads(res_waves.stdout) if res_waves.stdout else {}
+
+    res_check = subprocess.run(
+        [sys.executable, str(SCRIPTS_DIR / "roadmap.py"), "check", "--json"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res_check.returncode != 0:
+        raise RuntimeError(f"Roadmap check failed after updating waves: {res_check.stderr or res_check.stdout}")
+
+    if unit_id and run_id:
+        root_state = Path(state_root).resolve() if state_root else runlog.default_state_root()
+        log_path = runlog.run_log_path(root_state, unit_id, run_id)
+        done_event = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "run": run_id,
+            "event": "issue.done",
+            "issue": f"{slug}#00",
+            "phase": "Plan",
+            "data": {
+                "status": "ready-for-agent",
+                "issues": updated_issues,
+            },
+        }
+        runlog.append_event(log_path, done_event)
+
+    return {
+        "slug": slug,
+        "updated_issues": updated_issues,
+        "waves": waves_info,
+        "valid": True,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Gantry Plan: Socratic Gate and vertical slicing.")
     parser.add_argument("--goal", type=str, help="Free-text goal for Socratic Gate planning")
     parser.add_argument("--spec", type=str, help="Path to spec for vertical slicing")
     parser.add_argument("--check-spec", type=str, help="Check spec validity")
+    parser.add_argument("--approve", type=str, help="Approve plan and transition issues to ready-for-agent for a spec slug")
+    parser.add_argument("--unit-id", type=str, help="Run log unit ID")
+    parser.add_argument("--run-id", type=str, help="Run log run ID")
+    parser.add_argument("--state-root", type=str, help="Run log state root")
     parser.add_argument("--json", action="store_true", help="Print JSON output")
     args = parser.parse_args()
 
     repo = common.repo_root()
+
+    if args.approve:
+        res = approve_plan(
+            args.approve,
+            repo_root=repo,
+            unit_id=args.unit_id,
+            run_id=args.run_id,
+            state_root=Path(args.state_root) if args.state_root else None,
+        )
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"Plan approved for {res['slug']}: {len(res['updated_issues'])} issues set to ready-for-agent.")
+        return 0
 
     if args.check_spec:
         res = spec.validate(Path(args.check_spec), repo)
