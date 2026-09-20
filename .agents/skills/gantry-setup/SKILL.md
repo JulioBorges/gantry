@@ -29,15 +29,21 @@ You are the sole conversational writer of repository policy.
    - When Antigravity is detected (`.agents/` directory or `agy` CLI on PATH), `setup.py` generates or merges `.agents/hooks.json` to wire `PreToolUse` to `guard.py PreToolUse --json`.
    - Unrelated repository policy, hook settings and Caveman opt-in are preserved during merges.
 
-5. **Constraints**:
+5. **Codex Host Harness & Defense in Depth**:
+   - Detect Codex in environment via `codex` CLI on PATH, `.codex` configuration, or explicit `--harness codex`.
+   - Guide operator to verify authentication (`codex login`) and test model discovery (`discovery.py --harness codex`) before finalizing configuration.
+   - Configure `execution.hostHarness: "codex"` and role model assignments in `.gantry/config.json`.
+   - Inject Codex-specific orchestration rules (bounded subprocess dispatch via `codex exec`) and defense-in-depth guardrail directives into the marked Gantry policy block in `AGENTS.md`.
+
+6. **Constraints**:
    - Creates no engine, database, MCP service, or automatic cleanup.
    - All setup-generated policy, prompts, and marked content must be English.
 
-6. **Applying the Policy**:
+7. **Applying the Policy**:
    Once the operator confirms the settings, construct the JSON configuration and pipe it to `setup.py`:
    
    ```bash
    python3 .agents/skills/gantry/scripts/setup.py --config '{...}'
    ```
    
-   The `setup.py` script renders the full proposed `.gantry/config.json` before writing, supports merge, overwrite, and abort for an existing policy, handles idempotent merging of the Claude Code hook fragment into `.claude/settings.json`, configures `.agents/hooks.json` when Antigravity is detected, and adds or replaces only the marked Gantry section in `AGENTS.md`. Do not modify these files directly.
+   The `setup.py` script renders the full proposed `.gantry/config.json` before writing, supports merge, overwrite, and abort for an existing policy, handles idempotent merging of the Claude Code hook fragment into `.claude/settings.json`, configures `.agents/hooks.json` when Antigravity is detected, supports `--harness codex` with discovery verification, and adds or replaces only the marked Gantry section in `AGENTS.md`. Do not modify these files directly.

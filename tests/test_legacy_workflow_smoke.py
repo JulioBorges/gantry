@@ -477,6 +477,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
             "dataclasses",
             "datetime",
             "difflib",
+            "discovery",
             "execution",
             "hashlib",
             "http",
