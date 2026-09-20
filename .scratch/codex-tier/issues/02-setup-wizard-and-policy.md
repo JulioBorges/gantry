@@ -1,7 +1,7 @@
 # Support Codex in setup wizard, policy configuration, and AGENTS.md policy injection
 
 Type: issue
-Status: ready
+Status: done
 Slice: `codex-tier#02`
 Spec: `.scratch/codex-tier/spec.md`
 Created: 2026-09-20
@@ -24,11 +24,11 @@ Update `scripts/setup.py` and the `gantry-setup` skill to support Codex as an in
 
 ## Acceptance criteria
 
-- [ ] `setup.py` detects Codex in PATH or project root and supports `--harness codex` as an explicit or interactive option.
-- [ ] Setup guides operator to verify authentication (`codex login`) and tests discovery before finalizing configuration.
-- [ ] `.gantry/config.json` stores Codex under `execution.hostHarness` and role models when chosen, preserving existing unrelated policy.
-- [ ] Setup injects and idempotently maintains the marked Gantry policy block in `AGENTS.md`, including Codex-specific orchestration rules and guardrail directives.
-- [ ] Tests in `tests/test_gantry_setup.py` verify Codex setup, merge/overwrite behaviors, and `AGENTS.md` block preservation.
+- [x] `setup.py` detects Codex in PATH or project root and supports `--harness codex` as an explicit or interactive option.
+- [x] Setup guides operator to verify authentication (`codex login`) and tests discovery before finalizing configuration.
+- [x] `.gantry/config.json` stores Codex under `execution.hostHarness` and role models when chosen, preserving existing unrelated policy.
+- [x] Setup injects and idempotently maintains the marked Gantry policy block in `AGENTS.md`, including Codex-specific orchestration rules and guardrail directives.
+- [x] Tests in `tests/test_gantry_setup.py` verify Codex setup, merge/overwrite behaviors, and `AGENTS.md` block preservation.
 
 ## Blocked by
 
