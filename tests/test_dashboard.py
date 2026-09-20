@@ -197,6 +197,74 @@ class DashboardHelperTests(unittest.TestCase):
             self.assertIn("unit-gamma", projects_by_id)
             self.assertEqual("unit-gamma", projects_by_id["unit-gamma"]["name"])
 
+    def test_timer_freezes_on_done_and_tracks_phase_durations(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log = root / "unit-freeze000001" / "runs" / "run-freeze.jsonl"
+            t_plan_start = iso(200)
+            t_plan_end = iso(150)
+            t_impl_start = iso(150)
+            t_impl_end = iso(90)
+            t_rev_start = iso(90)
+            t_rev_end = iso(70)
+            t_crit_start = iso(70)
+            t_crit_end = iso(40)
+            t_int_start = iso(40)
+            t_done = iso(10)
+
+            write_event(log, started_event("run-freeze", 900, t_plan_start, "/repo/freeze"))
+            write_event(log, {"ts": t_plan_start, "run": "run-freeze", "event": "phase.started", "issue": "sample#01", "phase": "Plan", "data": {}})
+            write_event(log, {"ts": t_plan_end, "run": "run-freeze", "event": "phase.finished", "issue": "sample#01", "phase": "Plan", "data": {}})
+            write_event(log, {"ts": t_impl_start, "run": "run-freeze", "event": "phase.started", "issue": "sample#01", "phase": "Implement", "data": {}})
+            write_event(log, {"ts": t_impl_end, "run": "run-freeze", "event": "phase.finished", "issue": "sample#01", "phase": "Implement", "data": {}})
+            write_event(log, {"ts": t_rev_start, "run": "run-freeze", "event": "phase.started", "issue": "sample#01", "phase": "Review", "data": {}})
+            write_event(log, {"ts": t_rev_end, "run": "run-freeze", "event": "phase.finished", "issue": "sample#01", "phase": "Review", "data": {}})
+            write_event(log, {"ts": t_crit_start, "run": "run-freeze", "event": "phase.started", "issue": "sample#01", "phase": "Critic", "data": {}})
+            write_event(log, {"ts": t_crit_end, "run": "run-freeze", "event": "phase.finished", "issue": "sample#01", "phase": "Critic", "data": {}})
+            write_event(log, {"ts": t_int_start, "run": "run-freeze", "event": "phase.started", "issue": "sample#01", "phase": "Integrate", "data": {}})
+            write_event(log, {"ts": t_done, "run": "run-freeze", "event": "issue.done", "issue": "sample#01", "data": {"strategy": "branch-merge"}})
+
+            now = time.time()
+            runs = dashboard.collect_runs(root, now=now)
+            issue = runs[0]["issues"][0]
+
+            self.assertEqual("Done", issue["column"])
+            self.assertEqual(t_done, issue["completedAt"])
+            self.assertEqual(190, issue["totalCycleSeconds"])
+            self.assertEqual(50, issue["phaseDurations"]["Plan"])
+            self.assertEqual(60, issue["phaseDurations"]["Implement"])
+            self.assertEqual(20, issue["phaseDurations"]["Review"])
+            self.assertEqual(30, issue["phaseDurations"]["Critic"])
+            self.assertEqual(30, issue["phaseDurations"]["Integrate"])
+            self.assertEqual(30, issue["elapsedPhaseSeconds"])
+
+            # Verify that advancing now does NOT increment totalCycleSeconds or elapsedPhaseSeconds
+            future_runs = dashboard.collect_runs(root, now=now + 86400)
+            future_issue = future_runs[0]["issues"][0]
+            self.assertEqual(190, future_issue["totalCycleSeconds"])
+            self.assertEqual(30, future_issue["elapsedPhaseSeconds"])
+            self.assertEqual(t_done, future_issue["completedAt"])
+
+    def test_in_progress_issue_increments_timer_with_now(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log = root / "unit-prog00000001" / "runs" / "run-prog.jsonl"
+            t_start = iso(100)
+            write_event(log, started_event("run-prog", 900, t_start, "/repo/prog"))
+            write_event(log, {"ts": t_start, "run": "run-prog", "event": "phase.started", "issue": "sample#02", "phase": "Implement", "data": {}})
+
+            base_now = time.time()
+            runs_1 = dashboard.collect_runs(root, now=base_now)
+            issue_1 = runs_1[0]["issues"][0]
+            self.assertIsNone(issue_1["completedAt"])
+            self.assertGreaterEqual(issue_1["totalCycleSeconds"], 99)
+            self.assertGreaterEqual(issue_1["phaseDurations"]["Implement"], 99)
+
+            runs_2 = dashboard.collect_runs(root, now=base_now + 50)
+            issue_2 = runs_2[0]["issues"][0]
+            self.assertEqual(issue_1["totalCycleSeconds"] + 50, issue_2["totalCycleSeconds"])
+            self.assertEqual(issue_1["phaseDurations"]["Implement"] + 50, issue_2["phaseDurations"]["Implement"])
+
 
 class DashboardHttpServerTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -436,6 +504,25 @@ class DashboardHttpServerTests(unittest.TestCase):
         self.assertEqual("accepted", data["gates"]["plan"]["verdict"])
         self.assertIn("critic", data["gates"])
         self.assertTrue(data["gates"]["critic"]["complete"])
+
+    def test_gates_endpoint_returns_integrate_strategy_from_done_event(self) -> None:
+        unit = "unit-gate-int01"
+        run = "run-gate-int01"
+        issue = "sample#09"
+        log_path = self.state_root / unit / "runs" / f"{run}.jsonl"
+        write_event(log_path, started_event(run, 900, iso(50), "/repo/gate-int"))
+        write_event(log_path, {
+            "ts": iso(10), "run": run, "event": "issue.done", "issue": issue,
+            "data": {"worktree": "/wt/int", "strategy": "pull-request"},
+        })
+
+        quoted_issue = urllib.parse.quote(issue, safe="")
+        status, body = self.get(f"/api/runs/{unit}/{run}/issues/{quoted_issue}/gates")
+        self.assertEqual(200, status)
+        data = json.loads(body)
+        self.assertIn("integrate", data["gates"])
+        self.assertEqual("merged", data["gates"]["integrate"]["verdict"])
+        self.assertEqual("pull-request", data["gates"]["integrate"]["strategy"])
 
     def test_history_html_served(self) -> None:
         status, body = self.get("/history.html")

@@ -237,4 +237,117 @@ test.describe('Dashboard Theme & Design Visual Regression Check', () => {
     const container = page.locator('#history-transcript-container');
     await expect(container).toBeVisible();
   });
+
+  test('should render frozen total cycle time badge on Done cards and phase duration breakdown in modal', async ({ page }) => {
+    await page.route('**/api/state', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          columns: ['Ready', 'Plan', 'Implement', 'Review', 'Critic', 'Integrate', 'Done', 'Blocked'],
+          projects: [{ unitId: 'unit-done-01', name: 'DoneProject', repositoryRoot: '/repo/done' }],
+          runs: [
+            {
+              unitId: 'unit-done-01',
+              run: 'run-done-01',
+              repositoryRoot: '/repo/done',
+              tier: 'supported',
+              staleAfterSeconds: 900,
+              lastActivityAt: '2026-09-18T12:00:00Z',
+              stale: false,
+              issues: [
+                {
+                  issue: 'done#01',
+                  column: 'Done',
+                  branch: 'gantry/done-01',
+                  worktree: '/wt/done',
+                  models: { implementer: 'model-a' },
+                  completedAt: '2026-09-18T12:14:20Z',
+                  totalCycleSeconds: 860,
+                  elapsedPhaseSeconds: 45,
+                  phaseDurations: {
+                    Plan: 120,
+                    Implement: 480,
+                    Review: 90,
+                    Critic: 110,
+                    Integrate: 60,
+                  },
+                  operatorWaiting: false,
+                  project: 'DoneProject',
+                  unitId: 'unit-done-01',
+                  run: 'run-done-01',
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    });
+
+    try {
+      const response = await page.goto('http://127.0.0.1:4600/', { timeout: 3000 });
+      if (!response || !response.ok()) {
+        test.skip(true, 'Local dashboard server is not active on port 4600');
+        return;
+      }
+    } catch {
+      test.skip(true, 'Local dashboard server is not active on port 4600');
+      return;
+    }
+
+    const doneCard = page.locator('.column:has(.column-title:has-text("Done")) .card');
+    await expect(doneCard).toBeVisible();
+
+    const totalBadge = doneCard.locator('.badge.total-cycle');
+    await expect(totalBadge).toBeVisible();
+    await expect(totalBadge).toHaveText('Total: 14m 20s');
+
+    await doneCard.click({ force: true });
+    const modal = page.locator('#execution-modal');
+    await expect(modal).toBeVisible();
+
+    const durStrip = page.locator('#modal-phase-durations');
+    await expect(durStrip).toBeVisible();
+
+    await expect(page.locator('#dur-plan')).toHaveText('2m 0s');
+    await expect(page.locator('#dur-implement')).toHaveText('8m 0s');
+    await expect(page.locator('#dur-review')).toHaveText('1m 30s');
+    await expect(page.locator('#dur-critic')).toHaveText('1m 50s');
+    await expect(page.locator('#dur-integrate')).toHaveText('1m 0s');
+    await expect(page.locator('#dur-total')).toHaveText('14m 20s');
+
+    await page.locator('#modal-close-btn').click();
+    await expect(modal).toHaveClass(/hidden/);
+  });
+
+  test('should render worktree badge with word wrapping within card boundaries', async ({ page }) => {
+    try {
+      const response = await page.goto('http://127.0.0.1:4600/', { timeout: 3000 });
+      if (!response || !response.ok()) {
+        test.skip(true, 'Local dashboard server is not active on port 4600');
+        return;
+      }
+    } catch {
+      test.skip(true, 'Local dashboard server is not active on port 4600');
+      return;
+    }
+
+    await page.waitForSelector('.card');
+    const wtBadge = page.locator('.badge.worktree').first();
+    await expect(wtBadge).toBeVisible();
+
+    const card = wtBadge.locator('xpath=ancestor::div[contains(@class, "card")][1]');
+    const cardBox = await card.boundingBox();
+    const wtBox = await wtBadge.boundingBox();
+    expect(cardBox).not.toBeNull();
+    expect(wtBox).not.toBeNull();
+    if (cardBox && wtBox) {
+      expect(wtBox.x + wtBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+    }
+
+    // Save screenshot for visual verification
+    await card.screenshot({ path: 'site/test-results/worktree-card.png' });
+    await page.screenshot({ path: 'site/test-results/full-dashboard.png' });
+  });
 });
+

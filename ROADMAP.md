@@ -39,9 +39,9 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **36 / 37** |
-| Specs completed | **4 / 5** |
-| Execution waves | **21** |
+| Issues completed | **36 / 48** |
+| Specs completed | **4 / 8** |
+| Execution waves | **27** |
 
 ## Specs
 
@@ -61,13 +61,15 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 05 | `lessons-lifecycle` | idea | 01 | 02, 03, 04 (needs real run logs from a few runs) | round-workflow Learner prompt, `scripts/runlog.py` queries, `gantry-setup` (accepting a lesson) | an accepted lesson carries a reference (`file:symbol` or command) and is retired when it stops resolving; a counter of refutations it prevented |
 | 06 | `installation` | idea | 01 | 02 (installer wires two harnesses, not one) | new `install.sh` or `gantry-install`, `scripts/runlog.py` (pack version), run report | copy or symlink installer for repository and user scope, version pinning, pack version in the run log, outdated-pack notice in the run report |
 | 07 | `first-adoption` | idea | 01 | 04, 06 (real linters and a real install) | `gantry-setup`, `templates/headingMap` presets, `spec.py` | `gantry-setup` on a real external repository, heading map for `to-spec`-style specs, every friction captured as a lesson candidate about setup itself |
-| 08 | `codex-tier` | idea, waiting on Codex | 01 | external: Codex subagent model selection stable | `hooks/codex.hooks.json`, `capabilities/codex.json`, `SKILL.md` harness notes | compatible tier: `hooks.json`, hand-driven chain, detection of per-role model support |
+| 08 | `codex-tier` | approved | 01, 14, 15, 16 | 16 | `capabilities/codex.json`, `scripts/setup.py`, reference workflows, docs, site | supported tier: hybrid process runner via `codex exec`, discovery and setup wizard, `AGENTS.md` policy injection, independent Critic verification, unified docs and site |
 | 09 | `run-history` | idea | 01 | 02 (more than one run to compare) | `scripts/dashboard.py`, dashboard static assets, `scripts/runlog.py` queries | read-only per-run page in the dashboard (phase timeline, corrections, refutations) and comparison of runs over the same scope |
 | 10 | `windows-validation` | idea, waiting on a machine | 06 | external: a Windows machine | `install.sh`, `guard.py` path handling, `fixture/README.md` | fixture run on Windows (paths, symlinks, hooks); support declared only after the run is recorded |
 | 11 | `caveman-setup` | **done** | 01 | — | `gantry-setup`, portable policy, coordinating instructions, plan and round workflows, tests and documentation | optional environment-installed Caveman lite for agent messages and summaries; explicit repository opt-in; user-managed installation; once-per-Run fallback warning; artifacts and verification preserved |
 | 12 | `role-execution-selection` | **done** | 01 | — | runtime model discovery, context budget, setup policy, plan and round workflows, Run Log, fixture proof | complete executable model catalog; versioned role defaults; cross-harness roles (Codex, Claude Code, OpenCode, Antigravity); explicit Issue recovery; cross-harness and Antigravity proof |
 | 13 | `gantry-site` | **done** | 01 | — | `site/`, `.github/workflows/deploy-pages.yml` | Gantry marketing and showcase site on GitHub Pages; Astro + Tailwind, industrial aesthetic, interactive pipeline simulator island, EN/PT-BR toggle, Playwright tests |
 | 14 | `interactive-dashboard` | approved | 01 | 13 | `scripts/dashboard.py`, dashboard static assets, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | unified multi-project kanban, live agent activity streaming, post-critic human gate with interactive approval, gate verdicts, cycle timer freeze on Done |
+| 15 | `dashboard-lifecycle` | approved | 01, 14 | 14 | `scripts/dashboard.py`, dashboard static assets, `SKILL.md`, `reference/round-workflow.md`, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | daemon lifecycle controls (`status`, `start --daemon`, `stop`), `POST /api/shutdown`, web UI shutdown button and modal, Gantry round workflow prompts |
+| 16 | `gantry-plan` | approved | 01 | 14 | `.agents/skills/gantry-plan/`, `.agents/skills/gantry/`, `scripts/runlog.py`, `tests/` | Socratic gate planning skill (grill-me style), tracer-bullet vertical slicing (to-issues style), Plan column kanban telemetry, and gantry delegation |
 
 ### Spec waves (structural)
 
@@ -76,7 +78,7 @@ Computed from *Blocked by* only, the same way issue waves are computed from `## 
 | Wave | Specs | Meaning |
 |---|---|---|
 | A | 01 | everything else builds on the migration |
-| B | 02, 03, 04, 05, 06, 07, 08, 09, 11, 12, 13, 14 | unblocked the moment 01 is done; the order among them is preference, not dependency |
+| B | 02, 03, 04, 05, 06, 07, 08, 09, 11, 12, 13, 14, 15, 16 | unblocked the moment 01 is done; the order among them is preference, not dependency |
 | C | 10 | needs the installer from 06 (and a machine) |
 
 ### Intended order (one spec at a time)
@@ -122,10 +124,13 @@ in Wave 19, followed by cycle time freezing (`#05`) in Wave 20.
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
 | 01 | `gantry-migration` | 18/18 | 0–6 |
+| 08 | `codex-tier` | 0/4 | 23–26 |
 | 11 | `caveman-setup` | 3/3 | 7–8 |
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
 | 13 | `gantry-site` | 6/6 | 12–16 |
 | 14 | `interactive-dashboard` | 4/5 | 17–20 |
+| 15 | `dashboard-lifecycle` | 0/3 | 20–21 |
+| 16 | `gantry-plan` | 0/4 | 20–22 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -265,9 +270,47 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`interactive-dashboard#04`** — Render Structured Gate Verdicts and Full Execution History
   <br>↳ blocked by: interactive-dashboard#01, interactive-dashboard#02
 
-### Wave 20 — 0/1 done
+### Wave 20 — 0/3 done
 
 - [ ] **`interactive-dashboard#05`** — Freeze Cycle Timer on Done and Track Phase Durations
   <br>↳ blocked by: interactive-dashboard#01, interactive-dashboard#03, interactive-dashboard#04
+- [ ] **`dashboard-lifecycle#01`** — Implement CLI Lifecycle Commands and Shutdown HTTP Endpoint _(no blockers)_
+- [ ] **`gantry-plan#01`** — Prefactor and add planning milestone telemetry in runlog and dashboard _(no blockers)_
+
+### Wave 21 — 0/4 done
+
+- [ ] **`dashboard-lifecycle#02`** — Add Web UI Shutdown Action and Stopped State
+  <br>↳ blocked by: dashboard-lifecycle#01
+- [ ] **`dashboard-lifecycle#03`** — Integrate Round Workflow Lifecycle Hooks and Skill Automation
+  <br>↳ blocked by: dashboard-lifecycle#01
+- [ ] **`gantry-plan#02`** — Implement Socratic Gate planning engine for free-text goals
+  <br>↳ blocked by: gantry-plan#01
+- [ ] **`gantry-plan#03`** — Implement tracer-bullet vertical slicing engine with automated gates and operator quizzing
+  <br>↳ blocked by: gantry-plan#01
+
+### Wave 22 — 0/1 done
+
+- [ ] **`gantry-plan#04`** — Package gantry-plan skill, wire gantry delegation, and execution handoff
+  <br>↳ blocked by: gantry-plan#02, gantry-plan#03
+
+### Wave 23 — 0/1 done
+
+- [ ] **`codex-tier#01`** — Elevate Codex capabilities and runtime discovery to Supported tier
+  <br>↳ blocked by: dashboard-lifecycle#03, gantry-plan#04, interactive-dashboard#05
+
+### Wave 24 — 0/1 done
+
+- [ ] **`codex-tier#02`** — Support Codex in setup wizard, policy configuration, and AGENTS.md policy injection
+  <br>↳ blocked by: codex-tier#01
+
+### Wave 25 — 0/1 done
+
+- [ ] **`codex-tier#03`** — Codex host orchestration reference workflow and hybrid dispatch validation
+  <br>↳ blocked by: codex-tier#02
+
+### Wave 26 — 0/1 done
+
+- [ ] **`codex-tier#04`** — Update PRD, README, documentation, and Astro site harness matrix for Codex
+  <br>↳ blocked by: codex-tier#03
 
 <!-- END GENERATED: issue checklist -->

@@ -501,11 +501,27 @@ body {
   color: var(--slate-400);
 }
 
+.badge.worktree {
+  display: inline-block;
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  max-width: 100%;
+}
+
 .badge.project {
   border-color: rgba(255, 153, 0, 0.4);
   color: var(--amber-glow);
   background-color: var(--amber-dim);
   font-weight: 700;
+}
+
+.badge.total-cycle {
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+  background-color: rgba(34, 197, 94, 0.1);
+  font-weight: 600;
 }
 
 /* Footer */
@@ -649,6 +665,45 @@ body {
 .modal-meta-strip .meta-item {
   display: inline-flex;
   align-items: center;
+}
+
+.modal-durations-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.25rem;
+  padding: 0.45rem 1.25rem;
+  background-color: var(--obsidian-900);
+  border-bottom: 1px solid var(--obsidian-700);
+  font-size: 11px;
+}
+
+.modal-durations-strip .duration-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.modal-durations-strip .duration-label {
+  color: var(--slate-400);
+  text-transform: uppercase;
+  font-weight: 600;
+  font-size: 10px;
+}
+
+.modal-durations-strip .duration-value {
+  color: var(--slate-200);
+  font-family: var(--font-mono, monospace);
+  font-weight: 500;
+}
+
+.modal-durations-strip .duration-item.total-item .duration-label {
+  color: var(--amber-glow);
+}
+
+.modal-durations-strip .duration-item.total-item .duration-value {
+  color: #4ade80;
+  font-weight: 700;
 }
 
 .modal-body {

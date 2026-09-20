@@ -14,6 +14,25 @@
     return span;
   }
 
+  function formatDuration(seconds, prefix) {
+    if (typeof seconds !== "number" || isNaN(seconds) || seconds < 0) {
+      return (prefix !== undefined ? prefix : "") + "0s";
+    }
+    seconds = Math.floor(seconds);
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    let formatted = "";
+    if (hours > 0) {
+      formatted = hours + "h " + minutes + "m " + secs + "s";
+    } else if (minutes > 0) {
+      formatted = minutes + "m " + secs + "s";
+    } else {
+      formatted = secs + "s";
+    }
+    return (prefix !== undefined ? prefix : "") + formatted;
+  }
+
   function renderCard(issue) {
     const card = document.createElement("div");
     card.className = "card";
@@ -44,7 +63,7 @@
       badgesContainer.appendChild(badge("br: " + issue.branch, "branch"));
     }
     if (issue.worktree) {
-      badgesContainer.appendChild(badge("wt: " + issue.worktree, "branch"));
+      badgesContainer.appendChild(badge("wt: " + issue.worktree, "branch worktree"));
     }
     Object.keys(issue.models || {}).forEach(function (role) {
       badgesContainer.appendChild(badge(role + ": " + issue.models[role], "model"));
@@ -54,7 +73,10 @@
         badge("corrections: " + issue.correctionBudget.used + "/" + issue.correctionBudget.ceiling, "budget")
       );
     }
-    if (typeof issue.elapsedPhaseSeconds === "number") {
+    if (issue.column === "Done") {
+      const cycleSecs = typeof issue.totalCycleSeconds === "number" ? issue.totalCycleSeconds : (issue.elapsedPhaseSeconds || 0);
+      badgesContainer.appendChild(badge(formatDuration(cycleSecs, "Total: "), "elapsed total-cycle"));
+    } else if (typeof issue.elapsedPhaseSeconds === "number") {
       badgesContainer.appendChild(badge(issue.elapsedPhaseSeconds + "s", "elapsed"));
     }
 
@@ -276,6 +298,25 @@
 
     section.appendChild(columnsEl);
     root.appendChild(section);
+
+    if (activeModalIssue) {
+      let found = null;
+      for (let r = 0; r < (state.runs || []).length; r++) {
+        const run = state.runs[r];
+        for (let i = 0; i < (run.issues || []).length; i++) {
+          const iss = run.issues[i];
+          if (iss.issue === activeModalIssue.issue && iss.unitId === activeModalIssue.unitId && iss.run === activeModalIssue.run) {
+            found = iss;
+            break;
+          }
+        }
+        if (found) break;
+      }
+      if (found) {
+        activeModalIssue = found;
+        updateModalDurations(found);
+      }
+    }
   }
 
   let activeModalIssue = null;
@@ -544,7 +585,8 @@
         } else if (phase.key === "integrate") {
           const intDiv = document.createElement("div");
           intDiv.className = "gate-metric";
-          intDiv.innerHTML = '<span class="gate-metric-label">Status de Integração:</span><span>' + (gdata.verdict === "merged" ? "Merge Concluído com Sucesso" : (gdata.verdict || "Concluído")) + '</span>';
+          const strat = gdata.strategy === "pull-request" ? "Pull Request (Verificado)" : "Branch Merge (Verificado)";
+          intDiv.innerHTML = '<span class="gate-metric-label">Status de Integração:</span><span>' + (gdata.verdict === "merged" ? "Merge Concluído com Sucesso (" + strat + ")" : (gdata.verdict || "Concluído")) + '</span>';
           body.appendChild(intDiv);
           if (gdata.worktree) {
             const wtDiv = document.createElement("div");
@@ -600,10 +642,38 @@
       });
   }
 
+  function updateModalDurations(issue) {
+    if (!issue) return;
+    const durs = issue.phaseDurations || {};
+    const phases = ["Plan", "Implement", "Review", "Critic", "Integrate"];
+    phases.forEach(function (ph) {
+      const el = document.getElementById("dur-" + ph.toLowerCase());
+      if (el) {
+        if (typeof durs[ph] === "number") {
+          el.textContent = formatDuration(durs[ph]);
+        } else {
+          el.textContent = "-";
+        }
+      }
+    });
+    const totalEl = document.getElementById("dur-total");
+    if (totalEl) {
+      if (typeof issue.totalCycleSeconds === "number") {
+        totalEl.textContent = formatDuration(issue.totalCycleSeconds);
+      } else if (typeof issue.elapsedPhaseSeconds === "number") {
+        totalEl.textContent = formatDuration(issue.elapsedPhaseSeconds);
+      } else {
+        totalEl.textContent = "-";
+      }
+    }
+  }
+
   function openExecutionModal(issue) {
     activeModalIssue = issue;
     const modal = document.getElementById("execution-modal");
     if (!modal) return;
+
+    updateModalDurations(issue);
 
     document.getElementById("modal-issue-title").textContent = "ISSUE: " + issue.issue;
     const phaseBadge = document.getElementById("modal-phase-badge");

@@ -86,6 +86,18 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
                 "models": {},
                 "correctionBudget": None,
                 "phaseStartedAt": None,
+                "firstPhaseStartedAt": None,
+                "completedAt": None,
+                "totalCycleSeconds": None,
+                "phaseDurations": {
+                    "Plan": 0,
+                    "Implement": 0,
+                    "Review": 0,
+                    "Critic": 0,
+                    "Integrate": 0,
+                },
+                "_currentPhase": None,
+                "_currentPhaseStartedAt": None,
                 "operatorWaiting": False,
                 "project": project_name,
                 "unitId": unit_id,
@@ -94,10 +106,22 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
             },
         )
         edata = event.get("data") or {}
+        ts = event["ts"]
         if name == "phase.started":
-            state["column"] = event["phase"]
-            state["phaseStartedAt"] = event["ts"]
-            if event["phase"] == "Integrate":
+            phase = event["phase"]
+            if state["firstPhaseStartedAt"] is None:
+                state["firstPhaseStartedAt"] = ts
+
+            if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
+                prev_phase = state["_currentPhase"]
+                prev_dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
+                state["phaseDurations"][prev_phase] = state["phaseDurations"].get(prev_phase, 0) + prev_dur
+
+            state["_currentPhase"] = phase
+            state["_currentPhaseStartedAt"] = ts
+            state["column"] = phase
+            state["phaseStartedAt"] = ts
+            if phase == "Integrate":
                 state["operatorWaiting"] = False
             elif "operatorWaiting" in edata:
                 state["operatorWaiting"] = bool(edata.get("operatorWaiting", False))
@@ -110,7 +134,13 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
             if "correctionBudget" in edata:
                 state["correctionBudget"] = edata["correctionBudget"]
         elif name == "phase.finished":
-            if event.get("phase") == "Critic":
+            finished_phase = event.get("phase")
+            if state["_currentPhase"] == finished_phase and state["_currentPhaseStartedAt"] is not None:
+                dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
+                state["phaseDurations"][finished_phase] = state["phaseDurations"].get(finished_phase, 0) + dur
+                state["_currentPhase"] = None
+                state["_currentPhaseStartedAt"] = None
+            if finished_phase == "Critic":
                 state["operatorWaiting"] = True
         elif name == "refutation":
             state["operatorWaiting"] = False
@@ -124,17 +154,53 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
         elif name == "issue.done":
             state["column"] = "Done"
             state["operatorWaiting"] = False
+            state["completedAt"] = ts
+            if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
+                dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
+                state["phaseDurations"][state["_currentPhase"]] = state["phaseDurations"].get(state["_currentPhase"], 0) + dur
+                state["_currentPhase"] = None
+                state["_currentPhaseStartedAt"] = None
         elif name == "issue.blocked":
             state["column"] = "Blocked"
             state["operatorWaiting"] = False
+            state["completedAt"] = ts
+            if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
+                dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
+                state["phaseDurations"][state["_currentPhase"]] = state["phaseDurations"].get(state["_currentPhase"], 0) + dur
+                state["_currentPhase"] = None
+                state["_currentPhaseStartedAt"] = None
         elif name == "issue.paused":
             state["operatorWaiting"] = False
 
     for state in issues.values():
-        if state["phaseStartedAt"] is not None:
-            state["elapsedPhaseSeconds"] = max(0, int(now - _parse_ts(state["phaseStartedAt"])))
+        is_done = state["column"] == "Done" or state["completedAt"] is not None
+        if is_done:
+            if state["completedAt"] is not None and state["firstPhaseStartedAt"] is not None:
+                state["totalCycleSeconds"] = max(0, int(_parse_ts(state["completedAt"]) - _parse_ts(state["firstPhaseStartedAt"])))
+            else:
+                state["totalCycleSeconds"] = sum(state["phaseDurations"].values())
+
+            if state["phaseStartedAt"] is not None and state["completedAt"] is not None:
+                state["elapsedPhaseSeconds"] = max(0, int(_parse_ts(state["completedAt"]) - _parse_ts(state["phaseStartedAt"])))
+            else:
+                state["elapsedPhaseSeconds"] = None
         else:
-            state["elapsedPhaseSeconds"] = None
+            if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
+                active_elapsed = max(0, int(now - _parse_ts(state["_currentPhaseStartedAt"])))
+                state["phaseDurations"][state["_currentPhase"]] = state["phaseDurations"].get(state["_currentPhase"], 0) + active_elapsed
+
+            if state["phaseStartedAt"] is not None:
+                state["elapsedPhaseSeconds"] = max(0, int(now - _parse_ts(state["phaseStartedAt"])))
+            else:
+                state["elapsedPhaseSeconds"] = None
+
+            if state["firstPhaseStartedAt"] is not None:
+                state["totalCycleSeconds"] = max(0, int(now - _parse_ts(state["firstPhaseStartedAt"])))
+            else:
+                state["totalCycleSeconds"] = None
+
+        state.pop("_currentPhase", None)
+        state.pop("_currentPhaseStartedAt", None)
 
     return {
         "unitId": unit_id,
@@ -340,6 +406,7 @@ def read_gates_for_issue(state_root: Path, unit_id: str, run_id: str, issue_ref:
                 gates["integrate"] = {
                     "verdict": "merged",
                     "worktree": edata.get("worktree"),
+                    "strategy": edata.get("strategy", "branch-merge"),
                 }
     return gates
 
