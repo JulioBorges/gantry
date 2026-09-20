@@ -17,6 +17,7 @@ SCRIPTS = SKILL_DIR / "scripts"
 EXECUTION_SCRIPT = SCRIPTS / "execution.py"
 GUARD_SCRIPT = SCRIPTS / "guard.py"
 RESULT_SCRIPT = SCRIPTS / "result.py"
+HOOKS_DIR = SKILL_DIR / "hooks" / "git"
 
 sys.path.insert(0, str(SCRIPTS))
 import discovery  # noqa: E402
@@ -1113,6 +1114,203 @@ class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):
             policy = {"execution": {"roles": {"plan": {"harness": harness, "model": model}}}}
             res = execution.preflight_validate(policy=policy, check_auth=False)
             self.assertTrue(res["valid"], f"Preflight failed for {harness}: {res.get('errors')}")
+
+
+class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):
+    def test_codex_build_dispatch_command_with_and_without_effort(self) -> None:
+        """AC2: build_dispatch_command handles codex exec with and without reasoning effort."""
+        cmd_standard = execution.build_dispatch_command("codex", "gpt-5.2-codex", "Implement feature")
+        self.assertEqual(["codex", "exec", "Implement feature", "--model", "gpt-5.2-codex"], cmd_standard)
+
+        cmd_effort = execution.build_dispatch_command("codex", "gpt-5.2-codex", "Implement feature", effort="high")
+        self.assertEqual(["codex", "exec", "Implement feature", "--model", "gpt-5.2-codex", "--effort", "high"], cmd_effort)
+
+    def test_bounded_dispatch_timeout_and_error_isolation(self) -> None:
+        """AC2: execution runners isolate timeouts and subprocess errors as ExecutionFailureError."""
+        # 1. Timeout isolation
+        class TimeoutRunner:
+            def __call__(self, cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+                if "--version" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout="0.154.0\n", stderr="")
+                raise subprocess.TimeoutExpired(cmd, timeout=kwargs.get("timeout", 5))
+
+        with tempfile.TemporaryDirectory() as temp:
+            cwd = Path(temp)
+            with self.assertRaises(execution.ExecutionFailureError) as ctx:
+                execution.dispatch_role(
+                    role="implementer",
+                    prompt="implement",
+                    cwd=cwd,
+                    selection={"harness": "codex", "model": "gpt-5.2-codex"},
+                    runner=TimeoutRunner(),
+                    timeout=5,
+                )
+            self.assertIn("timed out after 5", str(ctx.exception))
+
+        # 2. Non-zero exit code error isolation
+        class FailingRunner:
+            def __call__(self, cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+                if "--version" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout="0.154.0\n", stderr="")
+                return subprocess.CompletedProcess(cmd, 127, stdout="", stderr="command terminated abnormally")
+
+        with tempfile.TemporaryDirectory() as temp:
+            cwd = Path(temp)
+            with self.assertRaises(execution.ExecutionFailureError) as ctx:
+                execution.dispatch_role(
+                    role="implementer",
+                    prompt="implement",
+                    cwd=cwd,
+                    selection={"harness": "codex", "model": "gpt-5.2-codex"},
+                    runner=FailingRunner(),
+                )
+            self.assertIn("exit 127", str(ctx.exception))
+            self.assertIn("command terminated abnormally", str(ctx.exception))
+
+        # 3. CLI help accepts --timeout
+        cli_check = subprocess.run(
+            [sys.executable, str(EXECUTION_SCRIPT), "dispatch", "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, cli_check.returncode)
+        self.assertIn("--timeout", cli_check.stdout)
+
+    def test_robust_result_contract_parsing_markdown_and_delimiters(self) -> None:
+        """AC3: Role results returned from codex exec conform to result.py contracts, with robust parsing for markdown and JSON delimiters."""
+        valid_implementer_dict = {
+            "worktree": "/mock/worktree",
+            "branch": "feat-1",
+            "commits": ["sha1"],
+            "summary": "Implemented feature cleanly",
+            "testsAdded": ["tests/test_feat.py"],
+            "gatesResult": "pass",
+            "decisions": [],
+            "blockers": [],
+        }
+
+        # Case A: Plain JSON
+        plain_json = json.dumps(valid_implementer_dict)
+        res_plain = execution.parse_and_validate_result("implementer", plain_json)
+        self.assertEqual("Implemented feature cleanly", res_plain["summary"])
+
+        # Case B: Standard markdown code fence ```json ... ```
+        fenced_json = f"```json\n{json.dumps(valid_implementer_dict, indent=2)}\n```"
+        res_fenced = execution.parse_and_validate_result("implementer", fenced_json)
+        self.assertEqual("Implemented feature cleanly", res_fenced["summary"])
+
+        # Case C: Uppercase ```JSON ... ``` with commentary before and after
+        messy_output = (
+            "I have finished executing the implementer role.\n\n"
+            f"```JSON\n{json.dumps(valid_implementer_dict, indent=2)}\n```\n\n"
+            "All unit tests and differential gates are passing."
+        )
+        res_messy = execution.parse_and_validate_result("implementer", messy_output)
+        self.assertEqual("Implemented feature cleanly", res_messy["summary"])
+
+        # Case D: 4 backticks ````json ... ````
+        quad_backticks = f"````json\n{json.dumps(valid_implementer_dict)}\n````"
+        res_quad = execution.parse_and_validate_result("implementer", quad_backticks)
+        self.assertEqual("Implemented feature cleanly", res_quad["summary"])
+
+        # Case E: Embedded JSON object surrounded by conversational text without fences
+        embedded_prose = f"The resulting contract is: {json.dumps(valid_implementer_dict)} - verified."
+        res_embedded = execution.parse_and_validate_result("implementer", embedded_prose)
+        self.assertEqual("Implemented feature cleanly", res_embedded["summary"])
+
+        # Case F: CLI test with piped input containing markdown code fences
+        cli_proc = subprocess.run(
+            [sys.executable, str(RESULT_SCRIPT), "--role", "implementer", "--json"],
+            input=messy_output,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, cli_proc.returncode, cli_proc.stderr)
+        cli_result = json.loads(cli_proc.stdout)
+        self.assertTrue(cli_result["valid"])
+
+    def test_simulated_codex_host_run_with_cross_harness_critic_and_invariant_defense(self) -> None:
+        """AC4: Simulated Codex host run with cross-harness Critic; verifies refusal when prompt invariants or git hooks are violated."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            # Initialize git repo
+            subprocess.run(["git", "init", "--quiet", "--initial-branch=main"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "codex@host.test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Codex Host"], cwd=root, check=True)
+            subprocess.run(["git", "config", "core.hooksPath", str(HOOKS_DIR)], cwd=root, check=True)
+
+            # Seed runlog
+            run_id = "run-20260920T150000Z-codex"
+            unit_id = runlog.unit_id(root)
+            state_root = root / "state"
+            state_root.mkdir()
+            log_dir = state_root / unit_id / "runs"
+            log_dir.mkdir(parents=True)
+            log_path = log_dir / f"{run_id}.jsonl"
+            log_path.write_text(
+                json.dumps({"ts": "2026-09-20T15:00:00Z", "run": run_id, "event": "run.started", "data": {"repositoryRoot": str(root)}}) + "\n",
+                encoding="utf-8",
+            )
+
+            # Mark worktree
+            subprocess.run([sys.executable, str(SCRIPTS / "runlog.py"), "mark", run_id, "--cwd", str(root), "--state-root", str(state_root)], cwd=root, check=True)
+
+            # Commit initial baseline
+            (root / "README.md").write_text("# Initial\n", encoding="utf-8")
+            subprocess.run(["git", "add", "README.md"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "initial commit"], cwd=root, check=True)
+
+            # 1. Test Git Hook Invariant Defense: Reject test-skip
+            # An implementer attempting to commit a test-skip (e.g. it.skip or test.skip) is blocked by git pre-commit hook
+            (root / "test_sample.js").write_text("describe('sample', () => { it.skip('skipped test', () => {}); });\n", encoding="utf-8")
+            subprocess.run(["git", "add", "test_sample.js"], cwd=root, check=True)
+            proc_commit = subprocess.run(
+                ["git", "commit", "-m", "commit with test skip"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(0, proc_commit.returncode)
+            self.assertIn("deny", proc_commit.stderr.lower())
+
+            # Reset staging
+            subprocess.run(["git", "reset", "--hard", "--quiet", "HEAD"], cwd=root, check=True)
+
+            # 2. Test Adversarial Cross-Harness Critic Refusal:
+            # Implementer returns incomplete work claiming complete=true without gates pass
+            fraudulent_critic_summary = {
+                "complete": True,
+                "gatesVerdict": "pass",
+                "gateResult": {"verdict": "fail", "requirements": ["unresolved compilation error"]},
+                "gateFailures": ["make: syntax error"],
+                "criteria": [{"index": 1, "met": True, "evidence": "claimed passing without test"}],
+                "refutations": [],
+                "requiredFixes": [],
+                "decisionsForOperator": [],
+            }
+            with self.assertRaises(execution.ProtocolFailureError) as ctx:
+                execution.verify_critic_result(fraudulent_critic_summary)
+            self.assertIn("gateResult verdict is 'fail'", str(ctx.exception))
+
+            # 3. Test Adversarial Cross-Harness Critic Verification: Valid delivery accepted
+            valid_critic_verdict = {
+                "complete": True,
+                "gatesVerdict": "pass",
+                "gateResult": {"verdict": "pass", "requirements": []},
+                "gateFailures": [],
+                "criteria": [
+                    {"index": 1, "met": True, "evidence": "Verified all tests passed in test_role_execution_dispatch.py"},
+                    {"index": 2, "met": True, "evidence": "Verified preflight validation passes for Codex"},
+                ],
+                "refutations": [],
+                "requiredFixes": [],
+                "decisionsForOperator": [],
+            }
+            # verify_critic_result passes without raising
+            execution.verify_critic_result(valid_critic_verdict)
 
 
 if __name__ == "__main__":

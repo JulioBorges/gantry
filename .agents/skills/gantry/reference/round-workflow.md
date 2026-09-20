@@ -146,6 +146,32 @@ Before the `Implement` phase begins in any round, the workflow queries `dashboar
 Immediately after the `Integrate` step completes at the end of each round:
 - The workflow queries `dashboard.py status --json`. If active, it prompts the operator asking whether to terminate the dashboard (`dashboard.py stop`). If approved, it terminates the server daemon.
 
+## Codex Host Orchestration and Hybrid Dispatch
+
+When Codex CLI serves as the Host Harness:
+1. **Instruction Ingestion**: Codex reads repository policy and guidance from the marked Gantry section of `AGENTS.md`, adhering to immutable workflow invariants:
+   - Feature branches only (`feat/*`, `fix/*`, `docs/*`); never commit directly to `main`.
+   - Never manually edit `ROADMAP.md`, issue statuses, or criteria checkboxes; only `roadmap.py done` updates them upon verified Critic acceptance.
+2. **Lifecycle and Round Orchestration**:
+   - The host queries dashboard status before implementation (`dashboard.py status --json`) and offers daemon activation.
+   - For each issue in the frontier round, Codex isolates work in a dedicated worktree and branch (`common.issue_branch()`).
+   - Telemetry is recorded via `runlog.py` CLI events (`run.started`, `round.started`, `phase.started`, `phase.finished`, `subagent.started`, `subagent.stopped`, `issue.done`, `round.finished`).
+3. **Bounded Role Invocations**:
+   - Roles are invoked through bounded CLI processes via `execution.py dispatch --role <role> --cwd <worktree>`.
+   - When configured for Codex, role execution invokes `codex exec "<prompt>" --model <model> [--effort <effort>]`.
+   - When configured for cross-harness execution (e.g. an adversarial Critic powered by Claude Code or Antigravity), bounded dispatch invokes the respective CLI (`claude -p`, `agy --print`).
+   - Execution runners enforce process timeouts, error isolation, and model fallback detection.
+4. **Result Contract Enforcement**:
+   - All role outputs (Implementer, Reviewer, Critic, Learner) must conform to schemas bundled in `schemas/<role>.json`.
+   - Parsers robustly extract JSON payloads from markdown fences (` ```json `, ` ``` `, ` ````json `) and handle conversational commentary.
+   - Any schema mismatch triggers a Protocol Failure and bounded retry.
+5. **Defense in Depth**:
+   - Because Codex CLI does not expose native pre-tool hooks, guardrails are enforced through layered defense:
+     - Clear prompt invariants injected into `AGENTS.md`.
+     - Git hooks (`pre-commit`, `pre-push`) configured in `.git/hooks` enforcing fast-forward updates and preventing test-skips.
+     - Independent adversarial Critic running differential gates (`gates.py`) and acceptance verification (`acceptance.py`), refuting unverified claims or prompt violations.
+   - Branches integrate serially only after Critic acceptance and clean gate runs.
+
 ## Executable Claude Code Workflow
 
 This Workflow script is the executable chain. It creates one Implementer chain per Issue; `pipeline`
