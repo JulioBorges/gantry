@@ -19,6 +19,7 @@ GUARD_SCRIPT = SCRIPTS / "guard.py"
 RESULT_SCRIPT = SCRIPTS / "result.py"
 
 sys.path.insert(0, str(SCRIPTS))
+import discovery  # noqa: E402
 import execution  # noqa: E402
 import guard  # noqa: E402
 import result  # noqa: E402
@@ -1003,6 +1004,115 @@ class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):
             for bad in bad_events:
                 with self.assertRaises(runlog.EventError):
                     runlog.validate_event(bad)
+
+    def test_codex_capability_declares_supported_tier_and_context_windows(self) -> None:
+        """AC1: capabilities/codex.json declares tier: supported, per_role_model: true, and model context windows."""
+        cap_file = SKILL_DIR / "capabilities" / "codex.json"
+        self.assertTrue(cap_file.exists(), "capabilities/codex.json must exist")
+        cap = json.loads(cap_file.read_text(encoding="utf-8"))
+        self.assertEqual("supported", cap.get("tier"))
+        self.assertTrue(cap.get("per_role_model"))
+        models = cap.get("models", {})
+        self.assertIn("gpt-5.2-codex", models)
+        self.assertEqual(272000, models["gpt-5.2-codex"]["contextWindow"])
+
+    def test_codex_discovery_extracts_version_and_enumerates_models_with_caching_and_error_handling(self) -> None:
+        """AC2: discovery.py discovers codex CLI, extracts version, and parses codex models output with caching."""
+        discovery.clear_discovery_cache()
+
+        class MockCodexRunner:
+            def __call__(self, cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+                if "--version" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout="codex-cli 0.154.0\n", stderr="")
+                elif "models" in cmd:
+                    raw_models = "gpt-5.2-codex   GPT-5.2 Codex (Default)\ngpt-5-codex     GPT-5 Codex\n"
+                    return subprocess.CompletedProcess(cmd, 0, stdout=raw_models, stderr="")
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="unknown command")
+
+        runner = MockCodexRunner()
+        version = discovery.get_codex_version(runner=runner)
+        self.assertEqual("0.154.0", version)
+
+        models = discovery.discover_codex_models(runner=runner, use_cache=False)
+        model_ids = [m["id"] for m in models]
+        self.assertIn("gpt-5.2-codex", model_ids)
+        self.assertIn("gpt-5-codex", model_ids)
+        gpt52 = next(m for m in models if m["id"] == "gpt-5.2-codex")
+        self.assertEqual(272000, gpt52.get("contextWindow"))
+
+        # Discovery error when codex CLI not found
+        with patch("shutil.which", return_value=None):
+            with self.assertRaises(discovery.DiscoveryError) as ctx:
+                discovery.discover_codex_models(runner=None)
+            self.assertIn("codex cli not found in path", str(ctx.exception).lower())
+
+        # Discovery error when codex models fails
+        class FailingModelsRunner:
+            def __call__(self, cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="API connection refused")
+
+        with self.assertRaises(discovery.DiscoveryError) as ctx:
+            discovery.discover_codex_models(runner=FailingModelsRunner(), use_cache=False)
+        self.assertIn("codex models returned exit code 1", str(ctx.exception))
+
+    def test_codex_preflight_validation_succeeds_when_authenticated_fails_with_remediation(self) -> None:
+        """AC3: execution.preflight_validate() succeeds when authenticated and fails with 'codex login' remediation when unauthenticated or missing."""
+        policy = {
+            "execution": {
+                "roles": {
+                    "implement": {"harness": "codex", "model": "gpt-5.2-codex"},
+                    "critic": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
+                }
+            }
+        }
+
+        # 1. Successful authentication
+        class AuthenticatedRunner:
+            def __call__(self, cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+                if cmd[0] == "codex":
+                    if "--version" in cmd:
+                        return subprocess.CompletedProcess(cmd, 0, stdout="0.154.0\n", stderr="")
+                    elif "login" in cmd and "status" in cmd:
+                        return subprocess.CompletedProcess(cmd, 0, stdout="Logged in using ChatGPT\n", stderr="")
+                if "--version" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout="1.2.4\n", stderr="")
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        res = execution.preflight_validate(policy=policy, check_auth=True, runner=AuthenticatedRunner())
+        self.assertTrue(res["valid"], f"Expected preflight to succeed: {res.get('errors')}")
+
+        # 2. Unauthenticated codex returns error with 'codex login'
+        class UnauthenticatedRunner:
+            def __call__(self, cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+                if cmd[0] == "codex":
+                    if "--version" in cmd:
+                        return subprocess.CompletedProcess(cmd, 0, stdout="0.154.0\n", stderr="")
+                    elif "login" in cmd and "status" in cmd:
+                        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="Not logged in")
+                if "--version" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout="1.2.4\n", stderr="")
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        res_unauth = execution.preflight_validate(policy=policy, check_auth=True, runner=UnauthenticatedRunner())
+        self.assertFalse(res_unauth["valid"])
+        self.assertTrue(any("codex login" in err for err in res_unauth["errors"]), f"Errors should mention 'codex login': {res_unauth['errors']}")
+
+        # 3. Missing codex binary returns actionable remediation
+        with patch("shutil.which", return_value=None):
+            res_missing = execution.preflight_validate(policy=policy, check_auth=True, runner=None)
+            self.assertFalse(res_missing["valid"])
+            self.assertTrue(any("codex" in err.lower() and "not found on path" in err.lower() for err in res_missing["errors"]), f"Errors should mention binary on PATH: {res_missing['errors']}")
+
+    def test_existing_harnesses_preflight_and_discovery_have_no_regression(self) -> None:
+        """AC4: Existing harnesses (antigravity, claude-code, opencode) remain valid without regression."""
+        for harness, model in [
+            ("antigravity", "gemini-3.8-flash-medium"),
+            ("claude-code", "claude-3-7-sonnet-20250219"),
+            ("opencode", "claude-3-7-sonnet-20250219"),
+        ]:
+            policy = {"execution": {"roles": {"plan": {"harness": harness, "model": model}}}}
+            res = execution.preflight_validate(policy=policy, check_auth=False)
+            self.assertTrue(res["valid"], f"Preflight failed for {harness}: {res.get('errors')}")
 
 
 if __name__ == "__main__":

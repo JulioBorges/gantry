@@ -116,6 +116,122 @@ def discover_antigravity_models(runner: Callable[..., subprocess.CompletedProces
     return models
 
 
+_DISCOVERY_CACHE: dict[str, list[dict[str, Any]]] = {}
+
+
+def clear_discovery_cache() -> None:
+    """Clear in-memory discovery cache."""
+    _DISCOVERY_CACHE.clear()
+
+
+def parse_codex_models_output(
+    raw_output: str,
+    metadata_lookup: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Parse stdout from `codex models` into a structured list of model dicts without inventing windows."""
+    cleaned = clean_ansi(raw_output)
+    models: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for line in cleaned.splitlines():
+        line = line.strip()
+        if not line or line.startswith("Fetching") or line.startswith("Usage:") or line.startswith("Models:"):
+            continue
+        parts = line.split(None, 1)
+        if not parts:
+            continue
+        model_id = parts[0].strip().strip("-*• ")
+        if not model_id:
+            continue
+        display_name = parts[1].strip() if len(parts) > 1 else model_id
+
+        if model_id in seen:
+            continue
+        seen.add(model_id)
+
+        entry: dict[str, Any] = {
+            "id": model_id,
+            "name": display_name,
+        }
+
+        if metadata_lookup and model_id in metadata_lookup:
+            meta = metadata_lookup[model_id]
+            if isinstance(meta, dict):
+                if "contextWindow" in meta:
+                    entry["contextWindow"] = meta["contextWindow"]
+                if "supportedEfforts" in meta:
+                    entry["supportedEfforts"] = meta["supportedEfforts"]
+                if "effort" in meta:
+                    entry["effort"] = meta["effort"]
+
+        models.append(entry)
+
+    return models
+
+
+def get_codex_version(runner: Callable[..., Any] | None = None) -> str:
+    """Extract version from `codex --version`."""
+    codex_path = shutil.which("codex")
+    if not codex_path and runner is None:
+        raise DiscoveryError("Missing discovery: codex CLI not found in PATH")
+
+    run_cmd = runner or subprocess.run
+    try:
+        proc = run_cmd([codex_path or "codex", "--version"], capture_output=True, text=True, check=False)
+    except OSError as exc:
+        raise DiscoveryError(f"Missing discovery: failed to run codex --version: {exc}") from exc
+
+    if proc.returncode != 0:
+        err = proc.stderr.strip() or proc.stdout.strip()
+        raise DiscoveryError(f"Missing discovery: codex --version returned exit code {proc.returncode}: {err}")
+
+    cleaned = clean_ansi(proc.stdout or proc.stderr).strip()
+    match = re.search(r"(\d+\.\d+(?:\.\d+)?)", cleaned)
+    if not match:
+        raise DiscoveryError(f"Missing discovery: could not parse codex version from {cleaned!r}")
+    return match.group(1)
+
+
+def discover_codex_models(
+    runner: Callable[..., Any] | None = None,
+    use_cache: bool = True,
+) -> list[dict[str, Any]]:
+    """Discover executable models via `codex models` with metadata lookup and caching."""
+    if use_cache and "codex" in _DISCOVERY_CACHE and runner is None:
+        return list(_DISCOVERY_CACHE["codex"])
+
+    codex_path = shutil.which("codex")
+    if not codex_path and runner is None:
+        raise DiscoveryError("Missing discovery: codex CLI not found in PATH")
+
+    run_cmd = runner or subprocess.run
+    try:
+        proc = run_cmd([codex_path or "codex", "models"], capture_output=True, text=True, check=False)
+    except OSError as exc:
+        raise DiscoveryError(f"Missing discovery: failed to run codex models: {exc}") from exc
+
+    if proc.returncode != 0:
+        err = proc.stderr.strip() or proc.stdout.strip()
+        raise DiscoveryError(f"Missing discovery: codex models returned exit code {proc.returncode}: {err}")
+
+    cap_file = Path(__file__).resolve().parents[1] / "capabilities" / "codex.json"
+    metadata_lookup = {}
+    if cap_file.exists():
+        try:
+            metadata_lookup = json.loads(cap_file.read_text(encoding="utf-8")).get("models", {})
+        except Exception:
+            pass
+
+    models = parse_codex_models_output(proc.stdout, metadata_lookup=metadata_lookup)
+    if not models:
+        raise DiscoveryError("Missing discovery: codex models returned an empty model list")
+
+    if use_cache and runner is None:
+        _DISCOVERY_CACHE["codex"] = models
+
+    return models
+
+
 def discover_models(harness: str, runner: Callable[..., Any] | None = None) -> list[dict[str, Any]]:
     """Discover executable models for the given harness; fail closed on missing discovery."""
     h = (harness or "").lower()
@@ -143,14 +259,7 @@ def discover_models(harness: str, runner: Callable[..., Any] | None = None) -> l
             return [{"id": m, "contextWindow": d["contextWindow"]} for m, d in cap.get("models", {}).items()]
         raise DiscoveryError("Missing discovery: opencode capability declaration missing")
     elif h == "codex":
-        codex_path = shutil.which("codex")
-        if not codex_path:
-            raise DiscoveryError("Missing discovery: codex CLI not found in PATH")
-        cap_file = Path(__file__).resolve().parents[1] / "capabilities" / "codex.json"
-        if cap_file.exists():
-            cap = json.loads(cap_file.read_text(encoding="utf-8"))
-            return [{"id": m, "contextWindow": d["contextWindow"]} for m, d in cap.get("models", {}).items()]
-        raise DiscoveryError("Missing discovery: codex capability declaration missing")
+        return discover_codex_models(runner=runner)
 
     raise DiscoveryError(f"Missing discovery: unhandled harness {harness}")
 

@@ -73,11 +73,67 @@ def parse_semver(version_str: str) -> tuple[int, int, int]:
     return (major, minor, patch)
 
 
+def validate_codex_auth(runner: Callable[..., Any] | None = None) -> dict[str, Any]:
+    """Validate Codex authentication via `codex login status`."""
+    cli_name = CLI_NAMES.get("codex", "codex")
+    if runner is None and not shutil.which(cli_name):
+        return {
+            "valid": False,
+            "error": f"Codex CLI binary '{cli_name}' not found on PATH. Please install Codex CLI or ensure it is in your PATH.",
+        }
+
+    run_cmd = runner or subprocess.run
+    try:
+        try:
+            proc = run_cmd([cli_name, "login", "status"], capture_output=True, text=True, check=False)
+        except TypeError:
+            proc = run_cmd([cli_name, "login", "status"])
+    except FileNotFoundError:
+        return {
+            "valid": False,
+            "error": f"Codex CLI binary '{cli_name}' not found on PATH. Please install Codex CLI or ensure it is in your PATH.",
+        }
+    except Exception as exc:
+        return {
+            "valid": False,
+            "error": f"Codex CLI authentication check failed: {exc}. Run 'codex login' to authenticate.",
+        }
+
+    if proc.returncode != 0:
+        err = (getattr(proc, "stderr", "") or "").strip() or (getattr(proc, "stdout", "") or "").strip()
+        return {
+            "valid": False,
+            "error": f"Codex CLI is unauthenticated ({err or f'exit code {proc.returncode}'}). Run 'codex login' to authenticate.",
+        }
+
+    stdout = (getattr(proc, "stdout", "") or "").strip().lower()
+    if "not logged in" in stdout or "unauthenticated" in stdout or "no credentials" in stdout:
+        return {
+            "valid": False,
+            "error": f"Codex CLI is unauthenticated ({proc.stdout.strip()}). Run 'codex login' to authenticate.",
+        }
+
+    return {"valid": True}
+
+
 def validate_harness_version(
     harness: str,
     runner: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     cli_name = CLI_NAMES.get(harness, harness)
+    if runner is None and not shutil.which(cli_name):
+        if harness == "codex":
+            return {
+                "valid": False,
+                "version": None,
+                "error": f"Codex CLI binary '{cli_name}' not found on PATH. Please install Codex CLI or ensure it is in your PATH.",
+            }
+        return {
+            "valid": False,
+            "version": None,
+            "error": f"Harness CLI '{cli_name}' not found on PATH",
+        }
+
     try:
         if runner:
             try:
@@ -87,6 +143,12 @@ def validate_harness_version(
         else:
             proc = subprocess.run([cli_name, "--version"], capture_output=True, text=True, check=False)
         if proc.returncode != 0:
+            if harness == "codex":
+                return {
+                    "valid": False,
+                    "version": None,
+                    "error": f"Harness CLI {cli_name} authentication/execution validation failed: return code {proc.returncode}. Run 'codex login' to authenticate.",
+                }
             return {
                 "valid": False,
                 "version": None,
@@ -105,6 +167,18 @@ def validate_harness_version(
             }
         ver_formatted = f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}"
         return {"valid": True, "version": ver_formatted}
+    except FileNotFoundError:
+        if harness == "codex":
+            return {
+                "valid": False,
+                "version": None,
+                "error": f"Codex CLI binary '{cli_name}' not found on PATH. Please install Codex CLI or ensure it is in your PATH.",
+            }
+        return {
+            "valid": False,
+            "version": None,
+            "error": f"Harness CLI '{cli_name}' not found on PATH",
+        }
     except Exception as exc:
         return {
             "valid": False,
@@ -320,6 +394,14 @@ def validate_selection(
                 "role": role,
                 "error": ver_check["error"],
             }
+        if harness == "codex":
+            auth_check = validate_codex_auth(runner=runner)
+            if not auth_check["valid"]:
+                return {
+                    "valid": False,
+                    "role": role,
+                    "error": auth_check["error"],
+                }
 
     return {"valid": True, "role": role}
 
