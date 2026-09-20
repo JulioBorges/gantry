@@ -39,7 +39,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **44 / 48** |
+| Issues completed | **45 / 48** |
 | Specs completed | **7 / 8** |
 | Execution waves | **27** |
 
@@ -123,7 +123,7 @@ Work can start on Wave 22 with:
 | # | Spec | Issues done | Waves |
 |---|---|---|---|
 | 01 | `gantry-migration` | 18/18 | 0–6 |
-| 08 | `codex-tier` | 0/4 | 23–26 |
+| 08 | `codex-tier` | 1/4 | 23–26 |
 | 11 | `caveman-setup` | 3/3 | 7–8 |
 | 12 | `role-execution-selection` | 5/5 | 7–11 |
 | 13 | `gantry-site` | 6/6 | 12–16 |
@@ -292,9 +292,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-plan#04`** — Package gantry-plan skill, wire gantry delegation, and execution handoff
   <br>↳ blocked by: gantry-plan#02, gantry-plan#03
 
-### Wave 23 — 0/1 done
+### Wave 23 — 1/1 done
 
-- [ ] **`codex-tier#01`** — Elevate Codex capabilities and runtime discovery to Supported tier
+- [x] **`codex-tier#01`** — Elevate Codex capabilities and runtime discovery to Supported tier
   <br>↳ blocked by: dashboard-lifecycle#03, gantry-plan#04, interactive-dashboard#05
 
 ### Wave 24 — 0/1 done

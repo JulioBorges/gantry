@@ -1,7 +1,7 @@
 # Elevate Codex capabilities and runtime discovery to Supported tier
 
 Type: issue
-Status: ready
+Status: done
 Slice: `codex-tier#01`
 Spec: `.scratch/codex-tier/spec.md`
 Created: 2026-09-20
@@ -24,10 +24,10 @@ Update `.agents/skills/gantry/capabilities/codex.json` to declare `"tier": "supp
 
 ## Acceptance criteria
 
-- [ ] `.agents/skills/gantry/capabilities/codex.json` declares `"tier": "supported"`, with context windows registered for `gpt-5.2-codex` and any active models.
-- [ ] `scripts/discovery.py` discovers installed `codex` CLI, extracts version, and enumerates available models with appropriate caching and error handling.
-- [ ] `execution.preflight_validate()` succeeds when Codex CLI is available and authenticated, and fails with clear remediation commands (`codex login`) when missing or unauthenticated.
-- [ ] Unit tests in `tests/test_role_execution_dispatch.py` verify Codex discovery, capability loading, and preflight validation contracts without regression for existing harnesses.
+- [x] `.agents/skills/gantry/capabilities/codex.json` declares `"tier": "supported"`, with context windows registered for `gpt-5.2-codex` and any active models.
+- [x] `scripts/discovery.py` discovers installed `codex` CLI, extracts version, and enumerates available models with appropriate caching and error handling.
+- [x] `execution.preflight_validate()` succeeds when Codex CLI is available and authenticated, and fails with clear remediation commands (`codex login`) when missing or unauthenticated.
+- [x] Unit tests in `tests/test_role_execution_dispatch.py` verify Codex discovery, capability loading, and preflight validation contracts without regression for existing harnesses.
 
 ## Blocked by
 
