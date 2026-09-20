@@ -1,7 +1,7 @@
 # Spec: Supported Codex harness tier
 
 Type: spec
-Status: approved
+Status: done
 Map: `ROADMAP.md` (spec 08)
 Source: Operator-approved grilling decisions, 2026-09-20; PRD.md; CONTEXT.md; ADR-0004; ADR-0006
 Created: 2026-09-20

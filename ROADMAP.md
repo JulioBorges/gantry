@@ -61,7 +61,7 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 05 | `lessons-lifecycle` | idea | 01 | 02, 03, 04 (needs real run logs from a few runs) | round-workflow Learner prompt, `scripts/runlog.py` queries, `gantry-setup` (accepting a lesson) | an accepted lesson carries a reference (`file:symbol` or command) and is retired when it stops resolving; a counter of refutations it prevented |
 | 06 | `installation` | idea | 01 | 02 (installer wires two harnesses, not one) | new `install.sh` or `gantry-install`, `scripts/runlog.py` (pack version), run report | copy or symlink installer for repository and user scope, version pinning, pack version in the run log, outdated-pack notice in the run report |
 | 07 | `first-adoption` | idea | 01 | 04, 06 (real linters and a real install) | `gantry-setup`, `templates/headingMap` presets, `spec.py` | `gantry-setup` on a real external repository, heading map for `to-spec`-style specs, every friction captured as a lesson candidate about setup itself |
-| 08 | `codex-tier` | approved | 01, 14, 15, 16 | 16 | `capabilities/codex.json`, `scripts/setup.py`, reference workflows, docs, site | supported tier: hybrid process runner via `codex exec`, discovery and setup wizard, `AGENTS.md` policy injection, independent Critic verification, unified docs and site |
+| 08 | `codex-tier` | **done** | 01, 14, 15, 16 | 16 | `capabilities/codex.json`, `scripts/setup.py`, reference workflows, docs, site | supported tier: hybrid process runner via `codex exec`, discovery and setup wizard, `AGENTS.md` policy injection, independent Critic verification, unified docs and site |
 | 09 | `run-history` | idea | 01 | 02 (more than one run to compare) | `scripts/dashboard.py`, dashboard static assets, `scripts/runlog.py` queries | read-only per-run page in the dashboard (phase timeline, corrections, refutations) and comparison of runs over the same scope |
 | 10 | `windows-validation` | idea, waiting on a machine | 06 | external: a Windows machine | `install.sh`, `guard.py` path handling, `fixture/README.md` | fixture run on Windows (paths, symlinks, hooks); support declared only after the run is recorded |
 | 11 | `caveman-setup` | **done** | 01 | — | `gantry-setup`, portable policy, coordinating instructions, plan and round workflows, tests and documentation | optional environment-installed Caveman lite for agent messages and summaries; explicit repository opt-in; user-managed installation; once-per-Run fallback warning; artifacts and verification preserved |
@@ -112,9 +112,9 @@ and 05, so they are written after a few real run logs exist, not before.
 
 ## Where work can start
 
-Wave 21 is complete (`dashboard-lifecycle#02`, `dashboard-lifecycle#03`, `gantry-plan#02`, `gantry-plan#03`). Spec 15 (`dashboard-lifecycle`) is now fully delivered.
-Work can start on Wave 22 with:
-- `gantry-plan#04` (`Package gantry-plan skill, wire gantry delegation, and execution handoff`)
+Wave 26 is complete (`codex-tier#04`). Spec 08 (`codex-tier`) is now fully delivered.
+All 27 execution waves (Waves 0–26, 48/48 issues) are complete.
+Work can start with planning the next candidate spec on the roadmap: Spec 02 (`opencode-tier`).
 
 ## Progress by spec
 
