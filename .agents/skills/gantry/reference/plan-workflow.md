@@ -57,6 +57,19 @@ python3 "$skillDir/scripts/roadmap.py" check
 The last command must exit 0 before the Run recomputes the frontier. Planning approval does not permit
 silent issue additions, splits, merges or dependency changes.
 
+## Codex Host Orchestration and Hybrid Dispatch
+
+When Codex CLI operates as the Host Harness:
+1. **Instruction Ingestion**: Codex reads repository policy and instructions from `AGENTS.md` (configured by `gantry-setup`), respecting all Gantry invariants (no direct commits to `main`, no manual edits to `ROADMAP.md` or Issue statuses).
+2. **Phase Orchestration**: The host drives the planning sequence:
+   - Structural validation (`spec.py --check`)
+   - Requirement Critic invocation via bounded subprocess dispatch
+   - Parallel research and vertical-slice drafting
+   - Plan Critic adversarial refutation
+   - Halting for mandatory operator approval before transitioning issues (`roadmap.py status <ref> ready-for-agent`, `roadmap.py waves`, `roadmap.py check`)
+3. **Bounded Subprocess Execution**: Roles are dispatched via `python3 "$skillDir/scripts/execution.py" dispatch --role <role> --cwd <dir>`. If a role uses Codex, it executes bounded `codex exec "<prompt>" --model <model>`. If a role is delegated to an external harness (such as Claude Code or Antigravity), cross-harness dispatch is invoked.
+4. **Contract Verification**: Every role result is parsed through `result.extract_json()` and validated against its schema contract (`result.py`). Delimiters and markdown code fences (` ```json `) are handled robustly, and protocol failures trigger bounded retries.
+
 ## Executable Claude Code Workflow
 
 The following is the executable Workflow script. Other harnesses execute the same prompt functions and

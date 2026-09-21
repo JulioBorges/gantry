@@ -28,7 +28,7 @@ test.describe('Accessibility (a11y) Verification Suite', () => {
 
   test('should pass automated a11y audit across simulator stages', async ({ page }) => {
     await page.goto('/gantry/');
-    const stageIds = ['spec', 'plan', 'implement', 'review', 'critic', 'gate'];
+    const stageIds = ['setup', 'plan', 'approve', 'implement', 'verify', 'handoff'];
 
     for (const id of stageIds) {
       const tab = page.getByTestId(`stage-tab-${id}`);

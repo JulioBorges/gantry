@@ -11,13 +11,20 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
+import re
+import socket
+import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from runlog import read_valid_events
+from runlog import ISSUE_RE, RUN_ID_RE, UNIT_ID_RE, append_event, read_valid_events, run_log_path
 from runlog import state_root as default_state_root
 
 COLUMNS = ["Ready", "Plan", "Implement", "Review", "Critic", "Integrate", "Done", "Blocked"]
@@ -27,6 +34,8 @@ STATIC_FILES = {
     "/index.html": "index.html",
     "/app.js": "app.js",
     "/style.css": "style.css",
+    "/history.html": "history.html",
+    "/history": "history.html",
 }
 MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -60,6 +69,9 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
     activity_events = [event for event in events if event["event"] not in IGNORED_FOR_ACTIVITY]
     last_activity_ts = _parse_ts(activity_events[-1]["ts"]) if activity_events else _parse_ts(started["ts"])
 
+    repo_root = data.get("repositoryRoot", "")
+    project_name = Path(repo_root).name if repo_root else unit_id
+
     issues: dict[str, dict] = {}
     compaction_at = None
     for event in events[1:]:
@@ -80,13 +92,45 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
                 "models": {},
                 "correctionBudget": None,
                 "phaseStartedAt": None,
+                "firstPhaseStartedAt": None,
+                "completedAt": None,
+                "totalCycleSeconds": None,
+                "phaseDurations": {
+                    "Plan": 0,
+                    "Implement": 0,
+                    "Review": 0,
+                    "Critic": 0,
+                    "Integrate": 0,
+                },
+                "_currentPhase": None,
+                "_currentPhaseStartedAt": None,
                 "operatorWaiting": False,
+                "project": project_name,
+                "unitId": unit_id,
+                "run": started["run"],
+                "repositoryRoot": repo_root,
             },
         )
         edata = event.get("data") or {}
+        ts = event["ts"]
         if name == "phase.started":
-            state["column"] = event["phase"]
-            state["phaseStartedAt"] = event["ts"]
+            phase = event["phase"]
+            if state["firstPhaseStartedAt"] is None:
+                state["firstPhaseStartedAt"] = ts
+
+            if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
+                prev_phase = state["_currentPhase"]
+                prev_dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
+                state["phaseDurations"][prev_phase] = state["phaseDurations"].get(prev_phase, 0) + prev_dur
+
+            state["_currentPhase"] = phase
+            state["_currentPhaseStartedAt"] = ts
+            state["column"] = phase
+            state["phaseStartedAt"] = ts
+            if phase == "Integrate":
+                state["operatorWaiting"] = False
+            elif "operatorWaiting" in edata:
+                state["operatorWaiting"] = bool(edata.get("operatorWaiting", False))
             if "branch" in edata:
                 state["branch"] = edata["branch"]
             if "worktree" in edata:
@@ -95,21 +139,74 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
                 state["models"] = dict(edata["models"])
             if "correctionBudget" in edata:
                 state["correctionBudget"] = edata["correctionBudget"]
-            state["operatorWaiting"] = bool(edata.get("operatorWaiting", False))
+        elif name == "phase.finished":
+            finished_phase = event.get("phase")
+            if state["_currentPhase"] == finished_phase and state["_currentPhaseStartedAt"] is not None:
+                dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
+                state["phaseDurations"][finished_phase] = state["phaseDurations"].get(finished_phase, 0) + dur
+                state["_currentPhase"] = None
+                state["_currentPhaseStartedAt"] = None
+            if finished_phase == "Critic":
+                state["operatorWaiting"] = True
+        elif name == "refutation":
+            state["operatorWaiting"] = False
+        elif name == "operator.approved":
+            state["operatorWaiting"] = False
+            state["operatorApproved"] = True
         elif name == "subagent.started":
             role = edata.get("role")
             if role:
                 state["models"][role] = edata.get("model")
         elif name == "issue.done":
             state["column"] = "Done"
+            state["operatorWaiting"] = False
+            state["completedAt"] = ts
+            if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
+                dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
+                state["phaseDurations"][state["_currentPhase"]] = state["phaseDurations"].get(state["_currentPhase"], 0) + dur
+                state["_currentPhase"] = None
+                state["_currentPhaseStartedAt"] = None
         elif name == "issue.blocked":
             state["column"] = "Blocked"
+            state["operatorWaiting"] = False
+            state["completedAt"] = ts
+            if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
+                dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
+                state["phaseDurations"][state["_currentPhase"]] = state["phaseDurations"].get(state["_currentPhase"], 0) + dur
+                state["_currentPhase"] = None
+                state["_currentPhaseStartedAt"] = None
+        elif name == "issue.paused":
+            state["operatorWaiting"] = False
 
     for state in issues.values():
-        if state["phaseStartedAt"] is not None:
-            state["elapsedPhaseSeconds"] = max(0, int(now - _parse_ts(state["phaseStartedAt"])))
+        is_done = state["column"] == "Done" or state["completedAt"] is not None
+        if is_done:
+            if state["completedAt"] is not None and state["firstPhaseStartedAt"] is not None:
+                state["totalCycleSeconds"] = max(0, int(_parse_ts(state["completedAt"]) - _parse_ts(state["firstPhaseStartedAt"])))
+            else:
+                state["totalCycleSeconds"] = sum(state["phaseDurations"].values())
+
+            if state["phaseStartedAt"] is not None and state["completedAt"] is not None:
+                state["elapsedPhaseSeconds"] = max(0, int(_parse_ts(state["completedAt"]) - _parse_ts(state["phaseStartedAt"])))
+            else:
+                state["elapsedPhaseSeconds"] = None
         else:
-            state["elapsedPhaseSeconds"] = None
+            if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
+                active_elapsed = max(0, int(now - _parse_ts(state["_currentPhaseStartedAt"])))
+                state["phaseDurations"][state["_currentPhase"]] = state["phaseDurations"].get(state["_currentPhase"], 0) + active_elapsed
+
+            if state["phaseStartedAt"] is not None:
+                state["elapsedPhaseSeconds"] = max(0, int(now - _parse_ts(state["phaseStartedAt"])))
+            else:
+                state["elapsedPhaseSeconds"] = None
+
+            if state["firstPhaseStartedAt"] is not None:
+                state["totalCycleSeconds"] = max(0, int(now - _parse_ts(state["firstPhaseStartedAt"])))
+            else:
+                state["totalCycleSeconds"] = None
+
+        state.pop("_currentPhase", None)
+        state.pop("_currentPhaseStartedAt", None)
 
     return {
         "unitId": unit_id,
@@ -122,6 +219,116 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
         "compactionAt": compaction_at,
         "issues": sorted(issues.values(), key=lambda item: item["issue"]),
     }
+
+
+def collect_projects(root: Path, runs: list[dict] | None = None) -> list[dict]:
+    """Collect project metadata across all execution units."""
+    if runs is None:
+        runs = collect_runs(root)
+    projects_by_unit: dict[str, dict] = {}
+    for run in runs:
+        unit_id = run["unitId"]
+        repo_root = run.get("repositoryRoot", "")
+        name = Path(repo_root).name if repo_root else unit_id
+        if unit_id not in projects_by_unit:
+            projects_by_unit[unit_id] = {
+                "unitId": unit_id,
+                "name": name,
+                "repositoryRoot": repo_root,
+            }
+    if root.exists():
+        for unit_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+            if unit_dir.name not in projects_by_unit:
+                projects_by_unit[unit_dir.name] = {
+                    "unitId": unit_dir.name,
+                    "name": unit_dir.name,
+                    "repositoryRoot": "",
+                }
+    return sorted(projects_by_unit.values(), key=lambda p: p["name"].lower())
+
+
+def find_transcript_file(state_root: Path, unit_id: str, run_id: str, issue_ref: str, worktree: str | None = None) -> Path | None:
+    """Find transcript.jsonl under state root, worktree, or harness session logs."""
+    # 1. State root transcripts location: ~/.gantry/state/<unit>/transcripts/<run>/<issue>/transcript.jsonl
+    p1 = state_root / unit_id / "transcripts" / run_id / issue_ref / "transcript.jsonl"
+    if p1.exists():
+        return p1
+
+    # 2. State root artifact/session location
+    p2 = state_root / unit_id / "runs" / f"{run_id}.transcript.jsonl"
+    if p2.exists():
+        return p2
+
+    # 3. State root issue transcript: ~/.gantry/state/<unit>/transcripts/<issue>/transcript.jsonl
+    p3 = state_root / unit_id / "transcripts" / issue_ref / "transcript.jsonl"
+    if p3.exists():
+        return p3
+
+    # 4. Worktree-local logs: <worktree>/.system_generated/logs/transcript.jsonl
+    if worktree:
+        wt_path = Path(worktree)
+        p4 = wt_path / ".system_generated" / "logs" / "transcript.jsonl"
+        if p4.exists():
+            return p4
+        p5 = wt_path / ".gantry" / "transcripts" / f"{issue_ref}.jsonl"
+        if p5.exists():
+            return p5
+
+    # 5. Check if active marker in repo/worktree matches this run
+    if worktree:
+        marker_file = Path(worktree) / ".git" / "gantry" / "current-run.json"
+        if marker_file.exists():
+            try:
+                mdata = json.loads(marker_file.read_text(encoding="utf-8"))
+                if mdata.get("run") == run_id:
+                    brain_root = Path.home() / ".gemini" / "antigravity-cli" / "brain"
+                    if brain_root.exists():
+                        candidates = sorted(brain_root.glob("*/.system_generated/logs/transcript.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+                        if candidates:
+                            return candidates[0]
+            except (OSError, json.JSONDecodeError):
+                pass
+
+    return None
+
+
+def read_transcript_steps(transcript_path: Path | None) -> list[dict]:
+    """Read transcript steps safely without throwing."""
+    if not transcript_path or not transcript_path.exists():
+        return []
+    steps: list[dict] = []
+    try:
+        with transcript_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    steps.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        return []
+    return steps
+
+
+def derive_live_activity(steps: list[dict], operator_waiting: bool = False) -> str | None:
+    """Derive live activity status badge from latest transcript steps."""
+    if operator_waiting:
+        return "Awaiting Operator"
+    if not steps:
+        return None
+    for step in reversed(steps):
+        tool_calls = step.get("tool_calls")
+        if tool_calls and isinstance(tool_calls, list) and len(tool_calls) > 0:
+            tool_name = tool_calls[-1].get("name", "tool")
+            return f"Tool: {tool_name}"
+        thinking = step.get("thinking")
+        if thinking and isinstance(thinking, str) and thinking.strip():
+            return "Thinking..."
+        if step.get("type") == "PLANNER_RESPONSE":
+            return "Thinking..."
+    return None
 
 
 def collect_runs(root: Path, now: float | None = None) -> list[dict]:
@@ -138,8 +345,76 @@ def collect_runs(root: Path, now: float | None = None) -> list[dict]:
             events = read_valid_events(log_path)
             if not events or events[0]["event"] != "run.started":
                 continue
-            runs.append(build_run(unit_dir.name, events, now))
+            run_data = build_run(unit_dir.name, events, now)
+            # Enrich issues with liveActivity if transcript is found
+            for issue in run_data.get("issues", []):
+                approval_file = root / run_data["unitId"] / "approvals" / f"{issue['issue']}.json"
+                if approval_file.exists():
+                    issue["operatorWaiting"] = False
+                    issue["operatorApproved"] = True
+
+                t_file = find_transcript_file(root, run_data["unitId"], run_data["run"], issue["issue"], issue.get("worktree"))
+                if t_file:
+                    steps = read_transcript_steps(t_file)
+                    activity = derive_live_activity(steps, issue.get("operatorWaiting", False))
+                    if activity:
+                        issue["liveActivity"] = activity
+                elif issue.get("operatorWaiting"):
+                    issue["liveActivity"] = "Awaiting Operator"
+            runs.append(run_data)
     return runs
+
+
+def read_gates_for_issue(state_root: Path, unit_id: str, run_id: str, issue_ref: str) -> dict[str, dict]:
+    """Read structured gate artifacts from ~/.gantry/state/<unit>/artifacts/<run>/<issue>/gate-<phase>.json."""
+    gates: dict[str, dict] = {}
+    artifact_dir = state_root / unit_id / "artifacts" / run_id / issue_ref
+    if artifact_dir.exists():
+        for path in sorted(artifact_dir.glob("gate-*.json")):
+            phase_name = path.stem.removeprefix("gate-").lower()
+            try:
+                gates[phase_name] = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+
+    log_path = run_log_path(state_root, unit_id, run_id)
+    if log_path.exists():
+        events = read_valid_events(log_path)
+        for event in events:
+            if event.get("issue") != issue_ref:
+                continue
+            ename = event["event"]
+            edata = event.get("data") or {}
+            if "plan" not in gates and ename == "subagent.stopped" and edata.get("role") in ("planner", "plan-critic"):
+                res = edata.get("result") or {}
+                gates["plan"] = {
+                    "verdict": res.get("verdict", "accepted"),
+                    "criteria": res.get("criteria", []),
+                    "scope": res.get("scope", []),
+                }
+            elif "critic" not in gates and ename == "subagent.stopped" and edata.get("role") == "critic":
+                res = edata.get("result") or {}
+                gates["critic"] = {
+                    "complete": res.get("complete", True),
+                    "verdict": "complete" if res.get("complete") else "refuted",
+                    "criteria": res.get("criteria", []),
+                    "evidence": res.get("evidence", []),
+                    "gateFailures": res.get("gateFailures", []),
+                    "requiredFixes": res.get("requiredFixes", []),
+                }
+            elif "implement" not in gates and ename == "phase.finished" and event.get("phase") == "Implement":
+                gates["implement"] = {
+                    "verdict": "tests_passed",
+                    "tddProofs": True,
+                    "attempt": edata.get("attempt", 1),
+                }
+            elif "integrate" not in gates and ename == "issue.done":
+                gates["integrate"] = {
+                    "verdict": "merged",
+                    "worktree": edata.get("worktree"),
+                    "strategy": edata.get("strategy", "branch-merge"),
+                }
+    return gates
 
 
 def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
@@ -148,6 +423,16 @@ def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
 
         def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib signature
             pass
+
+        def _check_loopback(self) -> bool:
+            client_ip = self.client_address[0]
+            if client_ip not in ("127.0.0.1", "::ffff:127.0.0.1"):
+                self.send_response(403)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"forbidden: loopback only")
+                return False
+            return True
 
         def _send_json(self, status: int, payload: object) -> None:
             body = json.dumps(payload).encode("utf-8")
@@ -176,18 +461,112 @@ def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(body)
 
+        def _unquote(self, s: str) -> str:
+            return re.sub(r"%([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), s)
+
         def do_GET(self) -> None:  # noqa: N802 - stdlib method name
-            path = self.path.split("?", 1)[0]
-            if path == "/api/state":
-                self._send_json(200, {"columns": COLUMNS, "runs": collect_runs(state_root)})
+            if not self._check_loopback():
                 return
+            raw_path = self.path.split("?", 1)[0]
+            # Strip fragment if raw_path contained '#' without being percent-encoded
+            path = self._unquote(raw_path)
+            if path == "/api/state":
+                runs = collect_runs(state_root)
+                projects = collect_projects(state_root, runs)
+                self._send_json(200, {"columns": COLUMNS, "runs": runs, "projects": projects})
+                return
+
+            parts = [self._unquote(p) for p in raw_path.split("/") if p]
+            if len(parts) == 7 and parts[0] == "api" and parts[1] == "runs" and parts[4] == "issues":
+                unit_id = parts[2]
+                run_id = parts[3]
+                issue_ref = parts[5]
+                action = parts[6]
+                if action == "transcript":
+                    t_file = find_transcript_file(state_root, unit_id, run_id, issue_ref)
+                    steps = read_transcript_steps(t_file) if t_file else []
+                    self._send_json(200, {"steps": steps})
+                    return
+                elif action == "gates":
+                    gates = read_gates_for_issue(state_root, unit_id, run_id, issue_ref)
+                    self._send_json(200, {"gates": gates})
+                    return
+
             filename = STATIC_FILES.get(path)
             if filename is not None:
                 self._send_static(filename)
                 return
             self._send_not_found()
 
+        def do_POST(self) -> None:  # noqa: N802 - stdlib method name
+            if not self._check_loopback():
+                return
+            raw_path = self.path.split("?", 1)[0]
+            path = self._unquote(raw_path)
+            if path == "/api/state":
+                self.send_response(405)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"method not allowed")
+                return
+
+            if path == "/api/shutdown":
+                self._send_json(200, {"status": "shutting_down"})
+                def _async_shutdown() -> None:
+                    time.sleep(0.1)
+                    self.server.shutdown()
+                threading.Thread(target=_async_shutdown, daemon=True).start()
+                return
+
+            parts = [self._unquote(p) for p in raw_path.split("/") if p]
+            if len(parts) == 7 and parts[0] == "api" and parts[1] == "runs" and parts[4] == "issues" and parts[6] == "approve":
+                unit_id = parts[2]
+                run_id = parts[3]
+                issue_ref = parts[5]
+
+                if not UNIT_ID_RE.fullmatch(unit_id) or not RUN_ID_RE.fullmatch(run_id) or not ISSUE_RE.fullmatch(issue_ref):
+                    self._send_json(400, {"error": "invalid identifier format"})
+                    return
+
+                approvals_dir = state_root / unit_id / "approvals"
+                approvals_dir.mkdir(parents=True, exist_ok=True)
+                marker_file = approvals_dir / f"{issue_ref}.json"
+                approved_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                payload = {
+                    "unit": unit_id,
+                    "run": run_id,
+                    "issue": issue_ref,
+                    "approvedAt": approved_at,
+                    "source": "dashboard",
+                }
+                marker_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+                log_path = run_log_path(state_root, unit_id, run_id)
+                if log_path.exists():
+                    try:
+                        append_event(
+                            log_path,
+                            {
+                                "ts": approved_at,
+                                "run": run_id,
+                                "event": "operator.approved",
+                                "issue": issue_ref,
+                                "data": {
+                                    "approvedAt": approved_at,
+                                    "source": "dashboard",
+                                },
+                            },
+                        )
+                    except Exception:
+                        pass
+
+                self._send_json(200, {"status": "ok", "issue": issue_ref, "approved": True, "approvedAt": approved_at})
+                return
+
+            self._send_not_found()
+
     return DashboardRequestHandler
+
 
 
 def create_server(host: str, port: int, state_root: Path) -> ThreadingHTTPServer:
@@ -198,8 +577,219 @@ def create_server(host: str, port: int, state_root: Path) -> ThreadingHTTPServer
     return server
 
 
+def dashboard_state_path(state_root: Path) -> Path:
+    return state_root / "dashboard.json"
+
+
+def write_dashboard_state(state_root: Path, host: str, port: int, pid: int) -> None:
+    state_file = dashboard_state_path(state_root)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "running": True,
+        "host": host,
+        "port": port,
+        "pid": pid,
+        "stateRoot": str(state_root),
+        "url": f"http://{host}:{port}",
+    }
+    state_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def remove_dashboard_state(state_root: Path) -> None:
+    state_file = dashboard_state_path(state_root)
+    try:
+        state_file.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def is_pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def is_port_in_use(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+            return False
+        except OSError:
+            return True
+
+
+def probe_dashboard(host: str, port: int, timeout: float = 1.0) -> bool:
+    try:
+        req = urllib.request.Request(f"http://{host}:{port}/api/state")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                return isinstance(data, dict) and "columns" in data and "runs" in data
+    except Exception:
+        return False
+    return False
+
+
+def get_dashboard_status(state_root: Path, host: str = "127.0.0.1", port: int = 4600) -> dict:
+    state_file = dashboard_state_path(state_root)
+    if state_file.exists():
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            pid = data.get("pid")
+            h = data.get("host", host)
+            p = data.get("port", port)
+            alive = isinstance(pid, int) and is_pid_alive(pid)
+            responding = probe_dashboard(h, p, timeout=0.5)
+            if alive and responding:
+                return {
+                    "running": True,
+                    "host": h,
+                    "port": p,
+                    "pid": pid,
+                    "stateRoot": str(state_root),
+                    "url": f"http://{h}:{p}",
+                }
+            else:
+                remove_dashboard_state(state_root)
+        except Exception:
+            remove_dashboard_state(state_root)
+
+    if probe_dashboard(host, port, timeout=0.5):
+        return {
+            "running": True,
+            "host": host,
+            "port": port,
+            "pid": None,
+            "stateRoot": str(state_root),
+            "url": f"http://{host}:{port}",
+        }
+
+    return {
+        "running": False,
+        "host": host,
+        "port": port,
+        "pid": None,
+        "stateRoot": str(state_root),
+        "url": None,
+    }
+
+
+def start_daemon(host: str, port: int, state_root: Path) -> dict:
+    require_loopback_host(host)
+    current = get_dashboard_status(state_root, host, port)
+    if current["running"]:
+        return current
+
+    if is_port_in_use(host, port):
+        raise DashboardError(f"port {port} is occupied by an alien process")
+
+    cmd = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "serve",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--state-root",
+        str(state_root),
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+    deadline = time.time() + 5.0
+    ready = False
+    while time.time() < deadline:
+        if probe_dashboard(host, port, timeout=0.5):
+            ready = True
+            break
+        time.sleep(0.1)
+
+    if not ready:
+        try:
+            proc.terminate()
+        except OSError:
+            pass
+        raise DashboardError(f"timed out waiting for dashboard daemon on port {port}")
+
+    write_dashboard_state(state_root, host, port, proc.pid)
+    return {
+        "running": True,
+        "host": host,
+        "port": port,
+        "pid": proc.pid,
+        "stateRoot": str(state_root),
+        "url": f"http://{host}:{port}",
+    }
+
+
+def stop_daemon(host: str, port: int, state_root: Path) -> dict:
+    current = get_dashboard_status(state_root, host, port)
+    target_host = current.get("host") or host
+    target_port = current.get("port") or port
+    pid = current.get("pid")
+
+    if not current["running"] and not is_port_in_use(target_host, target_port):
+        remove_dashboard_state(state_root)
+        return {
+            "running": False,
+            "host": target_host,
+            "port": target_port,
+            "pid": None,
+            "stateRoot": str(state_root),
+            "stopped": False,
+        }
+
+    try:
+        req = urllib.request.Request(
+            f"http://{target_host}:{target_port}/api/shutdown",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            pass
+    except Exception:
+        pass
+
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        if not is_port_in_use(target_host, target_port):
+            break
+        time.sleep(0.1)
+
+    if pid and is_pid_alive(pid):
+        try:
+            os.kill(pid, 15)
+            time.sleep(0.2)
+            if is_pid_alive(pid):
+                os.kill(pid, 9)
+        except OSError:
+            pass
+
+    remove_dashboard_state(state_root)
+    return {
+        "running": False,
+        "host": target_host,
+        "port": target_port,
+        "pid": None,
+        "stateRoot": str(state_root),
+        "stopped": True,
+    }
+
+
 def serve(host: str, port: int, state_root: Path) -> None:
     server = create_server(host, port, state_root)
+    write_dashboard_state(state_root, host, server.server_port, os.getpid())
     print(json.dumps({"host": host, "port": server.server_port, "stateRoot": str(state_root)}))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -207,25 +797,88 @@ def serve(host: str, port: int, state_root: Path) -> None:
         thread.join()
     except KeyboardInterrupt:
         server.shutdown()
+    finally:
+        remove_dashboard_state(state_root)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
+
     serve_parser = subparsers.add_parser("serve", help="serve the read-only kanban dashboard")
     serve_parser.add_argument("--host", default="127.0.0.1", help="must be 127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=4600, help="TCP port, 0 for an ephemeral port")
     serve_parser.add_argument("--state-root", help="override ~/.gantry/state")
+
+    status_parser = subparsers.add_parser("status", help="check dashboard running status")
+    status_parser.add_argument("--host", default="127.0.0.1", help="host to check (default 127.0.0.1)")
+    status_parser.add_argument("--port", type=int, default=4600, help="TCP port to check (default 4600)")
+    status_parser.add_argument("--state-root", help="override ~/.gantry/state")
+    status_parser.add_argument("--json", action="store_true", help="output status in JSON")
+
+    start_parser = subparsers.add_parser("start", help="start dashboard server")
+    start_parser.add_argument("--daemon", action="store_true", default=False, help="run in background daemon mode")
+    start_parser.add_argument("--host", default="127.0.0.1", help="must be 127.0.0.1")
+    start_parser.add_argument("--port", type=int, default=4600, help="TCP port (default 4600)")
+    start_parser.add_argument("--state-root", help="override ~/.gantry/state")
+    start_parser.add_argument("--json", action="store_true", help="output status in JSON")
+
+    stop_parser = subparsers.add_parser("stop", help="stop running dashboard server")
+    stop_parser.add_argument("--host", default="127.0.0.1", help="host (default 127.0.0.1)")
+    stop_parser.add_argument("--port", type=int, default=4600, help="TCP port (default 4600)")
+    stop_parser.add_argument("--state-root", help="override ~/.gantry/state")
+    stop_parser.add_argument("--json", action="store_true", help="output status in JSON")
+
     args = parser.parse_args(argv)
+    state_root = Path(args.state_root).expanduser().resolve() if getattr(args, "state_root", None) else default_state_root(None)
 
     if args.command == "serve":
-        state_root = Path(args.state_root).expanduser().resolve() if args.state_root else default_state_root(None)
         try:
             serve(args.host, args.port, state_root)
         except DashboardError as error:
             print(f"dashboard error: {error}", file=sys.stderr)
             return 1
         return 0
+
+    elif args.command == "status":
+        try:
+            st = get_dashboard_status(state_root, args.host, args.port)
+            if args.json:
+                print(json.dumps(st))
+            else:
+                if st["running"]:
+                    print(f"Dashboard is running at {st['url']} (PID: {st['pid']})")
+                else:
+                    print("Dashboard is not running.")
+        except DashboardError as error:
+            print(f"dashboard error: {error}", file=sys.stderr)
+            return 1
+        return 0
+
+    elif args.command == "start":
+        try:
+            res = start_daemon(args.host, args.port, state_root)
+            if args.json:
+                print(json.dumps(res))
+            else:
+                print(f"Dashboard started on {res['url']} (PID: {res['pid']})")
+        except DashboardError as error:
+            print(f"dashboard error: {error}", file=sys.stderr)
+            return 1
+        return 0
+
+    elif args.command == "stop":
+        try:
+            res = stop_daemon(args.host, args.port, state_root)
+            if args.json:
+                print(json.dumps(res))
+            else:
+                print("Dashboard stopped.")
+        except DashboardError as error:
+            print(f"dashboard error: {error}", file=sys.stderr)
+            return 1
+        return 0
+
     return 2
 
 

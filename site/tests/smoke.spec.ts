@@ -29,7 +29,10 @@ test.describe('Gantry Site Shell Smoke Tests', () => {
     await expect(page.getByRole('link', { name: /GITHUB/i })).toBeVisible();
 
     // 4. Verify Main Hero Heading
-    const heading = page.locator('h1');
+    const heading = page.getByRole('main').getByRole('heading', {
+      level: 1,
+      name: /Harness-Neutral Agentic SDLC/i,
+    });
     await expect(heading).toBeVisible();
     await expect(heading).toContainText('Harness-Neutral');
     await expect(heading).toContainText('Agentic SDLC');

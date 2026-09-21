@@ -190,6 +190,145 @@ class GantrySetupTests(unittest.TestCase):
             self.assertTrue(second_run_content.startswith(b"Before\nExisting content\n"))
             self.assertTrue(second_run_content.endswith(b"\nAfter"))
             
+    def test_setup_supports_explicit_harness_codex_flag_and_generates_default_roles(self) -> None:
+        """AC1 & AC3: setup.py supports --harness codex, proposes execution.hostHarness and roles, and writes policy."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            p = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--harness", "codex"],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            stdout, _ = p.communicate(input="y\n")
+            self.assertIn("Proposed .gantry/config.json:", stdout)
+            self.assertIn('"hostHarness": "codex"', stdout)
+            self.assertIn('"gpt-5.2-codex"', stdout)
+            self.assertIn("codex login", stdout.lower())
+            
+            config_path = root / ".gantry" / "config.json"
+            self.assertTrue(config_path.exists())
+            written = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual("codex", written["execution"]["hostHarness"])
+            self.assertIn("plan", written["execution"]["roles"])
+            self.assertEqual("codex", written["execution"]["roles"]["plan"]["harness"])
+
+    def test_setup_detects_codex_in_project_root_interactive(self) -> None:
+        """AC1: setup.py detects .codex in project root and offers Codex configuration interactively."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            (root / ".codex").mkdir()
+            
+            p = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT)],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            stdout, _ = p.communicate(input="y\ny\n")
+            self.assertIn("Detected Codex in environment", stdout)
+            self.assertIn("Configure Codex as host harness? [Y/n]", stdout)
+            self.assertIn('"hostHarness": "codex"', stdout)
+            
+            config_path = root / ".gantry" / "config.json"
+            self.assertTrue(config_path.exists())
+            written = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual("codex", written["execution"]["hostHarness"])
+
+    def test_setup_codex_guides_authentication_and_tests_discovery(self) -> None:
+        """AC2: Setup guides operator to verify authentication (codex login) and tests discovery before finalizing configuration."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            p = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--harness", "codex"],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            stdout, _ = p.communicate(input="n\n")
+            self.assertIn("codex login", stdout.lower())
+            self.assertIn("discovery", stdout.lower())
+
+    def test_setup_codex_preserves_unrelated_policy_on_merge(self) -> None:
+        """AC3: .gantry/config.json stores Codex under execution.hostHarness and roles on merge, preserving unrelated policy."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            gantry_dir = root / ".gantry"
+            gantry_dir.mkdir()
+            config_path = gantry_dir / "config.json"
+            config_path.write_text(
+                json.dumps({
+                    "caveman": True,
+                    "git": {"target": "develop"},
+                    "budget": {"corrections": 3},
+                }),
+                encoding="utf-8",
+            )
+            
+            p = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--harness", "codex"],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            stdout, _ = p.communicate(input="m\n")
+            self.assertIn("Config exists. [M]erge, [O]verwrite, or [A]bort?", stdout)
+            
+            written = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertTrue(written.get("caveman"))
+            self.assertEqual("develop", written["git"]["target"])
+            self.assertEqual(3, written["budget"]["corrections"])
+            self.assertEqual("codex", written["execution"]["hostHarness"])
+            self.assertEqual("codex", written["execution"]["roles"]["critic"]["harness"])
+
+    def test_setup_codex_injects_and_idempotently_maintains_agents_md(self) -> None:
+        """AC4: Setup injects and idempotently maintains marked Gantry policy block with Codex rules and guardrail directives."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            agents_path = root / "AGENTS.md"
+            agents_path.write_text("# Project Agents\n\nExisting guidelines.\n", encoding="utf-8")
+            
+            # First run
+            p = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--harness", "codex"],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            p.communicate(input="y\n")
+            
+            first_content = agents_path.read_text(encoding="utf-8")
+            self.assertTrue(first_content.startswith("# Project Agents\n\nExisting guidelines.\n"))
+            self.assertIn("<!-- gantry:begin -->", first_content)
+            self.assertIn("<!-- gantry:end -->", first_content)
+            self.assertIn("Codex Host Orchestration & Guardrails", first_content)
+            self.assertIn("codex exec", first_content)
+            self.assertIn("roadmap.py done", first_content)
+            
+            # Second run with merge
+            p2 = subprocess.Popen(
+                [sys.executable, str(SETUP_SCRIPT), "--harness", "codex"],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            p2.communicate(input="m\n")
+            
+            second_content = agents_path.read_text(encoding="utf-8")
+            self.assertEqual(first_content, second_content, "Second setup run should be byte-identical")
+
     def test_skill_prompt_instructions(self) -> None:
         """The skill reads capability declarations, creates no engine, etc."""
         skill_path = REPO_ROOT / ".agents" / "skills" / "gantry-setup" / "SKILL.md"
@@ -207,6 +346,7 @@ class GantrySetupTests(unittest.TestCase):
         self.assertIn("caveman lite", content.lower())
         self.assertIn("user-managed installation", content.lower())
         self.assertIn("fallback", content.lower())
+        self.assertIn("codex", content.lower())
 
 if __name__ == "__main__":
     unittest.main()

@@ -544,6 +544,31 @@ class RunLogTests(unittest.TestCase):
             self.assertEqual(1, bad_issue.returncode)
             self.assertIn("issue", bad_issue.stderr.lower())
 
+    def test_append_accepts_planning_milestone_event_with_operator_waiting(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            unit = json.loads(self.run_script(root, "unit-id", "--cwd", str(root), "--json").stdout)["unitId"]
+            self.assertEqual(0, self.run_script(root, "append", unit, "run-01", "--state-root", str(state), event=self.started()).returncode)
+            proc = self.run_script(
+                root,
+                "append",
+                unit,
+                "run-01",
+                "--state-root",
+                str(state),
+                event={
+                    "ts": "2026-09-19T10:00:00Z",
+                    "run": "run-01",
+                    "event": "phase.started",
+                    "issue": "gantry-plan#00",
+                    "phase": "Plan",
+                    "data": {"operatorWaiting": True},
+                },
+            )
+            self.assertEqual(0, proc.returncode, proc.stderr)
+
 
 class CurrentRunMarkerTests(unittest.TestCase):
     """The per-worktree current-Run marker: how a hook that inherits no environment finds its Run."""

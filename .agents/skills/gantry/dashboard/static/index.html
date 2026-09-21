@@ -17,6 +17,15 @@
         </div>
         <span class="telemetry-badge">v1.0.4 [STANDBY]</span>
       </div>
+      <div class="header-controls">
+        <div class="project-selector-group">
+          <label for="project-select" class="selector-label">PROJECT:</label>
+          <select id="project-select" class="project-select" aria-label="Select Project">
+            <option value="ALL">ALL</option>
+          </select>
+        </div>
+        <button id="btn-shutdown" class="btn-shutdown" type="button" aria-label="Shutdown Server">SHUTDOWN</button>
+      </div>
       <div class="header-status">
         <span class="status-indicator"></span>
         <span class="status-text">LOOPBACK TELEMETRY // READ-ONLY</span>
@@ -43,6 +52,92 @@
   <main class="dashboard-main">
     <div id="swimlanes"></div>
   </main>
+
+  <!-- Execution Detail Modal -->
+  <div id="execution-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-issue-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-header-left">
+          <span class="modal-diamond"></span>
+          <h2 id="modal-issue-title" class="modal-title">EXECUTION DETAILS</h2>
+          <span id="modal-phase-badge" class="badge"></span>
+          <span id="modal-activity-badge" class="badge live"></span>
+        </div>
+        <button id="modal-close-btn" class="modal-close" aria-label="Close modal">&times;</button>
+      </div>
+      <div class="modal-meta-strip">
+        <span id="modal-meta-project" class="meta-item">PROJECT: -</span>
+        <span id="modal-meta-unit" class="meta-item">UNIT: -</span>
+        <span id="modal-meta-run" class="meta-item">RUN: -</span>
+        <span id="modal-meta-branch" class="meta-item">BRANCH: -</span>
+      </div>
+      <div id="modal-phase-durations" class="modal-durations-strip">
+        <div class="duration-item"><span class="duration-label">Plan:</span><span id="dur-plan" class="duration-value">-</span></div>
+        <div class="duration-item"><span class="duration-label">Implement:</span><span id="dur-implement" class="duration-value">-</span></div>
+        <div class="duration-item"><span class="duration-label">Review:</span><span id="dur-review" class="duration-value">-</span></div>
+        <div class="duration-item"><span class="duration-label">Critic:</span><span id="dur-critic" class="duration-value">-</span></div>
+        <div class="duration-item"><span class="duration-label">Integrate:</span><span id="dur-integrate" class="duration-value">-</span></div>
+        <div class="duration-item total-item"><span class="duration-label">Total:</span><span id="dur-total" class="duration-value">-</span></div>
+      </div>
+      <div id="modal-gate-alert" class="gate-alert hidden">
+        <div class="gate-alert-content">
+          <span class="gate-alert-icon">⚠️</span>
+          <span id="modal-gate-alert-text">Critic verificado com sucesso. Aguardando aprovação do operador para iniciar Integração.</span>
+        </div>
+        <button id="modal-approve-btn" class="btn-approve-gate" type="button">Aprovar Gate</button>
+      </div>
+      <div class="modal-tabs">
+        <button id="tab-btn-gates" class="modal-tab active" type="button" data-tab="gates">Pareceres dos Gates</button>
+        <button id="tab-btn-history" class="modal-tab" type="button" data-tab="history">Histórico Completo</button>
+      </div>
+      <div class="modal-body">
+        <div id="tab-content-gates" class="tab-pane active">
+          <div id="gates-container" class="gates-container">
+            <div class="transcript-loading">Carregando pareceres dos gates...</div>
+          </div>
+        </div>
+        <div id="tab-content-history" class="tab-pane hidden">
+          <div class="history-toolbar">
+            <span class="history-hint">Passos, ferramentas e logs do transcript</span>
+            <button id="btn-popout-history" class="btn-popout" type="button">Abrir em Nova Janela ↗</button>
+          </div>
+          <div id="modal-transcript-container" class="transcript-stream">
+            <div class="transcript-loading">Awaiting transcript events...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shutdown Confirmation Modal -->
+  <div id="shutdown-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="shutdown-modal-title">
+    <div class="modal-dialog modal-dialog-sm">
+      <div class="modal-header">
+        <div class="modal-header-left">
+          <span class="modal-diamond alert-diamond"></span>
+          <h2 id="shutdown-modal-title" class="modal-title">SHUTDOWN SERVER</h2>
+        </div>
+        <button id="shutdown-close-btn" class="modal-close" aria-label="Close modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="shutdown-message">Are you sure you want to shut down the Gantry dashboard server? Active state polling will stop and the server process will terminate.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="shutdown-cancel-btn" class="btn-secondary" type="button">CANCEL</button>
+        <button id="shutdown-confirm-btn" class="btn-danger" type="button">CONFIRM SHUTDOWN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Server Stopped Overlay / Banner -->
+  <div id="server-stopped-overlay" class="stopped-overlay hidden" role="alert">
+    <div class="stopped-card">
+      <span class="stopped-icon">⏹</span>
+      <h2 class="stopped-heading">SERVER STOPPED</h2>
+      <p class="stopped-subtext">DISCONNECTED // DAEMON TERMINATED</p>
+      <div class="stopped-hint">Restart via CLI: <code>python3 .agents/skills/gantry/scripts/dashboard.py start --daemon</code></div>
+    </div>
+  </div>
 
   <!-- Telemetry Footer -->
   <footer class="rig-footer">

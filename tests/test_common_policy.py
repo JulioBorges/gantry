@@ -30,6 +30,7 @@ class PolicyResolutionTests(unittest.TestCase):
             self.assertEqual({}, defaults["templates"]["headingMap"])
             self.assertEqual("main", defaults["git"]["target"])
             self.assertEqual("gantry/", defaults["git"]["prefix"])
+            self.assertEqual("branch-merge", defaults["delivery"]["strategy"])
             self.assertEqual(2, defaults["budget"]["corrections"])
             self.assertEqual(0.15, defaults["budget"]["contextShare"])
             self.assertEqual(900, defaults["dashboard"]["staleAfterSeconds"])
@@ -38,12 +39,13 @@ class PolicyResolutionTests(unittest.TestCase):
             config = root / ".gantry" / "config.json"
             config.parent.mkdir()
             config.write_text(
-                '{"git":{"target":"trunk"},"budget":{"contextShare":0.2}}',
+                '{"git":{"target":"trunk"},"budget":{"contextShare":0.2},"delivery":{"strategy":"pull-request"}}',
                 encoding="utf-8",
             )
             overlay = resolve_policy(root)
             self.assertEqual("trunk", overlay["git"]["target"])
             self.assertEqual("gantry/", overlay["git"]["prefix"])
+            self.assertEqual("pull-request", overlay["delivery"]["strategy"])
             self.assertEqual(0.2, overlay["budget"]["contextShare"])
             self.assertEqual(2, overlay["budget"]["corrections"])
             self.assertEqual(900, overlay["dashboard"]["staleAfterSeconds"])

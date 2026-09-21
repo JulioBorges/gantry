@@ -25,6 +25,9 @@ DEFAULT_POLICY = {
         "prefix": "gantry/",
         "issueBranch": "{prefix}{spec}-{number:02d}",
     },
+    "delivery": {
+        "strategy": "branch-merge",
+    },
     "hooks": {"record": [], "deny": []},
     "budget": {"corrections": 2, "contextShare": 0.15},
     "dashboard": {"staleAfterSeconds": 900},

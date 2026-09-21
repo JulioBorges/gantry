@@ -36,19 +36,33 @@ Set versioned role defaults under `execution.roles` in `.gantry/config.json`:
 {
   "execution": {
     "roles": {
-      "implement": {"harness": "codex", "model": "gpt-5.2-codex"},
-      "review": {"harness": "codex", "model": "gpt-5.2-codex"},
-      "critic": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"}
+      "implement": {"harness": "codex", "model": "gpt-5.6-terra"},
+      "review": {"harness": "codex", "model": "gpt-5.6-astra"},
+      "critic": {"harness": "claude-code", "model": "claude-sonnet-5"}
     }
   }
 }
 ```
 
-Configure defaults via `gantry-setup`:
+Configure defaults through the `gantry-setup` skill (recommended) by sending
+this prompt in your coding harness:
+
+```text
+/gantry-setup
+```
+
+During setup, request role defaults for this repository and verify each selected
+harness, model, and effort before approving the proposed policy.
+
+For automation or low-level diagnostics, the equivalent config writer is
+available through the Python CLI:
 
 ```sh
-python3 .agents/skills/gantry/scripts/setup.py
+python3 .agents/skills/gantry/scripts/setup.py --harness codex --verify-auth
 ```
+
+Direct script use does not provide the skill's conversational review and
+approval flow. See [Using Gantry](usage.md) for the interface boundary.
 
 Inheritance rules:
 - `requirement-critic` and `plan-critic` inherit `critic` defaults unless overridden.
@@ -107,6 +121,68 @@ Recover from execution failure:
 ## Support Tiers
 
 - **Reference Tier**: Claude Code (full-loop proven on reference fixture).
-- **Supported Tier**: OpenCode (planned).
-- **Compatible Tier**: Codex CLI, Antigravity (`agy`).
+- **Supported Tier**: Codex CLI (hybrid runner via `codex exec`, independent Critic verification, defense-in-depth git hooks), Antigravity (`agy`), OpenCode (planned).
+- **Compatible Tier**: Cursor.
 - Do not claim unsupported tiers or automatic cross-harness parity.
+
+## Codex Installation, Setup, and Supported Capabilities
+
+### Installation Commands
+
+Ensure the Codex CLI is installed and available on `PATH`:
+
+```sh
+npm install -g @openai/codex
+```
+
+Verify authentication and login status:
+
+```sh
+codex login
+codex login status
+```
+
+Verify installed version meets the minimum requirement (`0.1.0`):
+
+```sh
+codex --version
+```
+
+### Setup via skill (recommended)
+
+In the Codex conversation, send:
+
+```text
+/gantry-setup
+```
+
+Select Codex as the Host Harness, verify authentication and model discovery,
+then review the complete policy before approving it.
+
+### Setup via Python CLI (advanced/manual)
+
+Configure repository execution policy for Codex:
+
+```sh
+python3 .agents/skills/gantry/scripts/setup.py --harness codex --verify-auth
+```
+
+The npm command below installs the skills; it does not run repository setup:
+
+```sh
+npx @julioborges/gantry add --agent codex --yes
+```
+
+Setup actions executed:
+1. Detects `codex` CLI on `PATH` or `.codex` directory.
+2. Writes `execution.hostHarness: "codex"` and default role mappings (`gpt-5.2-codex`) to `.gantry/config.json`.
+3. Verifies model discovery via `python3 .agents/skills/gantry/scripts/discovery.py codex`.
+4. Injects Codex host orchestration rules and defense-in-depth git hooks into `AGENTS.md`.
+
+### Supported Capabilities
+
+- **Tier**: Supported.
+- **Process Runner**: Hybrid subprocess runner executing bounded CLI invocations (`codex exec <prompt> --model <model>`) with timeout and error capture.
+- **Per-Role Models**: Supports role-specific models (`gpt-5.2-codex`, `gpt-5-codex`) and reasoning effort levels (`low`, `medium`, `high`).
+- **Independent Verification**: Works with independent Critic models across harnesses (ADR-0006) to verify acceptance criteria and quality gates (`acceptance.py`, `gates.py`).
+- **Defense in Depth**: Protects repository branches and `ROADMAP.md` via tracked git hooks (`pre-commit`, `pre-push`) and adversarial Critic refutation.

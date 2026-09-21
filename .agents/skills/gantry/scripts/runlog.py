@@ -34,12 +34,13 @@ EVENTS = {
     "review.finding",
     "role.selected",
     "role.changed",
+    "operator.approved",
 }
 RUN_EVENTS = {"run.started", "run.resumed", "run.cancelled", "run.finished"}
 ROUND_EVENTS = {"round.started", "round.finished"}
 PHASE_EVENTS = {"phase.started", "phase.finished"}
 SUBAGENT_EVENTS = {"subagent.started", "subagent.stopped"}
-ISSUE_EVENTS = {"issue.done", "issue.blocked", "issue.paused", "refutation", "review.finding", "role.selected", "role.changed"}
+ISSUE_EVENTS = {"issue.done", "issue.blocked", "issue.paused", "refutation", "review.finding", "role.selected", "role.changed", "operator.approved"}
 FINISHED_EVENTS = {"run.cancelled", "run.finished"}
 UNIT_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")

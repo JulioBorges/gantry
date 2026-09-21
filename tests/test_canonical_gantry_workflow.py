@@ -121,6 +121,7 @@ Preserve the portable workflow contract.
 import {{ mkdirSync, writeFileSync }} from 'node:fs';
 import {{ dirname }} from 'node:path';
 import {{ spawnSync }} from 'node:child_process';
+process.env.GANTRY_SKIP_WAIT_GATE = '1';
 const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
 const source = {json.dumps(source)};
 const args = {json.dumps(args)};
@@ -3235,15 +3236,18 @@ Slice: `legacy#07`
             "shlex",
             "shutil",
             "skipscan",
+            "socket",
+            "spec",
             "subprocess",
             "sys",
             "tempfile",
             "threading",
             "time",
             "typing",
+            "urllib",
         }
         self.assertEqual(
-            {"acceptance.py", "budget.py", "caveman.py", "cleanup.py", "common.py", "dashboard.py", "discovery.py", "execution.py", "frontier.py", "gates.py", "guard.py", "learner.py", "result.py", "roadmap.py", "runlog.py", "setup.py", "spec.py"},
+            {"acceptance.py", "budget.py", "caveman.py", "cleanup.py", "common.py", "dashboard.py", "discovery.py", "execution.py", "frontier.py", "gates.py", "guard.py", "learner.py", "plan.py", "result.py", "roadmap.py", "runlog.py", "setup.py", "spec.py", "wait_gate.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         git_hooks = SKILL_DIR / "hooks" / "git"

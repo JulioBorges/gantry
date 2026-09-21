@@ -1,7 +1,7 @@
 ---
 name: gantry
 description: Harness-neutral agentic SDLC workflow. Resolves ready Issues deterministically, plans only to operator approval, implements with TDD, reviews against standards and Spec, and accepts delivery only after adversarial verification.
-argument-hint: <spec-slug | spec#NN | wave:N | frontier | all | "free-text goal"> [--limit N] [--budget N]
+argument-hint: <spec-slug | spec#NN | wave:N | frontier | all | "Implement the <slug> Spec" | "free-text goal"> [--limit N] [--budget N]
 ---
 
 # Gantry
@@ -147,6 +147,14 @@ Every script provides `--help`, and data-producing paths support `--json`.
 - Planning creates draft Issues and never edits `ROADMAP.md`. Present drafts and the critic verdict, then
   stop. Only explicit operator approval permits `roadmap.py status <ref> ready-for-agent`, followed by
   `roadmap.py waves` and `roadmap.py check`.
+- **Execution phrasing and delegation to `gantry-plan`**: `Implement the <slug> Spec` is an execution-scope
+  alias for an approved `<slug>` Spec; resolve it to that slug before scope validation. When `gantry` is invoked
+  with any other free-text goal (e.g. a quoted string
+  like `"add webhook support"`) or an unplanned spec (a spec without implementation issues in
+  `.scratch/<slug>/issues/` or whose status is `draft`), it automatically delegates to `gantry-plan`.
+  `gantry-plan` executes the Socratic Gate interview or spec validation, tracer-bullet vertical slicing,
+  token budget audit, Plan Critic validation, and operator approval transition. Once approved, delegated
+  execution automatically advances into the round implementation loop without prompting to start `gantry`.
 - Each Issue follows `reference/round-workflow.md`: a fresh TDD implementer, a reviewer on both standards
   and Spec axes, one review fix pass, then a fresh adversarial Critic. The Critic alone can establish a
   complete delivery. Its refutation consumes at most the correction budget.
@@ -158,6 +166,12 @@ Every script provides `--help`, and data-producing paths support `--json`.
   `{prefix}{spec}-{number:02d}`), rendered by `common.issue_branch(policy, issue)`.
 - Only after Critic acceptance, green gates and a clean worktree may the orchestrator run
   `roadmap.py done <ref>`. Never hand-edit Issue status, criteria checkboxes or the roadmap.
+- Round dashboard hooks automate lifecycle visibility: before the `Implement` phase begins in any round,
+  the workflow queries `python3 <skillDir>/scripts/dashboard.py status --json`. If inactive, it asks the operator
+  whether to start the dashboard (`dashboard.py start --daemon`) and displays the URL on approval, proceeding
+  without prompts if declined; if already active, it logs the URL without prompting. Immediately after `Integrate`
+  completes at round end, it queries `dashboard.py status --json`: if active, it prompts the operator asking
+  whether to terminate the server daemon (`dashboard.py stop`).
 - At the end of a Run, execute `python3 <skillDir>/scripts/cleanup.py --plan --json` from the Run worktree
   and present its JSON output as the actual, read-only cleanup plan for the operator's authorization.
   Only after explicit Cleanup Authorization may the workflow pass that unchanged JSON to

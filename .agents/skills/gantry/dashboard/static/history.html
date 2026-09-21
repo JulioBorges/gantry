@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gantry Execution History // Standalone View</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="industrial-grid">
+  <header class="rig-header">
+    <div class="header-inner">
+      <div class="brand-group">
+        <div class="brand-mark">
+          <span class="diamond"></span>
+          <span class="brand-title">GANTRY<span class="accent">::</span>HISTORY</span>
+        </div>
+        <span id="history-issue-badge" class="telemetry-badge">STANDALONE VIEW</span>
+      </div>
+      <div class="header-status">
+        <span class="status-indicator"></span>
+        <span class="status-text">FULL EXECUTION TIMELINE</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="status-strip">
+    <div class="status-strip-inner">
+      <div class="status-strip-left">
+        <span class="signal-dot"></span>
+        <span id="history-header-issue">ISSUE: -</span>
+      </div>
+      <div class="status-strip-badges">
+        <span id="history-meta-unit" class="badge-tag">UNIT: -</span>
+        <span id="history-meta-run" class="badge-tag">RUN: -</span>
+        <span id="history-meta-phase" class="badge-tag accent-tag">PHASE: -</span>
+      </div>
+    </div>
+  </div>
+
+  <main class="dashboard-main">
+    <div class="swimlane">
+      <div class="swimlane-header">
+        <div class="swimlane-title-group">
+          <h2>CHRONOLOGICAL EXECUTION TIMELINE &amp; GATE VERDICTS</h2>
+        </div>
+      </div>
+      <div style="padding: 1.5rem;">
+        <div id="history-transcript-container" class="transcript-stream">
+          <div class="transcript-loading">Loading execution history...</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="rig-footer">
+    <div class="footer-inner">
+      <div class="footer-left">
+        <span class="accent-diamond">◆</span>
+        <span>GANTRY AGENTIC SDLC</span>
+        <span>|</span>
+        <span>DETAILED EXECUTION TIMELINE</span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const unit = params.get("unit") || "";
+      const run = params.get("run") || "";
+      const issue = params.get("issue") || "";
+
+      document.getElementById("history-header-issue").textContent = "ISSUE: " + (issue || "UNKNOWN");
+      document.getElementById("history-meta-unit").textContent = "UNIT: " + (unit || "-");
+      document.getElementById("history-meta-run").textContent = "RUN: " + (run || "-");
+
+      const container = document.getElementById("history-transcript-container");
+
+      function formatDiff(content) {
+        const div = document.createElement("div");
+        div.className = "diff-record";
+        const title = document.createElement("div");
+        title.className = "tool-name";
+        title.textContent = "CODE CHANGES / DIFF";
+        div.appendChild(title);
+
+        const pre = document.createElement("pre");
+        pre.className = "diff-content";
+        (content || "").split("\n").forEach(function (line) {
+          const span = document.createElement("span");
+          if (line.startsWith("+")) span.className = "diff-line-add";
+          else if (line.startsWith("-")) span.className = "diff-line-del";
+          else if (line.startsWith("@@") || line.startsWith("diff")) span.className = "diff-line-info";
+          span.textContent = line + "\n";
+          pre.appendChild(span);
+        });
+        div.appendChild(pre);
+        return div;
+      }
+
+      function renderSteps(steps) {
+        container.innerHTML = "";
+        if (!steps || steps.length === 0) {
+          container.innerHTML = '<div class="transcript-loading">No transcript steps recorded yet.</div>';
+          return;
+        }
+
+        steps.forEach(function (step, index) {
+          const stepWrapper = document.createElement("div");
+          stepWrapper.style.marginBottom = "1rem";
+
+          // Step marker
+          const stepBadge = document.createElement("span");
+          stepBadge.className = "badge tier";
+          stepBadge.textContent = "STEP #" + (step.step_index != null ? step.step_index : index);
+          stepWrapper.appendChild(stepBadge);
+
+          if (step.thinking) {
+            const block = document.createElement("div");
+            block.className = "thinking-block";
+            block.style.marginTop = "0.5rem";
+            const header = document.createElement("div");
+            header.className = "thinking-header";
+            header.innerHTML = '<span>MODEL REASONING (THINKING)</span><span class="thinking-toggle">[-] COLLAPSE</span>';
+            const content = document.createElement("div");
+            content.className = "thinking-content";
+            content.textContent = step.thinking;
+            header.addEventListener("click", function () {
+              content.classList.toggle("collapsed");
+              header.querySelector(".thinking-toggle").textContent = content.classList.contains("collapsed") ? "[+] EXPAND" : "[-] COLLAPSE";
+            });
+            block.appendChild(header);
+            block.appendChild(content);
+            stepWrapper.appendChild(block);
+          }
+
+          if (step.tool_calls && Array.isArray(step.tool_calls)) {
+            step.tool_calls.forEach(function (tool) {
+              const toolEl = document.createElement("div");
+              toolEl.className = "tool-record";
+              toolEl.style.marginTop = "0.5rem";
+              toolEl.innerHTML = '<div class="tool-name">TOOL: ' + (tool.name || "unknown") + '</div>';
+              if (tool.args) {
+                const argsEl = document.createElement("pre");
+                argsEl.className = "tool-args";
+                argsEl.textContent = JSON.stringify(tool.args, null, 2);
+                toolEl.appendChild(argsEl);
+              }
+              stepWrapper.appendChild(toolEl);
+            });
+          }
+
+          if (step.content && typeof step.content === "string") {
+            if (step.content.includes("diff --git") || step.content.includes("+added line") || step.content.includes("--- a/")) {
+              stepWrapper.appendChild(formatDiff(step.content));
+            } else if (step.content.trim()) {
+              const msgEl = document.createElement("div");
+              msgEl.className = "tool-args";
+              msgEl.style.marginTop = "0.5rem";
+              msgEl.textContent = step.content;
+              stepWrapper.appendChild(msgEl);
+            }
+          }
+
+          container.appendChild(stepWrapper);
+        });
+      }
+
+      if (unit && run && issue) {
+        fetch("/api/runs/" + encodeURIComponent(unit) + "/" + encodeURIComponent(run) + "/issues/" + encodeURIComponent(issue) + "/transcript")
+          .then(function (r) { return r.json(); })
+          .then(function (data) { renderSteps(data.steps || []); })
+          .catch(function () { container.innerHTML = '<div class="transcript-loading">Failed to load transcript.</div>'; });
+      } else {
+        container.innerHTML = '<div class="transcript-loading">Missing unit, run, or issue query parameter.</div>';
+      }
+    })();
+  </script>
+</body>
+</html>

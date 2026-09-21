@@ -57,13 +57,13 @@ test.describe('Bilingual i18n Support & Language Toggle (gantry-site#05)', () =>
     const simulator = page.getByTestId('pipeline-simulator');
     await expect(simulator).toContainText('SIMULADOR DE PIPELINE');
     await expect(simulator).toContainText('PROGRESSO:');
-    const specTab = page.getByTestId('stage-tab-spec');
-    await expect(specTab).toContainText('Spec & Crítico de Requisitos');
+    const setupTab = page.getByTestId('stage-tab-setup');
+    await expect(setupTab).toContainText('Configuração Única');
 
     // 5. Skills Section translated
     const skillsSection = page.getByTestId('skills-section');
-    await expect(skillsSection).toContainText('As Três Skills');
-    await expect(skillsSection).toContainText('PACOTE: 1 ROBUSTO // 2 LEVES');
+    await expect(skillsSection).toContainText('As Quatro Skills');
+    await expect(skillsSection).toContainText('PACOTE: 4 SKILLS');
 
     // 6. Harness Matrix translated
     const matrixSection = page.getByTestId('harness-matrix-section');

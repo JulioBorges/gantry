@@ -15,24 +15,97 @@ def merge_dicts(base: dict, update: dict) -> dict:
             base[k] = v
     return base
 
+def detect_codex(repo_root: Path) -> bool:
+    """Detect presence of Codex CLI on PATH or .codex directory in project."""
+    return bool(
+        shutil.which("codex")
+        or (repo_root / ".codex").exists()
+        or os.environ.get("CODEX_HOME")
+        or os.environ.get("CODEX_CLI")
+    )
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Gantry Setup config writer")
     parser.add_argument("--config", help="JSON config string")
     parser.add_argument("--config-file", help="Path to JSON config file")
+    parser.add_argument("--harness", choices=["codex", "claude-code", "antigravity", "opencode"], help="Explicit target harness")
+    parser.add_argument("--verify-auth", action="store_true", help="Explicitly guide/verify authentication and discovery before finalizing")
     args = parser.parse_args()
+
+    repo_root = Path.cwd()
+    config = None
 
     if args.config_file:
         config = json.loads(Path(args.config_file).read_text(encoding="utf-8"))
     elif args.config:
         config = json.loads(args.config)
+    elif args.harness == "codex":
+        config = {
+            "execution": {
+                "hostHarness": "codex",
+                "roles": {
+                    "plan": {"harness": "codex", "model": "gpt-5.2-codex"},
+                    "implement": {"harness": "codex", "model": "gpt-5.2-codex"},
+                    "review": {"harness": "codex", "model": "gpt-5.2-codex"},
+                    "critic": {"harness": "codex", "model": "gpt-5.2-codex"},
+                },
+            }
+        }
     else:
+        # Interactive detection when no config is passed
+        if detect_codex(repo_root):
+            source = "PATH" if shutil.which("codex") else ".codex"
+            print(f"Detected Codex in environment ({source}).")
+            try:
+                ans = input("Configure Codex as host harness? [Y/n] ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                ans = "n"
+            if ans in ("", "y", "yes"):
+                config = {
+                    "execution": {
+                        "hostHarness": "codex",
+                        "roles": {
+                            "plan": {"harness": "codex", "model": "gpt-5.2-codex"},
+                            "implement": {"harness": "codex", "model": "gpt-5.2-codex"},
+                            "review": {"harness": "codex", "model": "gpt-5.2-codex"},
+                            "critic": {"harness": "codex", "model": "gpt-5.2-codex"},
+                        },
+                    }
+                }
+
+    if config is None:
         print("Error: No config provided", file=sys.stderr)
         sys.exit(2)
+
+    if args.harness:
+        if "execution" not in config or not isinstance(config["execution"], dict):
+            config["execution"] = {}
+        config["execution"]["hostHarness"] = args.harness
+
+    is_codex = (
+        (args.harness == "codex")
+        or (isinstance(config, dict) and config.get("execution", {}).get("hostHarness") == "codex")
+    )
+
+    if is_codex or args.verify_auth:
+        print("Codex host harness selected or detected.")
+        print("Guidance: Ensure Codex CLI is authenticated via `codex login` before execution.")
+        print("Testing Codex model discovery...")
+        scripts_dir = Path(__file__).resolve().parent
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        try:
+            import discovery
+            models = discovery.discover_codex_models(use_cache=False)
+            model_ids = [m["id"] for m in models]
+            print(f"Codex discovery verified: {len(models)} model(s) discovered ({', '.join(model_ids[:3])}).")
+        except Exception as exc:
+            print(f"Notice: Codex discovery check: {exc}")
+            print("Remediation: Run `codex login` to verify credentials before running Gantry tasks.")
 
     print("Proposed .gantry/config.json:")
     print(json.dumps(config, indent=2))
 
-    repo_root = Path.cwd()
     gantry_dir = repo_root / ".gantry"
     config_path = gantry_dir / "config.json"
 
@@ -150,18 +223,38 @@ def main() -> None:
         else:
             hooks_json_path.write_text(json.dumps(ag_hook_frag, indent=2) + "\n", encoding="utf-8")
 
+    is_codex_final = (
+        final_config.get("execution", {}).get("hostHarness") == "codex"
+        or args.harness == "codex"
+    )
+
     agents_path = repo_root / "AGENTS.md"
     content = agents_path.read_text(encoding="utf-8") if agents_path.exists() else ""
     begin_marker = "<!-- gantry:begin -->"
     end_marker = "<!-- gantry:end -->"
     
-    new_section = (
-        f"{begin_marker}\n"
-        "## Gantry Repository Policy\n\n"
-        "This repository uses Gantry for its agentic SDLC.\n"
-        "Artifacts, templates, and checks are configured in `.gantry/config.json`.\n"
-        f"{end_marker}\n"
-    )
+    if is_codex_final:
+        new_section = (
+            f"{begin_marker}\n"
+            "## Gantry Repository Policy\n\n"
+            "This repository uses Gantry for its agentic SDLC.\n"
+            "Artifacts, templates, and checks are configured in `.gantry/config.json`.\n\n"
+            "### Codex Host Orchestration & Guardrails\n\n"
+            "When Codex operates as host harness or execution runner:\n"
+            "- Bounded Execution: Role agents (Implementer, Reviewer, Critic) are executed via bounded sub-processes (`codex exec` or cross-harness dispatch).\n"
+            "- Invariant Protection: Never hand-edit `ROADMAP.md` or issue checkboxes/status lines directly. Only `roadmap.py done` updates them after Critic acceptance.\n"
+            "- Branch Isolation: Direct commits to `main` are forbidden; all work proceeds on dedicated issue branches.\n"
+            "- Defense in Depth: Because Codex lacks native tool hooks, git hooks and adversarial Critic verification enforce delivery integrity and contract validation (`result.py`).\n"
+            f"{end_marker}\n"
+        )
+    else:
+        new_section = (
+            f"{begin_marker}\n"
+            "## Gantry Repository Policy\n\n"
+            "This repository uses Gantry for its agentic SDLC.\n"
+            "Artifacts, templates, and checks are configured in `.gantry/config.json`.\n"
+            f"{end_marker}\n"
+        )
 
     if begin_marker in content and end_marker in content:
         start = content.find(begin_marker)

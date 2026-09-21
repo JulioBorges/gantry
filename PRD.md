@@ -41,7 +41,8 @@ The `asdlc` skill showed that the loop can be made trustworthy with five depende
 
 ## 4. Shape of the pack
 
-Three skills, side by side, one thick and two thin:
+Four skills, side by side: repository setup, standalone planning, execution,
+and read-only observation:
 
 ```
 .agents/skills/
@@ -53,13 +54,14 @@ Three skills, side by side, one thick and two thin:
 │   ├── templates/             spec.md, prd.md, issue.md — the pack defaults
 │   ├── capabilities/          claude-code.json, opencode.json, codex.json
 │   └── hooks/                 wiring per harness for the guard script
+├── gantry-plan/SKILL.md       goal or existing Spec → Spec + vertical Issues → operator approval
 ├── gantry-setup/SKILL.md      conversational; the only writer of the repository policy
 └── gantry-dashboard/SKILL.md  opens the read-only kanban
 ```
 
 Scripts are Python 3.10+ standard library only and need nothing from the harness beyond `python3` and `git` (`gh` for the run pull request). Cleanup and the Learner are steps of `gantry`, not skills.
 
-This repository is the pack: the three directories above are real directories under `.agents/skills/`, with `.claude/`, `.cursor/`, `.opencode/` and `.gemini/` skill directories symlinked to it. It also holds `fixture/` (§13), `docs/adr/`, `CONTEXT.md`, `AGENTS.md` and this document.
+This repository is the pack: the four directories above are real directories under `.agents/skills/`, with `.claude/`, `.cursor/`, `.opencode/` and `.gemini/` skill directories symlinked to it. It also holds `fixture/` (§13), `docs/adr/`, `CONTEXT.md`, `AGENTS.md` and this document.
 
 ## 5. Where things live
 
@@ -76,15 +78,17 @@ The run log holds events and references — issue refs, phases, worktree paths, 
 
 ### 6.1 Preflight and models (orchestrator, inline)
 
-Parse the scope (`<spec-slug> | spec#NN | wave:N | frontier | all | "goal"`), `--limit` (issues per round, default 4) and `--budget` (correction budget, default from policy, 2). Refuse a dirty tree. Offer a dedicated worktree on branch `<prefix>/<scope-slug>` from the target branch — always, before anything is created. Present all models the effective execution environment can actually run, with supported reasoning effort levels. Ask once for harness, model and effort for Plan, Implement, Review and Critic; every role may use a harness different from the Host Harness (ADR-0006). Relative strength of Plan and Critic versus Implement is advisory; the operator retains the final choice. Versioned role defaults live in `.gantry/config.json`, written through `gantry-setup`; validate every effective selection before work starts. Run and Issue-role overrides do not change saved defaults. Execution failures preserve work and pause the affected Issue without automatic fallback; independent Issues may finish, but the next round waits for explicit recovery. An external Critic directly inspects the delivered revision and independently executes acceptance and gates. These are agreed requirements, not a claim of implemented support (see `.scratch/role-execution-selection/spec.md`). Run `roadmap.py check`; drift is fixed with the operator before anything else. Open the run in the run log with the policy hash, the harness and its support tier.
+Parse the execution scope (`<spec-slug> | spec#NN | wave:N | frontier | all`), `--limit` (issues per round, default 4) and `--budget` (correction budget, default from policy, 2). The recommended public flow sends new goals to `/gantry-plan <goal>` and starts `/gantry` only after the resulting Spec and Issues have been explicitly approved. Refuse a dirty tree. Offer a dedicated worktree on branch `<prefix>/<scope-slug>` from the target branch — always, before anything is created. Present all models the effective execution environment can actually run, with supported reasoning effort levels. Ask once for harness, model and effort for Plan, Implement, Review and Critic; every role may use a harness different from the Host Harness (ADR-0006). Relative strength of Plan and Critic versus Implement is advisory; the operator retains the final choice. Versioned role defaults live in `.gantry/config.json`, written through `gantry-setup`; validate every effective selection before work starts. Run and Issue-role overrides do not change saved defaults. Execution failures preserve work and pause the affected Issue without automatic fallback; independent Issues may finish, but the next round waits for explicit recovery. An external Critic directly inspects the delivered revision and independently executes acceptance and gates. These are agreed requirements, not a claim of implemented support (see `.scratch/role-execution-selection/spec.md`). Run `roadmap.py check`; drift is fixed with the operator before anything else. Open the run in the run log with the policy hash, the harness and its support tier.
 
 ### 6.2 Readiness of the spec (scripts, then a critic)
 
 Before slicing: `spec.py --check <spec>` validates the spec against the effective template — required sections, order, placeholders, scenarios — accepting equivalent headings declared in the policy's mapping. Then the **Requirement Critic** (Critic model) reviews ambiguity, coherence, verifiability and non-goal coverage. A blocking finding stops the run; the operator amends the spec. Neither step edits the spec.
 
-### 6.3 Planning (plan workflow)
+### 6.3 Planning (`/gantry-plan`)
 
-Only when the scope is unplanned (a spec without issues, an issue without criteria, or a free-text goal). Research in parallel (codebase, spec and settled decisions, exemplar issue format) → the planner writes issues in the effective issue template with `Status: draft`, observable acceptance criteria, real `## Blocked by` refs and no cycles → `budget.py` estimates each issue's initial package (issue + spec + files it tells the implementer to read) against the chosen model's window; over 15% is refuted with the number → the plan critic refutes slicing, criteria quality, coverage and format, with one revision pass → **stop**. The operator approves the breakdown; only then are issues set to `ready-for-agent` and the roadmap regenerated.
+Planning is a distinct, operator-visible phase. On `/gantry-plan <goal>`, research the codebase, settled decisions and exemplar Issue format → write `.scratch/<slug>/spec.md` and vertical Issues with `Status: draft`, observable acceptance criteria, real `## Blocked by` refs and no cycles → run `budget.py` against each Issue's initial package (Issue + Spec + files it tells the implementer to read); over 15% is refuted with the number → have the Plan Critic refute slicing, criteria quality, coverage and format, with one revision pass → **stop**. The operator explicitly approves the exact Spec and Issue breakdown; only then are Issues set to `ready-for-agent` and the roadmap regenerated. Implementation begins in a separate invocation: `/gantry Implement the <slug> Spec`.
+
+If `/gantry` encounters an older incomplete scope, it may delegate the missing planning work to this same workflow, but it must preserve the approval stop. The documented default remains the explicit `/gantry-plan` → approval → `/gantry` lifecycle.
 
 ### 6.4 Rounds (round workflow)
 
@@ -160,8 +164,8 @@ Support is declared per harness in `capabilities/<harness>.json` — `hooks`, `s
 | Tier | Harness | How the loop runs |
 |---|---|---|
 | Reference | Claude Code | `Workflow` tool from the templates' inline scripts; native `schema`; `isolation: 'worktree'`; guard hooks via `settings.json` |
+| Supported | Codex CLI | Hybrid process runner (`codex exec`) with ADR-0006 cross-harness dispatch; per-role model selection; independent Critic verification; defense-in-depth git hooks |
 | Supported | OpenCode | skills read natively from `.agents/skills`; subagents with `model` per role; hooks through a generated plugin; `result.py` mandatory; rounds parallel when the primary agent can, else sequential |
-| Compatible | Codex CLI | skills native; hooks when the version enables them; chain driven by hand from the prompt functions; per-role model when the version supports it — setup detects and says |
 
 `fixture/` is a minimal repository with one spec, a few issues and real gates, used to exercise every tier with real agents. Acceptance for v1:
 
@@ -178,4 +182,4 @@ Support is declared per harness in `capabilities/<harness>.json` — `hooks`, `s
 
 ## 14. From `asdlc` to Gantry
 
-The migration of the `asdlc` skill (in this repository) is the first spec of this repository and is executed by `asdlc` itself: rename and split into the three skills, remove repository-specific hardcoding (`slice-index`, this repository's name) in favour of the repository policy, add the new scripts and schemas, port the structural spec check, add the Requirement Critic and Learner phases to the templates, write the capability files and hook wiring, and build the fixture. Each step is a vertical slice demonstrable on the fixture.
+The migration of the `asdlc` skill (in this repository) is the first spec of this repository and is executed by `asdlc` itself: rename and split into the four skills, remove repository-specific hardcoding (`slice-index`, this repository's name) in favour of the repository policy, add the new scripts and schemas, port the structural spec check, add the Requirement Critic and Learner phases to the templates, write the capability files and hook wiring, and build the fixture. Each step is a vertical slice demonstrable on the fixture.

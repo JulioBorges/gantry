@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -69,6 +70,59 @@ def load_schema(role: str) -> dict[str, Any]:
     return schema
 
 
+def extract_json(raw: str) -> Any:
+    """Extract and parse JSON from raw string, handling markdown fences and delimiters."""
+    if not raw or not raw.strip():
+        raise json.JSONDecodeError("Expecting value: empty input", raw or "", 0)
+
+    text = raw.strip()
+    # 1. Try parsing directly
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Extract from markdown code fence (```json ... ``` or ``` ... ```)
+    fence_pattern = re.compile(r"```+(?:json|JSON)?\s*\n([\s\S]*?)\n```+", re.MULTILINE)
+    matches = fence_pattern.findall(text)
+    for block in matches:
+        try:
+            return json.loads(block.strip())
+        except json.JSONDecodeError:
+            continue
+
+    fence_pattern_inline = re.compile(r"```+(?:json|JSON)?\s*([\s\S]*?)\s*```+", re.MULTILINE)
+    matches_inline = fence_pattern_inline.findall(text)
+    for block in matches_inline:
+        try:
+            return json.loads(block.strip())
+        except json.JSONDecodeError:
+            continue
+
+    # 3. Try outermost JSON object braces `{ ... }`
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        candidate = text[first_brace : last_brace + 1].strip()
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+
+    # 4. Try outermost JSON array brackets `[ ... ]`
+    first_bracket = text.find("[")
+    last_bracket = text.rfind("]")
+    if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
+        candidate = text[first_bracket : last_bracket + 1].strip()
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback to direct json.loads to raise original JSONDecodeError
+    return json.loads(text)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--role", required=True, choices=ROLES, help="role contract to validate")
@@ -84,7 +138,8 @@ def main() -> int:
         print(json.dumps(schema))
         return 0
     try:
-        result = json.load(sys.stdin)
+        raw_input = sys.stdin.read()
+        result = extract_json(raw_input)
     except json.JSONDecodeError as error:
         errors = [f"$: invalid JSON: {error.msg}"]
     else:

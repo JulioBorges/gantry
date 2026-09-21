@@ -63,6 +63,10 @@ class ProtocolFailureError(Exception):
     """Raised when an external role result is missing, undecodable or fails the schema contract."""
 
 
+class ExecutionFailureError(RuntimeError):
+    """Raised when an external harness command fails at runtime (crash, timeout, non-zero exit)."""
+
+
 def parse_semver(version_str: str) -> tuple[int, int, int]:
     match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", version_str)
     if not match:
@@ -73,11 +77,67 @@ def parse_semver(version_str: str) -> tuple[int, int, int]:
     return (major, minor, patch)
 
 
+def validate_codex_auth(runner: Callable[..., Any] | None = None) -> dict[str, Any]:
+    """Validate Codex authentication via `codex login status`."""
+    cli_name = CLI_NAMES.get("codex", "codex")
+    if runner is None and not shutil.which(cli_name):
+        return {
+            "valid": False,
+            "error": f"Codex CLI binary '{cli_name}' not found on PATH. Please install Codex CLI or ensure it is in your PATH.",
+        }
+
+    run_cmd = runner or subprocess.run
+    try:
+        try:
+            proc = run_cmd([cli_name, "login", "status"], capture_output=True, text=True, check=False)
+        except TypeError:
+            proc = run_cmd([cli_name, "login", "status"])
+    except FileNotFoundError:
+        return {
+            "valid": False,
+            "error": f"Codex CLI binary '{cli_name}' not found on PATH. Please install Codex CLI or ensure it is in your PATH.",
+        }
+    except Exception as exc:
+        return {
+            "valid": False,
+            "error": f"Codex CLI authentication check failed: {exc}. Run 'codex login' to authenticate.",
+        }
+
+    if proc.returncode != 0:
+        err = (getattr(proc, "stderr", "") or "").strip() or (getattr(proc, "stdout", "") or "").strip()
+        return {
+            "valid": False,
+            "error": f"Codex CLI is unauthenticated ({err or f'exit code {proc.returncode}'}). Run 'codex login' to authenticate.",
+        }
+
+    stdout = (getattr(proc, "stdout", "") or "").strip().lower()
+    if "not logged in" in stdout or "unauthenticated" in stdout or "no credentials" in stdout:
+        return {
+            "valid": False,
+            "error": f"Codex CLI is unauthenticated ({proc.stdout.strip()}). Run 'codex login' to authenticate.",
+        }
+
+    return {"valid": True}
+
+
 def validate_harness_version(
     harness: str,
     runner: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     cli_name = CLI_NAMES.get(harness, harness)
+    if runner is None and not shutil.which(cli_name):
+        if harness == "codex":
+            return {
+                "valid": False,
+                "version": None,
+                "error": f"Codex CLI binary '{cli_name}' not found on PATH. Please install Codex CLI or ensure it is in your PATH.",
+            }
+        return {
+            "valid": False,
+            "version": None,
+            "error": f"Harness CLI '{cli_name}' not found on PATH",
+        }
+
     try:
         if runner:
             try:
@@ -87,6 +147,12 @@ def validate_harness_version(
         else:
             proc = subprocess.run([cli_name, "--version"], capture_output=True, text=True, check=False)
         if proc.returncode != 0:
+            if harness == "codex":
+                return {
+                    "valid": False,
+                    "version": None,
+                    "error": f"Harness CLI {cli_name} authentication/execution validation failed: return code {proc.returncode}. Run 'codex login' to authenticate.",
+                }
             return {
                 "valid": False,
                 "version": None,
@@ -105,6 +171,18 @@ def validate_harness_version(
             }
         ver_formatted = f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}"
         return {"valid": True, "version": ver_formatted}
+    except FileNotFoundError:
+        if harness == "codex":
+            return {
+                "valid": False,
+                "version": None,
+                "error": f"Codex CLI binary '{cli_name}' not found on PATH. Please install Codex CLI or ensure it is in your PATH.",
+            }
+        return {
+            "valid": False,
+            "version": None,
+            "error": f"Harness CLI '{cli_name}' not found on PATH",
+        }
     except Exception as exc:
         return {
             "valid": False,
@@ -320,6 +398,14 @@ def validate_selection(
                 "role": role,
                 "error": ver_check["error"],
             }
+        if harness == "codex":
+            auth_check = validate_codex_auth(runner=runner)
+            if not auth_check["valid"]:
+                return {
+                    "valid": False,
+                    "role": role,
+                    "error": auth_check["error"],
+                }
 
     return {"valid": True, "role": role}
 
@@ -344,7 +430,10 @@ def build_dispatch_command(
     elif h == "opencode":
         return ["opencode", "run", prompt, "--model", model]
     elif h == "codex":
-        return ["codex", "exec", prompt, "--model", model]
+        cmd = ["codex", "exec", prompt, "--model", model]
+        if effort:
+            cmd.extend(["--effort", effort])
+        return cmd
     else:
         raise ValueError(f"Unsupported harness: {harness}")
 
@@ -387,15 +476,9 @@ def parse_and_validate_result(
     if not raw_output or not raw_output.strip():
         raise ProtocolFailureError(f"Protocol failure: empty output returned for role {role}")
 
-    text = raw_output.strip()
-    if text.startswith("```json") and text.endswith("```"):
-        text = text[7:-3].strip()
-    elif text.startswith("```") and text.endswith("```"):
-        text = text[3:-3].strip()
-
     try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
+        data = result.extract_json(raw_output)
+    except (json.JSONDecodeError, ValueError) as exc:
         raise ProtocolFailureError(f"Protocol failure: invalid JSON output for role {role}: {exc}") from exc
 
     if not isinstance(data, dict):
@@ -456,6 +539,7 @@ def dispatch_role(
     unit_id: str | None = None,
     state_root: str | None = None,
     retry_on_invalid: bool = True,
+    timeout: int | float | None = None,
 ) -> dict[str, Any]:
     """Execute a bounded role invocation in the selected native harness."""
     cwd_path = Path(cwd).resolve()
@@ -480,6 +564,10 @@ def dispatch_role(
     eff_val = validate_selection(eff_selection, role=role, root=cwd_path, check_auth=False)
     if not eff_val["valid"]:
         raise ValueError(eff_val["error"])
+
+    eff_timeout = timeout
+    if eff_timeout is None and isinstance(policy, dict):
+        eff_timeout = policy.get("execution", {}).get("timeout")
 
     if run_id and unit_id:
         try:
@@ -508,10 +596,25 @@ def dispatch_role(
 
     cmd = build_dispatch_command(harness, model, prompt, effort=effort)
     run_fn = runner or subprocess.run
-    proc = run_fn(cmd, cwd=str(cwd_path), capture_output=True, text=True, check=False)
+    run_kwargs: dict[str, Any] = {"cwd": str(cwd_path), "capture_output": True, "text": True, "check": False}
+    if eff_timeout is not None:
+        run_kwargs["timeout"] = eff_timeout
+
+    try:
+        try:
+            proc = run_fn(cmd, **run_kwargs)
+        except TypeError:
+            proc = run_fn(cmd, cwd=str(cwd_path))
+    except subprocess.TimeoutExpired as exc:
+        raise ExecutionFailureError(f"Harness {harness} execution timed out after {eff_timeout}s: {exc}") from exc
+    except Exception as exc:
+        if isinstance(exc, (ExecutionFailureError, UnsupportedHarnessVersionError, ModelFallbackError, ProtocolFailureError)):
+            raise
+        raise ExecutionFailureError(f"Harness {harness} execution failed to start or crashed: {exc}") from exc
+
     if proc.returncode != 0:
-        err = (proc.stderr or "").strip() or (proc.stdout or "").strip()
-        raise RuntimeError(f"Harness {harness} execution failed (exit {proc.returncode}): {err}")
+        err = (getattr(proc, "stderr", "") or "").strip() or (getattr(proc, "stdout", "") or "").strip()
+        raise ExecutionFailureError(f"Harness {harness} execution failed (exit {proc.returncode}): {err}")
 
     check_model_fallback(model, proc.stdout)
 
@@ -523,9 +626,21 @@ def dispatch_role(
         if retry_on_invalid:
             retry_prompt = f"{prompt}\n\nYour prior result was invalid: {exc}\nReturn the complete {role} result contract."
             retry_cmd = build_dispatch_command(harness, model, retry_prompt, effort=effort)
-            proc2 = run_fn(retry_cmd, cwd=str(cwd_path), capture_output=True, text=True, check=False)
+            try:
+                try:
+                    proc2 = run_fn(retry_cmd, **run_kwargs)
+                except TypeError:
+                    proc2 = run_fn(retry_cmd, cwd=str(cwd_path))
+            except subprocess.TimeoutExpired as exc2:
+                raise ExecutionFailureError(f"Harness {harness} retry execution timed out after {eff_timeout}s: {exc2}") from exc2
+            except Exception as exc2:
+                if isinstance(exc2, (ExecutionFailureError, UnsupportedHarnessVersionError, ModelFallbackError, ProtocolFailureError)):
+                    raise
+                raise ExecutionFailureError(f"Harness {harness} retry failed to start or crashed: {exc2}") from exc2
+
             if proc2.returncode != 0:
-                raise RuntimeError(f"Harness {harness} retry failed (exit {proc2.returncode}): {(proc2.stderr or '').strip()}")
+                err2 = (getattr(proc2, "stderr", "") or "").strip() or (getattr(proc2, "stdout", "") or "").strip()
+                raise ExecutionFailureError(f"Harness {harness} retry failed (exit {proc2.returncode}): {err2}")
             check_model_fallback(model, proc2.stdout)
             data = parse_and_validate_result(role, proc2.stdout)
             if role in ("critic", "requirement-critic", "plan-critic"):
@@ -685,6 +800,7 @@ def main() -> int:
     dispatch_parser.add_argument("--run-id", help="Run ID for logging")
     dispatch_parser.add_argument("--unit-id", help="Unit ID for logging")
     dispatch_parser.add_argument("--state-root", help="State root directory")
+    dispatch_parser.add_argument("--timeout", type=float, help="execution timeout in seconds")
     dispatch_parser.add_argument("--json", action="store_true", help="output JSON")
 
     failures_parser = subparsers.add_parser("unresolved-failures", help="check for unresolved paused executions")
@@ -750,6 +866,7 @@ def main() -> int:
                 run_id=getattr(args, "run_id", None),
                 unit_id=getattr(args, "unit_id", None),
                 state_root=getattr(args, "state_root", None),
+                timeout=getattr(args, "timeout", None),
             )
             print(json.dumps(res, indent=2))
             return 0
