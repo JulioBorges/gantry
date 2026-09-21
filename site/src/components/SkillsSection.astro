@@ -1,5 +1,5 @@
 ---
-// Component: Three Skills Pack Section - gantry, gantry-setup, gantry-dashboard
+// Component: Four Skills Pack Section - gantry, gantry-plan, gantry-setup, gantry-dashboard
 const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
 ---
 
@@ -16,26 +16,26 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
         <span class="uppercase tracking-widest" data-i18n="skills.tag">ARCHITECTURE // MODULAR PACK</span>
       </div>
       <h2 class="text-xl sm:text-3xl font-extrabold text-slate-100 uppercase font-mono mt-1 tracking-wide" data-i18n="skills.title">
-        The Three Skills
+        The Four Skills
       </h2>
     </div>
     <div class="flex items-center space-x-2">
       <span class="text-xs px-2.5 py-1 bg-obsidian-800 text-amber-accent border border-obsidian-700 font-mono" data-i18n="skills.badge">
-        PACK RIG: 1 THICK // 2 THIN
+        PACK: 4 SKILLS
       </span>
     </div>
   </div>
 
   <p class="text-xs text-slate-400 font-mono max-w-3xl leading-relaxed" data-i18n="skills.subtitle">
-    Gantry distributes as three focused, complementary skills in <code class="text-amber-accent">.agents/skills/</code>. One workflow engine coordinates the full SDLC, while two specialized tools govern policy and runtime visibility.
+    Gantry ships four focused skills: one-time repository setup, standalone planning, automatic implementation, and read-only Run visibility.
   </p>
 
-  <!-- Skills 3-Column Industrial Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 font-mono">
-    <!-- Skill 1: gantry (Core Workflow) -->
+  <!-- Skills 4-Card Industrial Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 font-mono">
+    <!-- Skill 3: gantry (Core Workflow) -->
     <div
       data-testid="skill-card-gantry"
-      class="border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-5 hover:border-amber-glow/50 transition-all group"
+      class="order-3 border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-5 hover:border-amber-glow/50 transition-all group"
     >
       <div class="space-y-4">
         <!-- Card Header -->
@@ -93,10 +93,10 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
       </div>
     </div>
 
-    <!-- Skill 2: gantry-setup (Policy & Governance) -->
+    <!-- Skill 1: gantry-setup (Policy & Governance) -->
     <div
       data-testid="skill-card-gantry-setup"
-      class="border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-5 hover:border-amber-glow/50 transition-all group"
+      class="order-1 border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-5 hover:border-amber-glow/50 transition-all group"
     >
       <div class="space-y-4">
         <!-- Card Header -->
@@ -154,10 +154,67 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
       </div>
     </div>
 
-    <!-- Skill 3: gantry-dashboard (Local Observability) -->
+    <!-- Skill 2: gantry-plan (Standalone Planning) -->
+    <div
+      data-testid="skill-card-gantry-plan"
+      class="order-2 border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-5 hover:border-amber-glow/50 transition-all group"
+    >
+      <div class="space-y-4">
+        <div class="flex items-center justify-between border-b border-obsidian-800 pb-3">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 bg-emerald-400 rotate-45 group-hover:scale-110 transition-transform"></span>
+            <span class="text-base font-bold text-slate-100 font-mono">gantry-plan</span>
+          </div>
+          <span class="text-[10px] px-2 py-0.5 bg-emerald-950/40 border border-emerald-700/50 text-emerald-400 font-bold uppercase" data-i18n="skills.planBadge">
+            Planning
+          </span>
+        </div>
+
+        <div class="space-y-1 text-xs">
+          <span class="text-[11px] text-slate-400 uppercase tracking-wider block" data-i18n="skills.triggersLabel">INVOCATION TRIGGERS:</span>
+          <div class="p-2 bg-obsidian-950 border border-obsidian-800 text-emerald-300 text-xs break-all">
+            /gantry-plan &lt;goal | spec-slug | spec-path&gt;
+          </div>
+        </div>
+
+        <div class="space-y-2 text-xs text-slate-300 leading-relaxed">
+          <p data-i18n="skills.planDesc">
+            Transforms a free-text goal or existing Spec into a verified Spec, tracer-bullet Issues, a budgeted breakdown, and an explicit operator approval gate.
+          </p>
+          <ul class="space-y-1.5 text-slate-400 pt-1 text-[11px]">
+            <li class="flex items-start space-x-1.5">
+              <span class="text-emerald-400">›</span>
+              <span><strong class="text-slate-200" data-i18n="skills.planBullet1Title">Socratic Gate:</strong> <span data-i18n="skills.planBullet1Desc">Clarifies scope, seams, non-goals, and scenarios.</span></span>
+            </li>
+            <li class="flex items-start space-x-1.5">
+              <span class="text-emerald-400">›</span>
+              <span><strong class="text-slate-200" data-i18n="skills.planBullet2Title">Spec & Issues:</strong> <span data-i18n="skills.planBullet2Desc">Writes the Spec and vertical Issue breakdown.</span></span>
+            </li>
+            <li class="flex items-start space-x-1.5">
+              <span class="text-emerald-400">›</span>
+              <span><strong class="text-slate-200" data-i18n="skills.planBullet3Title">Approval Stop:</strong> <span data-i18n="skills.planBullet3Desc">Never starts implementation before operator approval.</span></span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="border-t border-obsidian-800 pt-4 mt-auto">
+        <a
+          href="https://github.com/JulioBorges/gantry/tree/main/.agents/skills/gantry-plan"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center justify-between w-full px-3 py-2 bg-obsidian-950 hover:bg-obsidian-850 border border-obsidian-700 hover:border-emerald-400/50 text-slate-200 text-xs transition-colors"
+        >
+          <span data-i18n="skills.viewSpec">VIEW SPEC</span>
+          <span class="text-emerald-400">↗</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Skill 4: gantry-dashboard (Local Observability) -->
     <div
       data-testid="skill-card-gantry-dashboard"
-      class="border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-5 hover:border-amber-glow/50 transition-all group"
+      class="order-4 border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-5 hover:border-amber-glow/50 transition-all group"
     >
       <div class="space-y-4">
         <!-- Card Header -->
@@ -182,12 +239,12 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
         <!-- Role & Narrative -->
         <div class="space-y-2 text-xs text-slate-300 leading-relaxed">
           <p data-i18n="skills.dashboardDesc">
-            Zero-dependency, read-only multi-run kanban observer. Binds locally to loopback (<code class="text-amber-accent">localhost:42687</code>) with strict zero-mutation guarantees.
+            Zero-dependency, read-only multi-run kanban observer. Binds locally to loopback (<code class="text-amber-accent">localhost:4600</code>) with strict zero-mutation guarantees.
           </p>
           <ul class="space-y-1.5 text-slate-400 pt-1 text-[11px]">
             <li class="flex items-start space-x-1.5">
               <span class="text-amber-accent">›</span>
-              <span><strong class="text-slate-200" data-i18n="skills.dashboardBullet1Title">Local Loopback:</strong> <span data-i18n="skills.dashboardBullet1Desc">Runs securely at localhost:42687.</span></span>
+              <span><strong class="text-slate-200" data-i18n="skills.dashboardBullet1Title">Local Loopback:</strong> <span data-i18n="skills.dashboardBullet1Desc">Runs securely at localhost:4600.</span></span>
             </li>
             <li class="flex items-start space-x-1.5">
               <span class="text-amber-accent">›</span>

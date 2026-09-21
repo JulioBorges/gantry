@@ -54,14 +54,14 @@ test.describe('Narrative & Capability Sections (gantry-site#04)', () => {
     });
   });
 
-  test.describe('Three Skills Pack Section', () => {
-    test('renders skills pack section with heading, telemetry badge, and three delineated skills', async ({ page }) => {
+  test.describe('Four Skills Pack Section', () => {
+    test('renders skills pack section with heading, telemetry badge, and four delineated skills', async ({ page }) => {
       const section = page.getByTestId('skills-section');
       await expect(section).toBeVisible();
 
       const heading = section.locator('h2');
       await expect(heading).toBeVisible();
-      await expect(heading).toContainText(/The Three Skills/i);
+      await expect(heading).toContainText(/The Four Skills/i);
 
       // Skill 1: gantry
       const gantryCard = section.getByTestId('skill-card-gantry');
@@ -79,12 +79,19 @@ test.describe('Narrative & Capability Sections (gantry-site#04)', () => {
       await expect(setupCard).toContainText(/\.gantry\/config\.json/);
       await expect(setupCard).toContainText(/AGENTS\.md/);
 
-      // Skill 3: gantry-dashboard
+      // Skill 3: gantry-plan
+      const planCard = section.getByTestId('skill-card-gantry-plan');
+      await expect(planCard).toBeVisible();
+      await expect(planCard).toContainText('gantry-plan');
+      await expect(planCard).toContainText(/Planning/i);
+      await expect(planCard).toContainText('/gantry-plan');
+
+      // Skill 4: gantry-dashboard
       const dashCard = section.getByTestId('skill-card-gantry-dashboard');
       await expect(dashCard).toBeVisible();
       await expect(dashCard).toContainText('gantry-dashboard');
       await expect(dashCard).toContainText(/Observability/i);
-      await expect(dashCard).toContainText(/localhost:42687/);
+      await expect(dashCard).toContainText(/localhost:4600/);
       await expect(dashCard).toContainText(/Read-only/i);
     });
 
@@ -92,7 +99,7 @@ test.describe('Narrative & Capability Sections (gantry-site#04)', () => {
       const section = page.getByTestId('skills-section');
       const links = section.locator('a');
       const count = await links.count();
-      expect(count).toBeGreaterThanOrEqual(3);
+      expect(count).toBeGreaterThanOrEqual(4);
 
       for (let i = 0; i < count; i++) {
         const link = links.nth(i);

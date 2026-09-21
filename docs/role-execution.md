@@ -36,19 +36,33 @@ Set versioned role defaults under `execution.roles` in `.gantry/config.json`:
 {
   "execution": {
     "roles": {
-      "implement": {"harness": "codex", "model": "gpt-5.2-codex"},
-      "review": {"harness": "codex", "model": "gpt-5.2-codex"},
-      "critic": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"}
+      "implement": {"harness": "codex", "model": "gpt-5.6-terra"},
+      "review": {"harness": "codex", "model": "gpt-5.6-astra"},
+      "critic": {"harness": "claude-code", "model": "claude-sonnet-5"}
     }
   }
 }
 ```
 
-Configure defaults via `gantry-setup`:
+Configure defaults through the `gantry-setup` skill (recommended) by sending
+this prompt in your coding harness:
+
+```text
+/gantry-setup
+```
+
+During setup, request role defaults for this repository and verify each selected
+harness, model, and effort before approving the proposed policy.
+
+For automation or low-level diagnostics, the equivalent config writer is
+available through the Python CLI:
 
 ```sh
-python3 .agents/skills/gantry/scripts/setup.py
+python3 .agents/skills/gantry/scripts/setup.py --harness codex --verify-auth
 ```
+
+Direct script use does not provide the skill's conversational review and
+approval flow. See [Using Gantry](usage.md) for the interface boundary.
 
 Inheritance rules:
 - `requirement-critic` and `plan-critic` inherit `critic` defaults unless overridden.
@@ -134,15 +148,28 @@ Verify installed version meets the minimum requirement (`0.1.0`):
 codex --version
 ```
 
-### Setup Options
+### Setup via skill (recommended)
+
+In the Codex conversation, send:
+
+```text
+/gantry-setup
+```
+
+Select Codex as the Host Harness, verify authentication and model discovery,
+then review the complete policy before approving it.
+
+### Setup via Python CLI (advanced/manual)
 
 Configure repository execution policy for Codex:
 
 ```sh
-# Automated setup specifying Codex harness
-python3 .agents/skills/gantry/scripts/setup.py --harness codex
+python3 .agents/skills/gantry/scripts/setup.py --harness codex --verify-auth
+```
 
-# Or via npm installer
+The npm command below installs the skills; it does not run repository setup:
+
+```sh
 npx @julioborges/gantry add --agent codex --yes
 ```
 

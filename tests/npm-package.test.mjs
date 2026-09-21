@@ -15,7 +15,7 @@ function run(command, args, cwd) {
   return result.stdout;
 }
 
-test('published tarball installs all three skills through npx', () => {
+test('published tarball installs all four skills through npx', () => {
   const temp = mkdtempSync(join(tmpdir(), 'gantry-npm-'));
   try {
     const [pack] = JSON.parse(run('npm', [

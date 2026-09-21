@@ -435,6 +435,7 @@ Scenario: Verify feature
         self.assertIn("gantry-plan", content)
         self.assertIn("free-text goal", content)
         self.assertIn("unplanned spec", content)
+        self.assertIn("Implement the <slug> Spec", content)
 
     def test_approve_plan_transitions_issues_and_updates_roadmap(self):
         # Verify initial status is draft

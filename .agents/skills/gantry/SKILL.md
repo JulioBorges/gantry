@@ -1,7 +1,7 @@
 ---
 name: gantry
 description: Harness-neutral agentic SDLC workflow. Resolves ready Issues deterministically, plans only to operator approval, implements with TDD, reviews against standards and Spec, and accepts delivery only after adversarial verification.
-argument-hint: <spec-slug | spec#NN | wave:N | frontier | all | "free-text goal"> [--limit N] [--budget N]
+argument-hint: <spec-slug | spec#NN | wave:N | frontier | all | "Implement the <slug> Spec" | "free-text goal"> [--limit N] [--budget N]
 ---
 
 # Gantry
@@ -147,7 +147,9 @@ Every script provides `--help`, and data-producing paths support `--json`.
 - Planning creates draft Issues and never edits `ROADMAP.md`. Present drafts and the critic verdict, then
   stop. Only explicit operator approval permits `roadmap.py status <ref> ready-for-agent`, followed by
   `roadmap.py waves` and `roadmap.py check`.
-- **Delegation to `gantry-plan`**: When `gantry` is invoked with a free-text goal (e.g. a quoted string
+- **Execution phrasing and delegation to `gantry-plan`**: `Implement the <slug> Spec` is an execution-scope
+  alias for an approved `<slug>` Spec; resolve it to that slug before scope validation. When `gantry` is invoked
+  with any other free-text goal (e.g. a quoted string
   like `"add webhook support"`) or an unplanned spec (a spec without implementation issues in
   `.scratch/<slug>/issues/` or whose status is `draft`), it automatically delegates to `gantry-plan`.
   `gantry-plan` executes the Socratic Gate interview or spec validation, tracer-bullet vertical slicing,

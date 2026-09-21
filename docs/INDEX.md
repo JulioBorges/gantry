@@ -46,6 +46,7 @@
   - Harness support tiers and acceptance criteria
 - **[docs/adr/](./adr/)** - Architecture Decision Records (ADR-0004 explains the pivot from engine to skill pack)
 - **[Role Execution & Cross-Harness Guide](./role-execution.md)** - Operator guide for multi-harness execution, discovery, and recovery
+- **[Using Gantry](./usage.md)** - Recommended skill workflow and advanced Python CLI reference
 
 ### Vocabulary
 - **[CONTEXT.md](../CONTEXT.md)** - The glossary (Issue, Spec, Run, Round, Guard Hook, Run Log…)
@@ -85,6 +86,7 @@
 | `/docs/mcp-quick-reference.md` | Quick reference |
 | `/docs/playwright-troubleshooting.md` | Problem solving |
 | `/docs/role-execution.md` | Role execution and cross-harness operator guide |
+| `/docs/usage.md` | Skill-first usage and low-level Python CLI commands |
 | `/docs/adr/` | Architecture decisions |
 
 ---

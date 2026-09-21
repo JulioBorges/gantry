@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { getStoredLocale, LOCALE_CHANGE_EVENT } from '../i18n/client';
 import { translations, type Locale } from '../i18n/translations';
 
-export type StageId = 'spec' | 'plan' | 'implement' | 'review' | 'critic' | 'gate';
+export type StageId = 'setup' | 'plan' | 'approve' | 'implement' | 'verify' | 'handoff';
 
 export interface StageData {
   id: StageId;
@@ -32,7 +32,7 @@ export interface StageData {
   };
 }
 
-const STAGE_IDS: StageId[] = ['spec', 'plan', 'implement', 'review', 'critic', 'gate'];
+const STAGE_IDS: StageId[] = ['setup', 'plan', 'approve', 'implement', 'verify', 'handoff'];
 
 function buildStages(locale: Locale): StageData[] {
   const dict = translations[locale]?.simulator ?? translations.en.simulator;
@@ -40,31 +40,31 @@ function buildStages(locale: Locale): StageData[] {
 
   return [
     {
-      id: 'spec',
+      id: 'setup',
       index: 0,
       number: '01',
-      name: stagesDict.spec.name,
-      shortName: stagesDict.spec.shortName,
+      name: stagesDict.setup.name,
+      shortName: stagesDict.setup.shortName,
       deterministicScript: {
-        command: stagesDict.spec.terminalCommand,
-        description: stagesDict.spec.scriptDescription,
-        invariants: stagesDict.spec.scriptInvariants,
+        command: stagesDict.setup.terminalCommand,
+        description: stagesDict.setup.scriptDescription,
+        invariants: stagesDict.setup.scriptInvariants,
       },
       agentRole: {
-        name: stagesDict.spec.agentName,
-        model: stagesDict.spec.agentModel,
-        responsibilities: stagesDict.spec.agentResponsibilities,
-        adversarial: true,
+        name: stagesDict.setup.agentName,
+        model: stagesDict.setup.agentModel,
+        responsibilities: stagesDict.setup.agentResponsibilities,
+        adversarial: false,
       },
       terminal: {
-        prompt: stagesDict.spec.terminalPrompt,
-        command: stagesDict.spec.terminalCommand,
-        lines: stagesDict.spec.terminalLines,
+        prompt: stagesDict.setup.terminalPrompt,
+        command: stagesDict.setup.terminalCommand,
+        lines: stagesDict.setup.terminalLines,
         jsonEvent: {
-          event: 'spec.verified',
-          spec: 'gantry-site',
-          scenarios: 4,
-          status: 'approved-for-planning',
+          event: 'setup.completed',
+          repository: 'otp-service',
+          policy: '.gantry/config.json',
+          status: 'ready-for-planning',
           timestamp: '2026-09-17T18:00:00Z',
         },
       },
@@ -76,7 +76,7 @@ function buildStages(locale: Locale): StageData[] {
       name: stagesDict.plan.name,
       shortName: stagesDict.plan.shortName,
       deterministicScript: {
-        command: 'python3 .agents/skills/gantry/scripts/frontier.py --scope gantry-site',
+        command: stagesDict.plan.terminalCommand,
         description: stagesDict.plan.scriptDescription,
         invariants: stagesDict.plan.scriptInvariants,
       },
@@ -91,23 +91,51 @@ function buildStages(locale: Locale): StageData[] {
         command: stagesDict.plan.terminalCommand,
         lines: stagesDict.plan.terminalLines,
         jsonEvent: {
-          event: 'plan.budgeted',
-          spec: 'gantry-site',
-          waves: 5,
-          token_footprint: 4820,
-          ceiling_tokens: 12000,
-          status: 'ready-for-operator',
+          event: 'plan.ready-for-approval',
+          spec: 'login-otp',
+          issues: 3,
+          waves: 2,
+          status: 'awaiting-operator',
+        },
+      },
+    },
+    {
+      id: 'approve',
+      index: 2,
+      number: '03',
+      name: stagesDict.approve.name,
+      shortName: stagesDict.approve.shortName,
+      deterministicScript: {
+        command: stagesDict.approve.terminalCommand,
+        description: stagesDict.approve.scriptDescription,
+        invariants: stagesDict.approve.scriptInvariants,
+      },
+      agentRole: {
+        name: stagesDict.approve.agentName,
+        model: stagesDict.approve.agentModel,
+        responsibilities: stagesDict.approve.agentResponsibilities,
+        adversarial: false,
+      },
+      terminal: {
+        prompt: stagesDict.approve.terminalPrompt,
+        command: stagesDict.approve.terminalCommand,
+        lines: stagesDict.approve.terminalLines,
+        jsonEvent: {
+          event: 'plan.approved',
+          spec: 'login-otp',
+          issues: ['login-otp#01', 'login-otp#02', 'login-otp#03'],
+          status: 'ready-for-agent',
         },
       },
     },
     {
       id: 'implement',
-      index: 2,
-      number: '03',
+      index: 3,
+      number: '04',
       name: stagesDict.implement.name,
       shortName: stagesDict.implement.shortName,
       deterministicScript: {
-        command: 'npm test -- site/tests/i18n.spec.ts',
+        command: stagesDict.implement.terminalCommand,
         description: stagesDict.implement.scriptDescription,
         invariants: stagesDict.implement.scriptInvariants,
       },
@@ -122,119 +150,71 @@ function buildStages(locale: Locale): StageData[] {
         command: stagesDict.implement.terminalCommand,
         lines: stagesDict.implement.terminalLines,
         jsonEvent: {
-          event: 'tdd.green',
-          spec: 'gantry-site',
-          issue: 'gantry-site#05',
-          test_file: 'tests/i18n.spec.ts',
-          tests_passed: 4,
-          status: 'ready-for-review',
+          event: 'run.started',
+          spec: 'login-otp',
+          scope: 'all-approved-issues',
+          status: 'implementing',
         },
       },
     },
     {
-      id: 'review',
-      index: 3,
-      number: '04',
-      name: stagesDict.review.name,
-      shortName: stagesDict.review.shortName,
-      deterministicScript: {
-        command: 'python3 .agents/skills/gantry/scripts/result.py validate review-output.json',
-        description: stagesDict.review.scriptDescription,
-        invariants: stagesDict.review.scriptInvariants,
-      },
-      agentRole: {
-        name: stagesDict.review.agentName,
-        model: stagesDict.review.agentModel,
-        responsibilities: stagesDict.review.agentResponsibilities,
-        adversarial: false,
-      },
-      terminal: {
-        prompt: stagesDict.review.terminalPrompt,
-        command: stagesDict.review.terminalCommand,
-        lines: stagesDict.review.terminalLines,
-        jsonEvent: {
-          event: 'review.accepted',
-          spec: 'gantry-site',
-          issue: 'gantry-site#05',
-          standards_status: 'clean',
-          spec_criteria_met: '4/4',
-          blocking_findings: 0,
-        },
-      },
-    },
-    {
-      id: 'critic',
+      id: 'verify',
       index: 4,
       number: '05',
-      name: stagesDict.critic.name,
-      shortName: stagesDict.critic.shortName,
+      name: stagesDict.verify.name,
+      shortName: stagesDict.verify.shortName,
       deterministicScript: {
-        command: 'python3 .agents/skills/gantry/scripts/runlog.py inflight gantry-site --json',
-        description: stagesDict.critic.scriptDescription,
-        invariants: stagesDict.critic.scriptInvariants,
+        command: stagesDict.verify.terminalCommand,
+        description: stagesDict.verify.scriptDescription,
+        invariants: stagesDict.verify.scriptInvariants,
       },
       agentRole: {
-        name: stagesDict.critic.agentName,
-        model: stagesDict.critic.agentModel,
-        responsibilities: stagesDict.critic.agentResponsibilities,
+        name: stagesDict.verify.agentName,
+        model: stagesDict.verify.agentModel,
+        responsibilities: stagesDict.verify.agentResponsibilities,
         adversarial: true,
       },
       terminal: {
-        prompt: stagesDict.critic.terminalPrompt,
-        command: 'python3 .agents/skills/gantry/scripts/critic-verify.py --issue gantry-site#02',
-        lines: [
-          { type: 'dim', text: '[critic] Spawning fresh adversarial critic subagent...' },
-          { type: 'dim', text: '[critic] Attempting to refute implementation claims...' },
-          { type: 'info', text: '├── Running independent verification command...' },
-          { type: 'success', text: '✓ Verification confirmed: critic-verify --issue gantry-site#02' },
-          { type: 'success', text: '✓ Critic Verdict: ACCEPTED' },
-        ],
+        prompt: stagesDict.verify.terminalPrompt,
+        command: stagesDict.verify.terminalCommand,
+        lines: stagesDict.verify.terminalLines,
         jsonEvent: {
           event: 'critic.accepted',
-          spec: 'gantry-site',
-          issue: 'gantry-site#02',
+          spec: 'login-otp',
+          issue: 'login-otp#02',
           role: 'critic',
           verdict: 'ACCEPTED',
-          refutations_attempted: 2,
-          refutations_succeeded: 0,
+          criteria: '5/5',
         },
       },
     },
     {
-      id: 'gate',
+      id: 'handoff',
       index: 5,
       number: '06',
-      name: stagesDict.gate.name,
-      shortName: stagesDict.gate.shortName,
+      name: stagesDict.handoff.name,
+      shortName: stagesDict.handoff.shortName,
       deterministicScript: {
-        command: 'gates.py && roadmap.py done',
-        description: stagesDict.gate.scriptDescription,
-        invariants: stagesDict.gate.scriptInvariants,
+        command: stagesDict.handoff.terminalCommand,
+        description: stagesDict.handoff.scriptDescription,
+        invariants: stagesDict.handoff.scriptInvariants,
       },
       agentRole: {
-        name: stagesDict.gate.agentName,
-        model: stagesDict.gate.agentModel,
-        responsibilities: stagesDict.gate.agentResponsibilities,
+        name: stagesDict.handoff.agentName,
+        model: stagesDict.handoff.agentModel,
+        responsibilities: stagesDict.handoff.agentResponsibilities,
         adversarial: false,
       },
       terminal: {
-        prompt: stagesDict.gate.terminalPrompt,
-        command: 'python3 .agents/skills/gantry/scripts/roadmap.py done gantry-site#02',
-        lines: [
-          { type: 'dim', text: '[gates.py] Executing differential quality gates...' },
-          { type: 'success', text: '✓ Typecheck: 0 errors' },
-          { type: 'success', text: '✓ Playwright E2E: 17 tests passed (0 failures)' },
-          { type: 'dim', text: '[roadmap.py] Updating delivery tracking...' },
-          { type: 'info', text: '├── Marked gantry-site#02 as DONE' },
-          { type: 'info', text: '├── roadmap.py done gantry-site#02' },
-          { type: 'success', text: '✓ Run event recorded: issue.done' },
-        ],
+        prompt: stagesDict.handoff.terminalPrompt,
+        command: stagesDict.handoff.terminalCommand,
+        lines: stagesDict.handoff.terminalLines,
         jsonEvent: {
-          event: 'issue.done',
-          spec: 'gantry-site',
-          issue: 'gantry-site#02',
-          roadmap_updated: true,
-          progress: '31/32',
+          event: 'run.finished',
+          spec: 'login-otp',
+          issues_done: 3,
+          gates: 'passed',
+          handoff: 'ready',
         },
       },
     },
@@ -395,7 +375,7 @@ export function PipelineSimulator() {
         aria-labelledby={`stage-tab-${activeStage.id}`}
         className="grid grid-cols-1 lg:grid-cols-12 gap-0"
       >
-        {/* Left Column: Script Invariants & Agent Role Contract */}
+        {/* Left Column: Skill guarantees & Agent Role Contract */}
         <div className="lg:col-span-6 p-5 sm:p-6 border-b lg:border-b-0 lg:border-r border-obsidian-700 space-y-6">
           {/* Header & Description */}
           <div>
@@ -412,23 +392,23 @@ export function PipelineSimulator() {
             </p>
           </div>
 
-          {/* Section A: Deterministic Script Invariants */}
+          {/* Section A: Recommended skill invocation and deterministic guarantees */}
           <div className="border border-obsidian-700 bg-obsidian-950/70 p-4 space-y-3 font-mono">
             <div className="flex items-center justify-between border-b border-obsidian-800 pb-2">
               <span className="text-xs font-bold text-amber-glow uppercase tracking-wider flex items-center space-x-1.5">
                 <span>⚙</span>
                 <span>{dict.scriptInvariantsTitle}</span>
               </span>
-              <span className="text-[10px] text-slate-400 uppercase">RUNNER: PYTHON3</span>
+              <span className="text-[10px] text-slate-400 uppercase">{dict.interfaceLabel}</span>
             </div>
 
             <div className="text-xs space-y-1">
-              <span className="text-[10px] text-slate-400 uppercase block">SCRIPT ENTRYPOINT:</span>
+              <span className="text-[10px] text-slate-400 uppercase block">{dict.invocationLabel}</span>
               <code
                 tabIndex={0}
                 role="region"
-                aria-label="Script command"
-                className="text-amber-accent bg-obsidian-900 border border-obsidian-800 px-2 py-1 block text-xs overflow-x-auto whitespace-nowrap focus:outline-none focus:ring-1 focus:ring-amber-glow"
+                aria-label="Recommended Gantry skill invocation"
+                className="text-amber-accent bg-obsidian-900 border border-obsidian-800 px-2 py-1 block text-xs whitespace-pre-wrap break-words focus:outline-none focus:ring-1 focus:ring-amber-glow"
               >
                 {activeStage.deterministicScript.command}
               </code>

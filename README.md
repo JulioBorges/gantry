@@ -19,7 +19,7 @@ development. Deterministic scripts decide which Issues are ready and whether
 checks pass. Fresh agents implement, review, and challenge each delivery. You
 approve the plan and decide how the resulting Run is handed off.
 
-[Get started](#quick-start) · [Greenfield example](#greenfield-build-a-new-project) ·
+[Get started](#usage) · [Greenfield example](#greenfield-build-a-new-project) ·
 [Brownfield example](#brownfield-extend-an-existing-project) ·
 [Contribute](#contributing)
 
@@ -77,15 +77,16 @@ Run this in the project where you want to use Gantry:
 npx skills add JulioBorges/gantry
 ```
 
-Select all three skills and your harness in the installer:
+Select all four skills and your harness in the installer:
 
 | Skill | Purpose |
 |---|---|
 | `gantry-setup` | Configure artifact locations, templates, checks, Git policy, and hooks |
-| `gantry` | Plan and execute verified Issues |
+| `gantry-plan` | Turn a goal or existing Spec into an approved Spec and vertical Issues |
+| `gantry` | Execute an approved Spec through implementation, verification, and handoff |
 | `gantry-dashboard` | Open the read-only kanban for recorded Runs |
 
-You can also copy or symlink the three directories into
+You can also copy or symlink the four directories into
 `<repo>/.agents/skills/` or `~/.agents/skills/`. The repository copy wins.
 
 The npm package includes a bundled installer:
@@ -101,44 +102,69 @@ npx @julioborges/gantry add --list
 using the bundled files. Agent selection and global installation options pass
 through unchanged. The npm command installs skills; it does not execute a Run.
 
-## Quick start
+## Usage
 
-After installation, open your coding harness in the repository and send:
+### Via skills (recommended)
 
-```text
-Use gantry-setup to configure this repository. Present the proposed artifact
-locations, templates, check commands, Git target, and hook settings for approval
-before applying the policy.
-```
-
-Approve the reviewed setup, prepare a Spec using the
-[default template](.agents/skills/gantry/templates/spec.md) or your repository's
-configured equivalent, and commit the setup and Spec. Start from a clean Git
-working tree, then send:
+Run setup once when adopting Gantry in a repository:
 
 ```text
-Use gantry for Spec delivery-api. Validate the Spec and prepare the Issue
-breakdown. Stop for my planning approval before implementation.
+/gantry-setup
 ```
 
-Review the resulting Issues, criteria, dependencies, and plan critique. If you
-accept that particular breakdown, send:
+Review and approve the proposed artifact locations, templates, checks, Git
+policy, role defaults, and hooks. This repository setup is not repeated for
+every feature.
+
+For a new goal, ask the standalone planning skill to discover the requirements,
+write the Spec, and propose vertical Issues:
 
 ```text
-I approve the delivery-api Spec and the Issue breakdown just presented.
-Use gantry delivery-api --limit 4 --budget 2 to execute all approved Issues.
+/gantry-plan Add login via OTP
 ```
 
-These are **prompts in your coding harness**, not terminal commands. Use its
-skill invocation syntax when available, or explicitly name the skill in prose.
-`delivery-api` identifies your Spec scope, normally
-`.scratch/delivery-api/spec.md`; it is not a filename to copy verbatim.
+Review the generated `login-otp` Spec, acceptance criteria, Issue breakdown,
+dependencies, and Plan Critic result. Approve that exact plan explicitly:
+
+```text
+I approve the login-otp Spec and the proposed Issues.
+```
+
+Then start one implementation Run:
+
+```text
+/gantry Implement the login-otp Spec
+```
+
+From that point, Gantry automatically coordinates dependency rounds, TDD
+implementation, Review, fresh Critic verification, deterministic gates, serial
+integration, roadmap updates, and final handoff. It pauses only when a human
+gate or recovery decision is required. Run `/gantry-dashboard` at any time for
+read-only visibility.
+
+These are **skill invocations in your coding harness**, not shell commands.
+
+### Via the Python CLI (advanced/manual)
+
+The Python scripts are the low-level deterministic interface used by the
+skills. Use them directly for diagnostics, CI, or manual integration—not as a
+replacement for the agent roles, operator approvals, and orchestration supplied
+by the skills.
+
+```bash
+python3 .agents/skills/gantry/scripts/spec.py --check .scratch/delivery-api/spec.md
+python3 .agents/skills/gantry/scripts/frontier.py --scope delivery-api --json
+python3 .agents/skills/gantry/scripts/gates.py --run --json
+python3 .agents/skills/gantry/scripts/roadmap.py check
+```
+
+See [Using Gantry](docs/usage.md) for the complete skill-first flow, the Python
+CLI responsibilities, and the boundary between them.
 
 ## Complete execution examples
 
-The examples below cover setup, Spec preparation, planning approval,
-implementation, and handoff. Spec authoring happens before the Gantry Run;
-Gantry reads and critiques the Spec rather than rewriting it.
+The examples below cover one-time setup, planning with `/gantry-plan`, explicit
+approval, implementation with `/gantry`, and handoff.
 
 ### Greenfield: build a new project
 
@@ -158,19 +184,20 @@ npx skills add JulioBorges/gantry
 **1. Configure the repository.** Open your harness in `task-cli` and send:
 
 ```text
-Use gantry-setup for this new Python project. Propose main as the Git target,
-.scratch/<slug>/ for Specs and Issues, and unittest discovery as the test gate.
-There is no test suite yet: identify the bootstrap requirement, and do not
-accept no_gates or an empty test run as proof of completion. Present the full
-policy and hook choices before writing them.
+/gantry-setup
 ```
 
-Review and approve the proposed policy. The bootstrap Issue must establish and
-exercise meaningful tests before it can complete.
+Tell the setup conversation to use `main` as the Git target,
+`.scratch/<slug>/` for Specs and Issues, and unittest discovery as the test
+gate. Review and approve the complete proposed policy.
 
-**2. Prepare the Spec outside the Run.** Create
-`.scratch/task-cli/spec.md` from the effective template and fill every required
-section. Define these outcomes and boundaries:
+**2. Plan the goal.** Send a free-text goal through the planning skill:
+
+```text
+/gantry-plan Build a Python CLI that adds and lists tasks in a local JSON file
+```
+
+During discovery, confirm these outcomes and boundaries:
 
 - `python3 -m task_cli add "Buy milk" --file tasks.json` creates a stored task
   with a unique ID and reports it to the user.
@@ -181,35 +208,28 @@ section. Define these outcomes and boundaries:
 - Tests exercise the CLI with temporary files. No network, accounts, task
   deletion, or UI is included.
 
-Include observable Given/When/Then scenarios and regression guardrails in the
-Spec. Commit the installation files, approved setup, and completed Spec before
-starting the Run.
+`/gantry-plan` writes `.scratch/task-cli/spec.md`, proposes vertical Issues,
+checks their budgets and dependencies, runs Plan Critic, and stops. Review the
+actual Spec and Issue files rather than assuming any example breakdown is
+authoritative.
 
-**3. Request and review the plan.** Send:
-
-```text
-Use gantry task-cli --limit 2 --budget 2. Validate the Spec and prepare vertical
-slices covering every outcome, including bootstrap tests. Show the dependencies
-and plan critique, then stop for my approval.
-```
-
-A possible breakdown is an add-and-persist slice with real tests, followed by a
-list-and-error-handling slice. Review the actual generated plan rather than
-assuming these example slices are authoritative. Amend the Spec if Requirement
-Review finds a blocker, then request planning again.
-
-**4. Approve the concrete plan and execute.** After reviewing the draft Issues:
+**3. Approve the concrete plan.** After reviewing the Spec and draft Issues:
 
 ```text
 I approve the task-cli Spec and the exact Issue breakdown just presented.
-Use gantry task-cli --limit 2 --budget 2 to execute the approved scope in a
-dedicated Run worktree. Keep the bootstrap test gate meaningful.
 ```
 
-Answer the preflight worktree and model choices. Gantry schedules ready Issues,
+**4. Execute the approved Spec.** Send:
+
+```text
+/gantry Implement the task-cli Spec
+```
+
+Answer any preflight choices. Gantry schedules ready Issues,
 implements each with TDD, reviews it, runs independent Critic verification, and
 integrates accepted work into the Run branch. Successful rounds advance until
-the scope completes; a failed round stops with evidence and preserved work.
+the scope completes; no separate command is required for Review, Critic, gates,
+or the next dependency round.
 
 **5. Review the handoff.** Expect criterion evidence, integration gate results,
 updated Issues and roadmap, the declared support tier, remaining frontier,
@@ -239,20 +259,24 @@ npx skills add JulioBorges/gantry
 **2. Adapt setup to existing conventions.** Open your harness and send:
 
 ```text
-Use gantry-setup for this existing repository. Inspect AGENTS.md, the canonical
-Specs and Issues, ADRs, test commands, and target branch. Reuse those locations
-and templates; propose equivalent heading mappings where needed. Preserve
-existing hooks and present any conflicts. Show the full proposed policy before
-writing it. Keep tests absolute; offer differential checks only where real
-structured output supports comparison.
+/gantry-setup
 ```
+
+In the setup conversation, ask it to inspect and reuse the existing
+`AGENTS.md`, Specs, Issues, ADRs, test commands, target branch, templates, and
+hooks. Review the complete proposed policy before approving it.
 
 Approve the concrete settings. Existing debt in a differential check remains
 visible; new or aggravated findings block. An absolute check still has to pass.
 Setup does not waive a failing baseline or approve the feature plan.
 
-**3. Prepare or adapt the canonical Spec.** Use the agreed location and template
-for the `orders-pagination` scope. Include these explicit behaviors:
+**3. Plan the change.** Send:
+
+```text
+/gantry-plan Add pagination to GET /orders while preserving existing clients
+```
+
+During discovery, confirm these explicit behaviors:
 
 - Requests without pagination parameters keep the existing response shape,
   ordering, and authorization behavior.
@@ -265,25 +289,18 @@ for the `orders-pagination` scope. Include these explicit behaviors:
 - No schema migration, authorization redesign, or unrelated refactoring is
   included.
 
-Replace every undecided detail with an agreed value before planning. If an
-existing Spec is missing required content, review and amend it in its canonical
-format. Commit the installation, approved setup, and Spec so preflight sees a
-clean working tree.
-
-**4. Plan, approve, and execute.** Send:
-
-```text
-Use gantry orders-pagination --limit 2 --budget 2. Validate the canonical Spec,
-inspect existing endpoint and integration tests, and propose vertical slices
-with compatibility criteria. Stop after the plan critique for my approval.
-```
-
-After reviewing that exact breakdown, send:
+`/gantry-plan` writes or adapts the canonical `orders-pagination` Spec and
+proposes compatibility-focused vertical Issues. After reviewing that exact
+Spec and breakdown, send:
 
 ```text
 I approve the orders-pagination Spec and the Issue breakdown just presented.
-Use gantry orders-pagination --limit 2 --budget 2 in a dedicated Run worktree.
-Execute the approved scope with the configured gates and regression checks.
+```
+
+Then start implementation:
+
+```text
+/gantry Implement the orders-pagination Spec
 ```
 
 Answer the worktree and model choices. Each accepted Issue integrates into the
@@ -294,9 +311,7 @@ the Run. Changes to approved behavior or dependencies require a plan amendment.
 handoff described in the greenfield example. To revisit an interrupted scope:
 
 ```text
-Use gantry orders-pagination. Report remaining ready and blocked Issues and
-any in-flight worktrees. Offer continuation in the preserved worktree before
-starting new work, retaining correction attempts already spent.
+/gantry Resume the orders-pagination Spec
 ```
 
 Continuation is an operator choice, not an automatic budget reset. Once the
@@ -306,22 +321,23 @@ review it under the repository's normal process, and approve cleanup separately.
 ## How a Run works
 
 ```text
-Preflight → Spec validation → Requirement Review → Plan → Plan critique
-                                                        ↓
-                                               Operator approval
-                                                        ↓
-Ready Issues → Implement (TDD) → Review → Critic → Serial integration
-                   ↑                       │          + gates
-                   └── bounded corrections ┘              ↓
-                                                  Roadmap update
-                                                        ↓
-                              Next round or final report + PR offer
+/gantry-setup                         one-time repository adaptation
+       ↓
+/gantry-plan <goal>                   Spec + vertical Issues + Plan Critic
+       ↓
+Operator approves Spec and Issues    mandatory human gate
+       ↓
+/gantry Implement the <slug> Spec    one implementation invocation
+       ↓
+Preflight → Implement (TDD) → Review → Critic → Serial integration + gates
+                    ↑                    │                         ↓
+                    └─ bounded fixes ────┘              Next round or handoff
 ```
 
-Already planned scopes skip planning. `--limit` caps Issues per round (default
-4); `--budget` caps Critic correction attempts per Issue (default 2). The single
-review fix pass is separate. These limits do not approve a plan or restrict a
-Run to a single round.
+After `/gantry` starts an approved Spec, dependency rounds advance automatically.
+`--limit` caps Issues per round (default 4); `--budget` caps Critic correction
+attempts per Issue (default 2). The single review fix pass is separate. These
+limits never approve a plan or restrict a Run to one round.
 
 | Scope | Meaning |
 |---|---|
@@ -330,7 +346,10 @@ Run to a single round.
 | `wave:1` | A roadmap wave |
 | `frontier` | Currently ready work |
 | `all` | All discovered Issues |
-| `"free-text goal"` | Unplanned scope; draft planning stops for approval |
+
+For a new or unplanned goal, use `/gantry-plan <goal>`. After approving the
+generated Spec and Issues, start implementation with `/gantry Implement the
+<slug> Spec`.
 
 Workflow scripts own readiness (`frontier.py`), criteria (`acceptance.py`),
 gates (`gates.py`), Spec structure (`spec.py`), context estimates (`budget.py`),
@@ -355,7 +374,8 @@ The current [capability files](.agents/skills/gantry/capabilities/) declare:
 ### Codex setup and capabilities
 
 - **Installation**: Ensure the Codex CLI is available on `PATH` (`npm install -g @openai/codex`), authenticated via `codex login` (verified with `codex login status`), meeting the minimum version requirement (`0.1.0`).
-- **Setup Options**: Configure the repository using `python3 .agents/skills/gantry/scripts/setup.py --harness codex` or `npx @julioborges/gantry add --agent codex --yes`. Setup records `execution.hostHarness: "codex"` in `.gantry/config.json`, selects verified default models (`gpt-5.2-codex`), and injects Codex host orchestration and defense-in-depth git hooks into `AGENTS.md`.
+- **Recommended setup**: Run `/gantry-setup`, select Codex as the Host Harness, and review the proposed policy before it is written. Setup records `execution.hostHarness: "codex"` in `.gantry/config.json`, selects verified default models, and injects Codex host orchestration and defense-in-depth git hooks into `AGENTS.md`.
+- **Advanced/manual setup**: Use `python3 .agents/skills/gantry/scripts/setup.py --harness codex --verify-auth` when you specifically need the low-level config writer. `npx @julioborges/gantry add --agent codex --yes` installs the skills; it does not configure a repository Run.
 - **Supported Capabilities**: Supported tier with bounded subprocess execution (`codex exec`), per-role model and effort configuration (`low`, `medium`, `high`), Result Contract verification (`result.py`), independent adversarial Critic verification (`acceptance.py`, `gates.py`), and defense-in-depth git hooks.
 
 Use the host's available features without assuming parity. Every final Run
@@ -364,7 +384,7 @@ output redaction; apply your harness's policy layer for those concerns.
 
 ## Dashboard and artifacts
 
-Ask your harness to `use gantry-dashboard` to open the read-only local kanban.
+Run `/gantry-dashboard` to open the read-only local kanban.
 It displays recorded Runs and operator waits; decisions remain in the harness.
 
 | Artifact | Default location |
@@ -388,6 +408,7 @@ worktrees.
 - [Agent contribution rules](AGENTS.md): repository instructions.
 - [Delivery roadmap](ROADMAP.md): implementation progress and dependencies.
 - [Workflow skill](.agents/skills/gantry/SKILL.md): execution protocol and references.
+- [Usage guide](docs/usage.md): recommended skill flow and advanced Python CLI usage.
 
 ## Contributing
 
@@ -437,7 +458,7 @@ provenance, verifies registry integrity, and creates the GitHub Release for the 
 
 See the [maintainer release runbook](docs/maintainers/releases.md) for versioning,
 authorization, npm trusted publisher setup, and recovery after partial failures.
-The package includes only the installer, three skill directories, README and
+The package includes only the installer, four skill directories, README and
 license; project Issues, fixtures, caches, local configuration and runtime state
 are excluded. Local `make release` retains its npm account check, but GitHub
 Actions is the normal publication path.
