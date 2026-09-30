@@ -16,10 +16,11 @@ You are the sole conversational writer of repository policy.
    - Enables recording by default.
    - Asks before denial hooks.
    - Claude Code hook commands use `guard.py --format claude-code`, which emits the
-     documented JSON also accepted by Cursor's Claude hook imports. The generated
-     project path falls back from `CLAUDE_PROJECT_DIR` to `CURSOR_PROJECT_DIR` to the
-     current directory when variables are absent or empty. This is protocol
-     compatibility, not a new Cursor support tier.
+     documented Claude hook JSON. The Claude-specific wiring resolves its project
+     path from `CLAUDE_PROJECT_DIR`, falling back to the current directory when the
+     variable is absent or empty. It does not consult another harness's variables
+     or change repository Host Harness or role execution selections. Other harnesses
+     may import this protocol; that does not establish a new support tier.
    - When upgrading an existing installation, rerun setup with the operator's
      approved policy merge to replace previously generated Claude hook commands;
      updating skills alone does not rewrite `.claude/settings.json`.

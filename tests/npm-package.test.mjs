@@ -52,7 +52,7 @@ test('published tarball installs all four skills through npx', () => {
     const hookCommand = hookSettings.hooks.PreToolUse[0].hooks[0].command;
     const hookEnv = { ...process.env };
     delete hookEnv.CLAUDE_PROJECT_DIR;
-    delete hookEnv.CURSOR_PROJECT_DIR;
+    hookEnv.CURSOR_PROJECT_DIR = join(temp, 'unrelated-project');
     for (const key of Object.keys(hookEnv)) {
       if (key.startsWith('GANTRY_')) delete hookEnv[key];
     }

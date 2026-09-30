@@ -25,13 +25,15 @@ approve the plan and decide how the resulting Run is handed off.
 
 ## Release 1.1.2
 
-Claude Code hooks imported by Cursor now return the documented
+Claude Code hooks now return the documented
 `hookSpecificOutput` JSON for both allowed and denied tool calls. Recording hooks
 return an empty JSON object. Generated commands resolve the project directory from
-`CLAUDE_PROJECT_DIR`, then `CURSOR_PROJECT_DIR`, then the current directory, including
-when either variable is empty. OpenCode and Antigravity keep their existing guard
-response formats. This fixes the shared hook protocol; it does not establish a new
-Cursor support tier or claim a live Cursor fixture result.
+`CLAUDE_PROJECT_DIR`, falling back to the current directory when that variable is
+absent or empty. Each harness's wiring owns its protocol and environment conventions;
+the Claude template does not depend on Cursor-specific variables. Host Harness and
+role selections remain repository policy decisions. OpenCode and Antigravity keep
+their existing guard response formats. Cursor can import the corrected Claude hook
+protocol; this does not establish a new support tier or claim a live Cursor fixture result.
 
 After updating the installed skills, rerun `/gantry-setup` and choose **merge** for
 the existing policy to regenerate `.claude/settings.json`. Updating the skill files

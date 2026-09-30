@@ -54,15 +54,15 @@ class ClaudeCodeHookWiringTests(unittest.TestCase):
             shutil.copytree(HOOKS.parent, root / ".agents" / "skills" / "gantry")
             clean_env = {k: v for k, v in os.environ.items()
                          if not k.startswith("GANTRY_") and k not in {"CLAUDE_PROJECT_DIR", "CURSOR_PROJECT_DIR"}}
-            for source in ("CLAUDE_PROJECT_DIR", "CURSOR_PROJECT_DIR", "cwd", "empty"):
+            for source in ("CLAUDE_PROJECT_DIR", "cwd", "empty", "foreign-harness"):
                 env = dict(clean_env)
-                if source in {"CLAUDE_PROJECT_DIR", "CURSOR_PROJECT_DIR"}:
+                if source == "CLAUDE_PROJECT_DIR":
                     env[source] = str(root)
-                if source == "CURSOR_PROJECT_DIR":
-                    env["CLAUDE_PROJECT_DIR"] = ""
                 if source == "empty":
-                    env.update(CLAUDE_PROJECT_DIR="", CURSOR_PROJECT_DIR="")
-                cwd = Path(temp) if source in {"CLAUDE_PROJECT_DIR", "CURSOR_PROJECT_DIR"} else root
+                    env["CLAUDE_PROJECT_DIR"] = ""
+                if source == "foreign-harness":
+                    env["CURSOR_PROJECT_DIR"] = str(Path(temp) / "unrelated project")
+                cwd = Path(temp) if source == "CLAUDE_PROJECT_DIR" else root
                 for tool, expected in (("Read", "allow"), ("Edit", "deny")):
                     with self.subTest(source=source, tool=tool):
                         command = next(iter_commands(self.settings["hooks"]["PreToolUse"]))
@@ -90,6 +90,11 @@ class ClaudeCodeHookWiringTests(unittest.TestCase):
                     self.assertEqual(0, result.returncode, result.stderr)
                     self.assertEqual({}, json.loads(result.stdout))
 
+    def test_claude_wiring_does_not_depend_on_another_harness_environment(self) -> None:
+        for command in iter_commands(self.settings):
+            self.assertNotIn("CURSOR_PROJECT_DIR", command)
+            self.assertIn("${CLAUDE_PROJECT_DIR:-$PWD}", command)
+
     def test_setup_replaces_legacy_commands_and_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -101,13 +106,20 @@ class ClaudeCodeHookWiringTests(unittest.TestCase):
                 "SessionStart": [{"hooks": [{"type": "command", "command": "echo custom"}]}],
             }}
             settings_path.write_text(json.dumps(legacy), encoding="utf-8")
+            policy = {"execution": {"hostHarness": "opencode", "roles": {
+                "implement": {"harness": "codex", "model": "gpt-6.1-sol"},
+            }}}
+            policy_path = root / ".gantry" / "config.json"
+            policy_path.parent.mkdir()
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
             setup = HOOKS.parent / "scripts" / "setup.py"
-            for answer in ("y\n", "m\n"):
+            for answer in ("m\n", "m\n"):
                 result = subprocess.run(
                     [sys.executable, str(setup), "--config", "{}"], cwd=root,
                     input=answer, text=True, capture_output=True,
                 )
                 self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(policy, json.loads(policy_path.read_text(encoding="utf-8")))
                 settings = json.loads(settings_path.read_text(encoding="utf-8"))
                 self.assertEqual(legacy["permissions"], settings["permissions"])
                 self.assertEqual(legacy["hooks"]["SessionStart"], settings["hooks"]["SessionStart"])
