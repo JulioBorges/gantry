@@ -496,6 +496,8 @@ import {{ spawnSync }} from 'node:child_process';
 const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
 const source = {json.dumps(source)};
 const args = {json.dumps(args)};
+// Explicit fixture invocation selection; repository preference is not host proof.
+args.hostHarness ??= 'claude-code';
 const calls = [];
 const commandCalls = [];
 let sequence = 0;
@@ -505,6 +507,10 @@ const defaultIssueWorktree = args.issueWorktree || (
     : args.repoRoot
 );
 const runCommand = async (command, options = {{}}) => {{
+  if (command.includes('/execution.py" host ')) {{
+    const host = spawnSync(command, {{ shell: true, encoding: 'utf8' }});
+    return {{ exitCode: host.status ?? 1, stdout: host.stdout || '', stderr: host.stderr || '' }};
+  }}
   commandCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});
   if (command.includes('/spec.py') && args.stubSpecCheck !== false) {{
     return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};

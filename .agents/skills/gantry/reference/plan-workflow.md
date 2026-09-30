@@ -7,6 +7,16 @@ For the approval transition, the host supplies its command runner as `runCommand
 `args.operatorApproved` is `true` only after the host has obtained explicit operator approval; an omitted
 or any other value leaves the plan awaiting approval.
 
+## Invocation host binding
+
+Entry runs `execution.py host --require-resolved --json` once before any host-dependent
+initialization or agent scheduling. `args.hostHarness`, when present, is the operator-confirmed
+current invocation selection; never fill it from repository policy or installed-tool hints.
+Unknown, ambiguous and unsupported identities stop entry. The returned capability declaration
+controls native structured output and reports the actual support tier. A mismatch is logged,
+without changing policy, models, efforts or role defaults. Pass independently resolved/validated
+roles and readiness through the existing preflight; host resolution grants no execution approval.
+
 ## Roles and sequence
 
 1. `spec.py --check` validates the Spec structurally (required sections, order, placeholders,
@@ -88,6 +98,24 @@ export const meta = {
 
 const A = args
 const scripts = `${A.skillDir}/scripts`
+// Resolve before any host-dependent initialization, worktree creation or role invocation.
+// hostHarness is an operator-confirmed invocation selection, never a policy preference.
+const hostSelectionFlag = A.hostHarness == null ? '' : ` --host ${shellQuote(A.hostHarness)}`
+const hostCheck = await runCommand(
+  `python3 "${scripts}/execution.py" host --require-resolved --json --cwd ${shellQuote(A.repoRoot)}${hostSelectionFlag}`,
+  { cwd: A.repoRoot },
+)
+let hostResolution
+try { hostResolution = JSON.parse((hostCheck && hostCheck.stdout) || '{}') } catch { hostResolution = {} }
+if (!hostCheck || hostCheck.exitCode !== 0 || hostResolution.status !== 'resolved' || !hostResolution.capabilities) {
+  throw new Error('Host Harness unresolved or unsupported; confirm the invocation host before starting work.')
+}
+const hostHarness = hostResolution.effectiveHost
+const hostCapabilities = hostResolution.capabilities
+if (hostResolution.mismatch && typeof log === 'function') {
+  log(`Host Harness ${hostHarness} differs from saved preference ${hostResolution.savedPreference}; policy unchanged.`)
+}
+
 const t = A.target
 const paths = A.paths
 const policy = A.policy
@@ -151,7 +179,7 @@ async function roleSchema(role) {
 
 async function validRoleResult(role, result) {
   if (!result) return false
-  if (A.structuredOutput === true) return true
+  if (hostCapabilities.structured_output === true && A.structuredOutput === true) return true
   if (typeof runCommand !== 'function') return true
   const validation = await runCommand(
     `python3 "${scripts}/result.py" --role "${role}" --json`,
@@ -162,7 +190,6 @@ async function validRoleResult(role, result) {
 
 async function requestRole(role, prompt, options) {
   const selection = (options && options.selection) || (A.roles && A.roles[role])
-  const hostHarness = A.hostHarness || 'claude-code'
   if (selection && selection.harness && selection.harness !== hostHarness) {
     const cwd = (options && options.cwd) || A.repoRoot
     const selectionJson = JSON.stringify(selection)
@@ -171,17 +198,23 @@ async function requestRole(role, prompt, options) {
     const res = await runCommand(cmd, { cwd: A.repoRoot, input: agentPrompt })
     if (res && res.exitCode === 0) {
       try {
-        return JSON.parse(res.stdout)
+        const externalResult = JSON.parse(res.stdout)
+        const validation = await runCommand(
+          `python3 "${scripts}/result.py" --role "${role}" --json`,
+          { cwd: A.repoRoot, input: JSON.stringify(externalResult) },
+        )
+        return validation && validation.exitCode === 0 ? externalResult : null
       } catch (e) {
         return null
       }
     }
     return null
   }
-  const native = A.structuredOutput === true
+  const native = hostCapabilities.structured_output === true && A.structuredOutput === true
   const agentPrompt = cavemanActive ? `${prompt}\n\n${cavemanInstruction}` : prompt
   const agentOptions = {
     ...options,
+    ...(selection ? { selection, model: selection.model, effort: selection.effort } : {}),
     ...(cavemanActive ? { skills: (options.skills || []).concat(cavemanState.skill_path || 'caveman'), caveman: true } : {}),
     ...(native ? { schema: await roleSchema(role) } : {}),
   }
@@ -430,5 +463,5 @@ async function approvePlan() {
 }
 
 const approved = await approvePlan()
-return { target: t, structuralValidation, requirementReview, plan, critique, caveman: cavemanState, awaitingOperatorApproval: !approved, approved }
+return { hostResolution, target: t, structuralValidation, requirementReview, plan, critique, caveman: cavemanState, awaitingOperatorApproval: !approved, approved }
 ```

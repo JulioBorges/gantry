@@ -838,6 +838,7 @@ def main() -> int:
     host_parser.add_argument("--host", help="operator-confirmed invocation host")
     host_parser.add_argument("--cwd", default=".", help="repository root path")
     host_parser.add_argument("--json", action="store_true", help="output JSON")
+    host_parser.add_argument("--require-resolved", action="store_true", help="fail closed at workflow entry and include actual host capabilities")
 
     resolve_parser = subparsers.add_parser("resolve", help="resolve effective role executions")
     resolve_parser.add_argument("--role", help="specific role to resolve")
@@ -882,8 +883,15 @@ def main() -> int:
     root = Path(args.cwd).resolve() if getattr(args, "cwd", None) else Path(".").resolve()
     if args.command == "host":
         diagnosis = resolve_host(root=root, explicit_host=args.host)
+        if args.require_resolved and diagnosis["status"] == "resolved":
+            capability_path = Path(__file__).resolve().parents[1] / "capabilities" / f"{diagnosis['effectiveHost']}.json"
+            try:
+                diagnosis["capabilities"] = json.loads(capability_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                diagnosis.update(status="invalid", effectiveHost=None)
+                diagnosis["diagnostics"] = ["Host capability declaration is unavailable or invalid; no fallback was used."]
         print(json.dumps(diagnosis, indent=2) if args.json else diagnosis)
-        return 1 if diagnosis["status"] == "invalid" else 0
+        return 1 if diagnosis["status"] == "invalid" or (args.require_resolved and diagnosis["status"] != "resolved") else 0
     policy = resolve_policy(root)
 
     run_ov = json.loads(args.run_overrides) if getattr(args, "run_overrides", None) else None

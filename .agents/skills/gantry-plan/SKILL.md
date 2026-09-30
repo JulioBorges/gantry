@@ -16,6 +16,16 @@ Goal or Spec → [Socratic Gate / Spec Validation] → Tracer-Bullet Slicing
              → Execution Handoff
 ```
 
+## Resolve the invocation host first
+
+Before context exploration, telemetry, host-dependent initialization or role scheduling, follow
+`gantry/SKILL.md` host preflight: run `execution.py host --require-resolved --json --cwd <repoRoot>`
+with `--host <host>` only after explicit operator confirmation. Unknown, ambiguous or unsupported
+identity stops planning entry. Saved preference and installation/environment hints cannot select the
+host. Pass the confirmed `args.hostHarness` to `plan-workflow.md`; it binds actual capabilities and
+reports mismatches without writing policy or replacing role selections. Keep repository readiness,
+role availability, Result Contracts and planning approval independent.
+
 ## Dual Entry Modes
 
 ### 1. Free-Text Goal

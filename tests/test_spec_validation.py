@@ -418,6 +418,7 @@ import {{ spawnSync }} from 'node:child_process';
 const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
 const source = {json.dumps(source)};
 const args = {{
+  hostHarness: 'claude-code',
   target: {{ kind: 'spec', slug: 'invalid', specPath: {json.dumps(str(invalid))} }},
   models: {{ plan: 'plan', critic: 'critic' }}, skillDir: {json.dumps(str(SKILL_DIR))},
   repoRoot: {json.dumps(str(root))}, policy: {{ git: {{ target: 'main', prefix: 'gantry/' }} }},
@@ -427,6 +428,10 @@ const args = {{
 const calls = [];
 const commands = [];
 const runCommand = async (command, options = {{}}) => {{
+  if (command.includes('/execution.py" host ')) {{
+    const host = spawnSync(command, {{ shell: true, encoding: 'utf8' }});
+    return {{ exitCode: host.status ?? 1, stdout: host.stdout || '', stderr: host.stderr || '' }};
+  }}
   commands.push(command);
   const result = spawnSync(command, {{ cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8' }});
   return {{ exitCode: result.status ?? 1, stdout: result.stdout || '', stderr: result.stderr || '' }};

@@ -232,9 +232,17 @@ results. Unsupported explicit or saved identifiers and malformed/unreadable
 policy return `invalid` and exit **1**, without overwrite or fallback. Invalid
 policy diagnostics intentionally omit parser details that could expose values.
 The diagnostic command neither launches roles nor establishes operational
-preflight acceptance. Operational workflow entry must require a resolved host;
-that integration is a subsequent delivery. Existing role preflight validates
-role availability separately and does not itself prove Host Harness identity.
+preflight acceptance. Both canonical workflow entries now require a resolved host
+before initialization or scheduling through `host --require-resolved --json`,
+adding `--host <host>` only after operator confirmation. This operational variant
+exits **1** for unknown or ambiguous identity and includes the actual capability
+declaration on success. The local resolved identity controls native/external
+routing and capability metadata; new recorded Runs include sanitized identity
+and confirmation provenance. A mismatch never writes policy or replaces roles.
+Existing role preflight validates role availability separately and does not
+itself prove Host Harness identity. See
+[`docs/evidence/host-harness-resolution/README.md`](evidence/host-harness-resolution/README.md)
+for bounded live entry evidence and separately labeled simulated dispatch coverage.
 
 To reproduce isolated hints rather than accidentally using the developer's
 environment, run the subprocess tests:

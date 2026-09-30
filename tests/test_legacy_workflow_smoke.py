@@ -284,13 +284,20 @@ Slice: `portable#01`
         source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
         source = source.replace("export const meta", "const meta", 1)
         driver = f"""
+import {{ spawnSync }} from 'node:child_process';
 const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
 const source = {json.dumps(source)};
 const args = {json.dumps(args)};
+// Explicit fixture invocation selection; repository preference is not host proof.
+args.hostHarness ??= 'claude-code';
 const researchFormat = {json.dumps(research_format)};
 const calls = [];
 const commandCalls = [];
 const runCommand = async (command, options = {{}}) => {{
+  if (command.includes('/execution.py" host ')) {{
+    const host = spawnSync(command, {{ shell: true, encoding: 'utf8' }});
+    return {{ exitCode: host.status ?? 1, stdout: host.stdout || '', stderr: host.stderr || '' }};
+  }}
   commandCalls.push({{ command, cwd: options.cwd || args.repoRoot }});
   if (command.includes('/spec.py')) return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
   if (command.includes('/result.py')) return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
