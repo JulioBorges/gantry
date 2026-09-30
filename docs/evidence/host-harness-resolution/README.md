@@ -5,7 +5,7 @@ its actual Codex conversation, explicitly selecting `codex` against an isolated
 repository with a saved `antigravity` preference. Reproduce the bounded proof:
 
 ```sh
-python3 fixture/tools/prove_host_entry.py --host codex
+python3 scripts/prove-host-entry.py --host codex
 ```
 
 `live-entry.json` is sanitized output of that real invocation. The command uses

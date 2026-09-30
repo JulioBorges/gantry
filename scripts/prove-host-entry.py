@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / '.agents/skills/gantry'
 
 
