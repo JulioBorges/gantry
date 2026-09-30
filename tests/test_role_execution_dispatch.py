@@ -32,13 +32,13 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
         """Exercise all base and derived roles with independent harness/model/effort selections."""
         selections = {
             "plan": {"harness": "antigravity", "model": "gemini-3.8-flash-medium", "effort": "medium"},
-            "implement": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
+            "implement": {"harness": "claude-code", "model": "claude-sonnet-5-5"},
             "review": {"harness": "codex", "model": "gpt-5.2-codex"},
             "critic": {"harness": "antigravity", "model": "gemini-3.1-pro-high", "effort": "high"},
-            "requirement-critic": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
-            "plan-critic": {"harness": "opencode", "model": "claude-3-7-sonnet-20250219"},
+            "requirement-critic": {"harness": "claude-code", "model": "claude-sonnet-5-5"},
+            "plan-critic": {"harness": "opencode", "model": "claude-sonnet-5-5"},
             "research": {"harness": "antigravity", "model": "gemini-3.8-flash-medium"},
-            "learner": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
+            "learner": {"harness": "claude-code", "model": "claude-sonnet-5-5"},
         }
         resolved = execution.resolve_roles(policy={"execution": {"roles": selections}})
         for role, sel in selections.items():
@@ -63,13 +63,13 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
 
     def test_build_dispatch_command_other_harnesses(self) -> None:
         """Verify command construction across Claude Code, OpenCode, and Codex."""
-        claude_cmd = execution.build_dispatch_command("claude-code", "claude-3-7-sonnet-20250219", "Review code")
+        claude_cmd = execution.build_dispatch_command("claude-code", "claude-sonnet-5-5", "Review code")
         self.assertIn("claude", claude_cmd)
         self.assertIn("-p", claude_cmd)
-        self.assertIn("claude-3-7-sonnet-20250219", claude_cmd)
+        self.assertIn("claude-sonnet-5-5", claude_cmd)
 
-        opencode_cmd = execution.build_dispatch_command("opencode", "claude-3-7-sonnet-20250219", "Review code")
-        self.assertEqual(["opencode", "run", "Review code", "--model", "claude-3-7-sonnet-20250219"], opencode_cmd)
+        opencode_cmd = execution.build_dispatch_command("opencode", "claude-sonnet-5-5", "Review code")
+        self.assertEqual(["opencode", "run", "Review code", "--model", "claude-sonnet-5-5"], opencode_cmd)
 
         codex_cmd = execution.build_dispatch_command("codex", "gpt-5.2-codex", "Plan spec")
         self.assertEqual(["codex", "exec", "Plan spec", "--model", "gpt-5.2-codex"], codex_cmd)
@@ -885,7 +885,7 @@ class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):
                     },
                     "issueRoleReplacements": {
                         "rec#02": {
-                            "critic": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
+                            "critic": {"harness": "claude-code", "model": "claude-sonnet-5-5"},
                         },
                     },
                     "criticResult": {
@@ -909,7 +909,7 @@ class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):
             self.assertEqual("rec#02", role_changed["issue"])
             self.assertEqual("critic", role_changed["data"]["role"])
             self.assertEqual("claude-code", role_changed["data"]["effective"]["harness"])
-            self.assertEqual("claude-3-7-sonnet-20250219", role_changed["data"]["effective"]["model"])
+            self.assertEqual("claude-sonnet-5-5", role_changed["data"]["effective"]["model"])
 
             # Verify spent budget was preserved (started at 1, so outcome carries corrections=1)
             self.assertEqual(1, valid_run["result"]["results"][0]["corrections"])
@@ -1062,7 +1062,7 @@ class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):
             "execution": {
                 "roles": {
                     "implement": {"harness": "codex", "model": "gpt-5.2-codex"},
-                    "critic": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
+                    "critic": {"harness": "claude-code", "model": "claude-sonnet-5-5"},
                 }
             }
         }
@@ -1108,8 +1108,8 @@ class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):
         """AC4: Existing harnesses (antigravity, claude-code, opencode) remain valid without regression."""
         for harness, model in [
             ("antigravity", "gemini-3.8-flash-medium"),
-            ("claude-code", "claude-3-7-sonnet-20250219"),
-            ("opencode", "claude-3-7-sonnet-20250219"),
+            ("claude-code", "claude-sonnet-5-5"),
+            ("opencode", "claude-sonnet-5-5"),
         ]:
             policy = {"execution": {"roles": {"plan": {"harness": harness, "model": model}}}}
             res = execution.preflight_validate(policy=policy, check_auth=False)

@@ -224,9 +224,9 @@ def validate_effort(
 
 HARNESS_DEFAULT_MODELS = {
     "antigravity": "gemini-3.8-flash-medium",
-    "claude-code": "claude-3-7-sonnet-20250219",
-    "codex": "gpt-5.2-codex",
-    "opencode": "claude-3-7-sonnet-20250219",
+    "claude-code": "claude-sonnet-5-5",
+    "codex": "gpt-6.1-sol",
+    "opencode": "deepseek-v4.1-flash",
 }
 
 HARNESS_SUPPORTED_EFFORTS = {
@@ -235,10 +235,10 @@ HARNESS_SUPPORTED_EFFORTS = {
 }
 
 ENVIRONMENT_DEFAULTS = {
-    "plan": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
-    "implement": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
-    "review": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
-    "critic": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
+    "plan": {"harness": "claude-code", "model": "claude-opus-5-5"},
+    "implement": {"harness": "claude-code", "model": "claude-sonnet-5-5"},
+    "review": {"harness": "claude-code", "model": "claude-opus-5-5"},
+    "critic": {"harness": "claude-code", "model": "claude-opus-5-5"},
 }
 
 
@@ -247,7 +247,7 @@ def _fill_defaults(selection: dict[str, Any]) -> dict[str, Any]:
     harness = res.get("harness", "claude-code")
     res["harness"] = harness
     if "model" not in res or not res["model"]:
-        res["model"] = HARNESS_DEFAULT_MODELS.get(harness, "claude-3-7-sonnet-20250219")
+        res["model"] = HARNESS_DEFAULT_MODELS.get(harness, "claude-sonnet-5-5")
     return res
 
 
@@ -298,7 +298,7 @@ def resolve_single_role(
     if parent and parent in env_defs:
         return _fill_defaults(env_defs[parent])
 
-    return _fill_defaults(ENVIRONMENT_DEFAULTS.get("plan", {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"}))
+    return _fill_defaults(ENVIRONMENT_DEFAULTS.get("plan", {"harness": "claude-code", "model": "claude-sonnet-5-5"}))
 
 
 def resolve_roles(
