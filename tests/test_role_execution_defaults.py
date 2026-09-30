@@ -119,7 +119,7 @@ class RoleExecutionSetupAndPolicyTests(unittest.TestCase):
 class GitIgnorePolicyTests(unittest.TestCase):
     def test_canonical_root_policy_is_trackable_while_transient_state_and_secrets_are_ignored(self) -> None:
         res = subprocess.run(
-            ["git", "check-ignore", "-v", ".gantry/config.json", ".gantry/state.json", ".gantry/secret.key"],
+            ["git", "check-ignore", "--no-index", "-v", ".gantry/config.json", ".gantry/state.json", ".gantry/secret.key"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
