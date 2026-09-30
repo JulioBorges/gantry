@@ -212,7 +212,7 @@ def migration_proposal() -> None:
     print('Tracked-policy migration proposal:')
     print('Review the effective ignore rules. For repository ignore rules, append these exceptions to .gitignore:')
     print('!.gantry/\n.gantry/*\n!.gantry/config.json')
-    print('If a higher-precedence .git/info/exclude or global rule still ignores policy, repair that rule explicitly.')
+    print('If policy is still ignored, inspect repository, .git/info/exclude and global rules and repair the effective rule explicitly.')
     print('Then verify with git check-ignore .gantry/config.json and stage with git add .gantry/config.json.')
     print('Keep credentials and transient state outside tracked policy. No ignore rules or policy were changed.')
 

@@ -45,6 +45,13 @@ with `OK`. The focused setup/guard seam passed 45 tests, including 11 host-only 
 Required delivery gates are run against the committed revision before Implementer handoff;
 Reviewer and Critic must independently verify acceptance and gates.
 
+Required gates passed at `70589c4a7392c7c1fbd773e19221e2d1ddc46664` using Issue diff base
+`c0778b6bd4c8e4167d285efec5038a3538573eeb`: executed Python `test` and npm `pack:check` both exited 0.
+A subsequent wording-only correction removed an inaccurate ignore-precedence adjective in migration
+guidance and regenerated this transcript. The ignored-policy CLI test and full transcript reproduction
+passed again for that correction. These earlier broad gates are not represented as latest-revision gates;
+the fresh Critic independently runs all gates against the delivered revision.
+
 ## Captured reproduction transcript
 
 ### Read-only preview
@@ -611,7 +618,7 @@ Review the effective ignore rules. For repository ignore rules, append these exc
 !.gantry/
 .gantry/*
 !.gantry/config.json
-If a higher-precedence .git/info/exclude or global rule still ignores policy, repair that rule explicitly.
+If policy is still ignored, inspect repository, .git/info/exclude and global rules and repair the effective rule explicitly.
 Then verify with git check-ignore .gantry/config.json and stage with git add .gantry/config.json.
 Keep credentials and transient state outside tracked policy. No ignore rules or policy were changed.
 Exit: 2
