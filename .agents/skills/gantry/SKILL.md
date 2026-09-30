@@ -164,6 +164,14 @@ Every script provides `--help`, and data-producing paths support `--json`.
   the next round until explicit validated recovery. Create and identify each
   Issue branch through the `git.issueBranch` policy template (default
   `{prefix}{spec}-{number:02d}`), rendered by `common.issue_branch(policy, issue)`.
+- Frontend changes require real browser validation. Declare an operator-approved absolute check named
+  `browser-validation` in the repository policy; its command must run the browser checks or verify
+  recorded browser evidence against the delivered revision, including relevant interactions, layout and
+  accessibility. A successful executed check clears `gates.py`'s frontend requirement. Failed,
+  skipped, unexecuted, differential or unrelated checks never clear it. The Critic independently
+  inspects the command and evidence; naming a no-op check is not validation. Respect any stricter
+  repository requirement, including a mandated browser tool. No prose claim or skip flag substitutes
+  for the check.
 - Only after Critic acceptance, green gates and a clean worktree may the orchestrator run
   `roadmap.py done <ref>`. Never hand-edit Issue status, criteria checkboxes or the roadmap.
 - Round dashboard hooks automate lifecycle visibility: before the `Implement` phase begins in any round,
