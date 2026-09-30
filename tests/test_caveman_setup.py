@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -96,6 +97,14 @@ class CavemanPolicyAndSetupTests(unittest.TestCase):
 
 
 class CavemanDiscoveryAndActivationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Discovery tests must not depend on skills installed in the operator's home.
+        temporary_home = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_home.cleanup)
+        isolated_home = patch.object(caveman.Path, "home", return_value=Path(temporary_home.name))
+        isolated_home.start()
+        self.addCleanup(isolated_home.stop)
+
     def test_installation_guidance_for_supported_harnesses(self) -> None:
         claude_cmd = caveman.get_install_guidance("claude-code")
         self.assertIn("npx skills add caveman", claude_cmd)

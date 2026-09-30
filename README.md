@@ -23,6 +23,20 @@ approve the plan and decide how the resulting Run is handed off.
 [Brownfield example](#brownfield-extend-an-existing-project) ·
 [Contribute](#contributing)
 
+## Release 1.1.1
+
+Frontend completion now accepts an executed, passing absolute check named
+`browser-validation` in `.gantry/config.json`. Its command must exercise a browser
+or verify revision-bound browser evidence; the Critic independently checks that
+proof. Missing, failed, skipped, unexecuted and differential checks remain pending.
+
+Default role selections now use Claude Opus 5.5 for planning, review and Critic,
+Claude Sonnet 5.5 for implementation, GPT-6.1 Sol for Codex and DeepSeek V4.1 Flash
+for OpenCode. These are configurable defaults, not proof of live model access;
+preflight still validates the selected harness and authentication, and runtime
+model fallback remains forbidden. Existing explicit repository/Run/Issue selections
+keep precedence. Historical fixture receipts retain their original model identities.
+
 ## Why Gantry?
 
 Agent-written code needs more than a passing test suite and a completion summary.
