@@ -73,6 +73,58 @@ class WorkflowHostBindingTests(unittest.TestCase):
             run = self.run_workflow("plan-workflow.md", args)
             self.assertEqual("plan-critic", run["result"]["protocolFailure"]["role"])
 
+    def test_native_research_preserves_resolved_inheritance_and_override(self):
+        from tests.test_role_execution_dispatch import execution
+        with tempfile.TemporaryDirectory() as tmp:
+            for issue_override in ({}, {"research": {"harness": "codex", "model": "issue-research", "effort": "high"}}):
+                with self.subTest(issue_override=issue_override):
+                    roles = execution.resolve_roles(
+                        policy={"execution": {"roles": {"plan": {"harness": "codex", "model": "policy-plan", "effort": "low"}}}},
+                        run_overrides={"plan": {"harness": "codex", "model": "run-plan", "effort": "medium"}},
+                        issue_overrides=issue_override,
+                    )
+                    args = self.entry_args(Path(tmp), "codex")
+                    roles.update({role: {"harness": "codex", "model": "local-critic"} for role in ("requirement-critic", "plan-critic")})
+                    args.update(roles=roles, commandMode="real", structuredOutput=True,
+                                caveman={"active": True, "skill_path": "caveman"})
+                    run = self.run_workflow("plan-workflow.md", args)
+                    self.assertIsNone(run["error"])
+                    research = [call for call in run["calls"] if call["label"].startswith("research:")]
+                    self.assertEqual(3, len(research))
+                    for call in research:
+                        self.assertEqual("issue-research" if issue_override else "run-plan", call["model"])
+                        self.assertEqual("high" if issue_override else "medium", call["effort"])
+                        self.assertEqual(roles["research"], call["selection"])
+                        self.assertNotIn("schema", call)
+                        self.assertIn("Caveman lite is active", call["prompt"])
+                    self.assertFalse(any('result.py" --role "research"' in call["command"] for call in run["commandCalls"]))
+
+    def test_external_research_preserves_selection_and_text_without_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.entry_args(Path(tmp), "codex")
+            args.update(commandMode="real", structuredOutput=True,
+                        roles={"research": {"harness": "claude-code", "model": "research-selected", "effort": "high"}},
+                        caveman={"active": True},
+                        dispatchResults=[{"exitCode": 0, "stdout": json.dumps(text), "stderr": ""}
+                                         for text in ("codebase facts", "spec facts", "format facts")])
+            run = self.run_workflow("plan-workflow.md", args)
+            self.assertIsNone(run["error"])
+            dispatches = [call for call in run["commandCalls"] if 'execution.py" dispatch' in call["command"]]
+            self.assertEqual(3, len(dispatches))
+            for call in dispatches:
+                self.assertIn('--role "research"', call["command"])
+                self.assertIn('"model":"research-selected"', call["command"])
+                self.assertIn('"effort":"high"', call["command"])
+            self.assertFalse(any(call["label"].startswith("research:") for call in run["calls"]))
+            self.assertFalse(any('result.py" --role "research"' in call["command"] for call in run["commandCalls"]))
+            planner = next(call for call in run["calls"] if call["label"] == "plan")
+            for text in ("codebase facts", "spec facts", "format facts"):
+                self.assertIn(text, planner["prompt"])
+            args["dispatchResults"] = [{"exitCode": 1, "stdout": "", "stderr": "execution failed"}] * 3
+            failed = self.run_workflow("plan-workflow.md", args)
+            self.assertIn("Research", failed["error"] or "")
+            self.assertFalse(any(call["label"] == "plan" or call["label"].startswith("research:") for call in failed["calls"]))
+
     def test_round_external_critic_contract_and_issue_override_are_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

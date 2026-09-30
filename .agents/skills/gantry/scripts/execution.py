@@ -528,10 +528,13 @@ def parse_and_validate_result(
     role: str,
     raw_output: str,
     schema: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Parse output and validate against the Result Contract; protocol failure on error."""
+) -> dict[str, Any] | str:
+    """Preserve uncontracted research text; validate every contracted role result."""
     if not raw_output or not raw_output.strip():
         raise ProtocolFailureError(f"Protocol failure: empty output returned for role {role}")
+
+    if role == "research":
+        return raw_output
 
     try:
         data = result.extract_json(raw_output)
@@ -597,7 +600,7 @@ def dispatch_role(
     state_root: str | None = None,
     retry_on_invalid: bool = True,
     timeout: int | float | None = None,
-) -> dict[str, Any]:
+) -> dict[str, Any] | str:
     """Execute a bounded role invocation in the selected native harness."""
     cwd_path = Path(cwd).resolve()
     if not cwd_path.is_dir():

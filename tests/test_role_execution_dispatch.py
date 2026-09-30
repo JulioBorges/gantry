@@ -47,6 +47,30 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
             if "effort" in sel:
                 self.assertEqual(sel["effort"], resolved[role]["effort"], f"Effort mismatch for {role}")
 
+    def test_research_dispatch_cli_keeps_text_and_rejects_execution_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary = root / "codex"
+            binary.write_text(f"#!{sys.executable}\n" +
+                              "import sys\n" +
+                              "if '--version' in sys.argv: print('codex 99.0.0')\n" +
+                              "elif '--model' not in sys.argv or sys.argv[sys.argv.index('--model') + 1] != 'research-custom': sys.exit(7)\n" +
+                              "elif '--effort' not in sys.argv or sys.argv[sys.argv.index('--effort') + 1] != 'high': sys.exit(8)\n" +
+                              "elif 'fail research' in sys.argv: sys.exit(9)\n" +
+                              "elif 'fallback research' in sys.argv: print('{\"model\":\"wrong-model\",\"model_fallback\":true}')\n" +
+                              "else: print('Facts and paths\\n- src/example.py')\n")
+            binary.chmod(0o755)
+            env = {**os.environ, "PATH": str(root)}
+            cmd = [sys.executable, str(EXECUTION_SCRIPT), "dispatch", "--role", "research", "--cwd", str(root),
+                   "--selection", json.dumps({"harness": "codex", "model": "research-custom", "effort": "high"})]
+            delivered = subprocess.run(cmd, input="survey repository", text=True, capture_output=True, env=env)
+            self.assertEqual(0, delivered.returncode, delivered.stderr)
+            self.assertEqual("Facts and paths\n- src/example.py\n", json.loads(delivered.stdout))
+            for prompt in ("fail research", "fallback research"):
+                failed = subprocess.run(cmd, input=prompt, text=True, capture_output=True, env=env)
+                self.assertEqual(1, failed.returncode, failed.stderr)
+                self.assertEqual("", failed.stdout)
+
     def test_build_dispatch_command_antigravity_agy_cli(self) -> None:
         """Verify Antigravity agy command construction with effort, json output, and skip permissions."""
         cmd = execution.build_dispatch_command(
