@@ -65,12 +65,13 @@ class RoleExecutionSetupAndPolicyTests(unittest.TestCase):
             self.assertEqual("antigravity", written["execution"]["roles"]["plan"]["harness"])
             self.assertEqual("claude-code", written["execution"]["roles"]["critic"]["harness"])
 
-    def test_setup_configures_agents_hooks_json_when_antigravity_detected(self) -> None:
+    def test_setup_configures_agents_hooks_json_when_antigravity_and_denial_are_selected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / ".agents").mkdir()
 
-            config_json = {"execution": {"roles": {"plan": {"harness": "antigravity"}}}}
+            config_json = {"execution": {"hostHarness": "antigravity", "roles": {"plan": {"harness": "antigravity"}}},
+                           "hooks": {"deny": ["PreToolUse"]}}
             p = subprocess.Popen(
                 [sys.executable, str(SETUP_SCRIPT), "--config", json.dumps(config_json)],
                 cwd=root,
@@ -100,7 +101,8 @@ class RoleExecutionSetupAndPolicyTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            config_json = {"test": "val"}
+            config_json = {"test": "val", "execution": {"hostHarness": "antigravity"},
+                           "hooks": {"deny": ["PreToolUse"]}}
             p = subprocess.Popen(
                 [sys.executable, str(SETUP_SCRIPT), "--config", json.dumps(config_json)],
                 cwd=root,

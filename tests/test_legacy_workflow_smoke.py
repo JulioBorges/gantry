@@ -501,6 +501,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
             "re",
             "result",
             "runlog",
+            "setup_host",
             "shlex",
             "shutil",
             "skipscan",

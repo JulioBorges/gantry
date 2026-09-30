@@ -108,7 +108,8 @@ class GantrySetupTests(unittest.TestCase):
             initial_bytes = b'{\n\t"unrelated" :  "key" \n}'
             settings_path.write_bytes(initial_bytes)
             
-            config_json = {"test": "val"}
+            config_json = {"test": "val", "execution": {"hostHarness": "claude-code"},
+                           "hooks": {"record": ["PostToolUse"], "deny": ["PreToolUse"]}}
             
             # First run
             p = subprocess.Popen(
@@ -215,8 +216,8 @@ class GantrySetupTests(unittest.TestCase):
             self.assertIn("plan", written["execution"]["roles"])
             self.assertEqual("codex", written["execution"]["roles"]["plan"]["harness"])
 
-    def test_setup_detects_codex_in_project_root_interactive(self) -> None:
-        """AC1: setup.py detects .codex in project root and offers Codex configuration interactively."""
+    def test_setup_requires_explicit_interactive_host_choice_even_with_codex_directory(self) -> None:
+        """Installation hints never replace the operator's explicit host choice."""
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
             (root / ".codex").mkdir()
@@ -229,9 +230,9 @@ class GantrySetupTests(unittest.TestCase):
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            stdout, _ = p.communicate(input="y\ny\n")
-            self.assertIn("Detected Codex in environment", stdout)
-            self.assertIn("Configure Codex as host harness? [Y/n]", stdout)
+            stdout, _ = p.communicate(input="codex\ny\n")
+            self.assertIn("directories are hints, not active host identity", stdout)
+            self.assertIn("Choose Host Harness [antigravity/claude-code/codex/opencode]", stdout)
             self.assertIn('"hostHarness": "codex"', stdout)
             
             config_path = root / ".gantry" / "config.json"
