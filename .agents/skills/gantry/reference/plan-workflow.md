@@ -189,7 +189,7 @@ async function validRoleResult(role, result) {
 }
 
 async function requestRole(role, prompt, options) {
-  const selection = (options && options.selection) || (A.roles && A.roles[role])
+  const selection = (options && options.selection) || (A.roles && (A.roles[role] || (role === 'planner' && A.roles.plan)))
   if (selection && selection.harness && selection.harness !== hostHarness) {
     const cwd = (options && options.cwd) || A.repoRoot
     const selectionJson = JSON.stringify(selection)

@@ -56,7 +56,7 @@ class WorkflowHostBindingTests(unittest.TestCase):
             (root / ".gantry/config.json").write_text('{"execution":{"hostHarness":"antigravity"}}')
             args = self.entry_args(root, "codex")
             args.update(commandMode="real", roles={
-                "planner": {"harness": "codex", "model": "native-custom", "effort": "medium"},
+                "plan": {"harness": "codex", "model": "native-custom", "effort": "medium"},
                 "plan-critic": {"harness": "claude-code", "model": "external-custom", "effort": "high"}},
                 dispatchResults=[{"exitCode": 0, "stdout": '{"acceptable":true,"problems":[],"frontierErrors":[]}', "stderr": ""}])
             run = self.run_workflow("plan-workflow.md", args)
