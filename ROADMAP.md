@@ -39,7 +39,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **48 / 52** |
+| Issues completed | **49 / 52** |
 | Specs completed | **8 / 9** |
 | Execution waves | **30** |
 
@@ -131,7 +131,7 @@ These four Issues are `ready-for-agent`; their implementation remains pending. S
 | 14 | `interactive-dashboard` | 5/5 | 17–20 |
 | 15 | `dashboard-lifecycle` | 3/3 | 20–21 |
 | 16 | `gantry-plan` | 4/4 | 20–22 |
-| 17 | `host-harness-resolution` | 0/4 | 27–29 |
+| 17 | `host-harness-resolution` | 1/4 | 27–29 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -314,9 +314,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`codex-tier#04`** — Update PRD, README, documentation, and Astro site harness matrix for Codex
   <br>↳ blocked by: codex-tier#03
 
-### Wave 27 — 0/1 done
+### Wave 27 — 1/1 done
 
-- [ ] **`host-harness-resolution#01`** — Diagnose current Host Harness and stale preferences _(no blockers)_
+- [x] **`host-harness-resolution#01`** — Diagnose current Host Harness and stale preferences _(no blockers)_
 
 ### Wave 28 — 0/2 done
 

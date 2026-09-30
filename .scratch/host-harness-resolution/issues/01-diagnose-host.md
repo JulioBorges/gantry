@@ -1,7 +1,7 @@
 # Diagnose current Host Harness and stale preferences
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `host-harness-resolution#01`
 Spec: `.scratch/host-harness-resolution/spec.md`
 Created: 2026-09-30
@@ -25,11 +25,11 @@ Expose read-only structured host resolution through the existing execution CLI. 
 
 ## Acceptance criteria
 
-- [ ] CLI subprocess tests demonstrate explicit supported selection, verified invocation evidence where available, stale saved preference, absent signals, conflicting signals and unsupported identifiers through structured output.
-- [ ] Binary presence, common skill directories, inherited environment hints and saved preferences alone never produce an automatically resolved host. Document evidence provenance and the explicit-selection path for each supported identity.
-- [ ] Diagnostics expose status, effective host when resolved, saved preference, mismatch and sanitized source identifiers without raw environment values or credentials.
-- [ ] Policy bytes, adapter files and machine-level Run state remain unchanged during diagnosis; malformed policy is reported without overwrite or fallback.
-- [ ] Public usage examples explain diagnostic exit behavior separately from blocking operational preflight and identify the limits of simulated evidence.
+- [x] CLI subprocess tests demonstrate explicit supported selection, verified invocation evidence where available, stale saved preference, absent signals, conflicting signals and unsupported identifiers through structured output.
+- [x] Binary presence, common skill directories, inherited environment hints and saved preferences alone never produce an automatically resolved host. Document evidence provenance and the explicit-selection path for each supported identity.
+- [x] Diagnostics expose status, effective host when resolved, saved preference, mismatch and sanitized source identifiers without raw environment values or credentials.
+- [x] Policy bytes, adapter files and machine-level Run state remain unchanged during diagnosis; malformed policy is reported without overwrite or fallback.
+- [x] Public usage examples explain diagnostic exit behavior separately from blocking operational preflight and identify the limits of simulated evidence.
 
 ## Blocked by
 
