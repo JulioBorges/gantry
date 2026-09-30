@@ -173,11 +173,11 @@ The npm command below installs the skills; it does not run repository setup:
 npx @julioborges/gantry add --agent codex --yes
 ```
 
-Setup actions executed:
-1. Detects `codex` CLI on `PATH` or `.codex` directory.
-2. Writes `execution.hostHarness: "codex"` and default role mappings (`gpt-5.2-codex`) to `.gantry/config.json`.
-3. Verifies model discovery via `python3 .agents/skills/gantry/scripts/discovery.py codex`.
-4. Injects Codex host orchestration rules and defense-in-depth git hooks into `AGENTS.md`.
+Normal setup actions proposed for approval:
+1. Uses the explicit `--harness codex` selection; binaries and directories do not choose adapters.
+2. Previews `execution.hostHarness: "codex"` and legacy default role mappings (`gpt-5.2-codex`) in `.gantry/config.json`.
+3. Checks Codex discovery and provides authentication guidance; discovery does not prove invocation identity.
+4. Updates only the marked Gantry section in `AGENTS.md` with Codex orchestration and defense-in-depth instructions after policy approval. It does not install native Codex hooks.
 
 ### Supported Capabilities
 
@@ -257,3 +257,38 @@ conflicting hints, stale preferences, invalid input, sanitized provenance and
 byte preservation of policy, adapters and state. They establish CLI behavior,
 not live automatic host detection. Real-host evidence must state that explicit
 selection was used when no trustworthy adapter exists.
+
+
+## Repair the saved Host Harness without changing roles
+
+Run host identity and repository preference are separate. Selecting Claude Code for the current Run
+while policy still names Antigravity does not overwrite a Codex Implementer or a custom Claude Code Critic.
+Use the read-only diagnosis and setup preview before choosing a repository change:
+
+```bash
+python3 .agents/skills/gantry/scripts/execution.py host --host claude-code --json
+python3 .agents/skills/gantry/scripts/setup.py --host-only --host claude-code
+python3 .agents/skills/gantry/scripts/setup.py --host-only --host claude-code --apply
+```
+
+`--host` represents the operator's confirmed invocation selection. `--apply` asks a separate `y/N`
+question after showing the actual proposed policy and adapter payload. It does not grant overwrite
+approval. Decline and EOF preserve every file. Only `execution.hostHarness` and Gantry-owned entries in
+that selected adapter can change; all role selections and other policy fields survive. Existing
+`hooks.record` and `hooks.deny` event arrays determine wiring. `PreToolUse` needs denial opt-in because
+its current guard cannot operate in a recording-only mode. Setup leaves `AGENTS.md` and other adapters
+untouched during host-only repair and repeated approved repair produces no further changes.
+
+Missing policy requires normal setup approval. For a full setup proposal, save reviewed JSON in a file
+and invoke `setup.py --config-file /absolute/path/to/proposed-policy.json` through structured arguments.
+Never construct shell commands by interpolating policy JSON or feed synthetic overwrite confirmation.
+The legacy normal `--harness codex` path may initialize roles when explicitly requested; host-only repair
+has no role preset path. A malformed policy or selected adapter stops before writes, including when
+normal setup was asked to overwrite policy.
+
+An ignored policy is a portability concern: setup prints a proposed tracked-policy migration and stops.
+Review effective ignore rules, apply the shown exceptions intentionally, verify policy is trackable and
+stage `.gantry/config.json`. Setup never changes `.gitignore`, global ignore rules or Git's local excludes.
+Codex and adapters without verified automatic setup wiring receive manual workflow and independent
+Critic guidance. Adapter preview and tests prove setup behavior, not live hook enforcement. Reproduce
+these paths using the [CLI transcript](evidence/host-harness-resolution/setup-repair.md).
