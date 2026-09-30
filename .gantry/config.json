@@ -1,0 +1,56 @@
+{
+  "artifacts": {
+    "specs": ".scratch/{slug}/spec.md",
+    "issues": ".scratch/{slug}/issues",
+    "adrs": "docs/adr",
+    "decisions": "docs/adr",
+    "context": "CONTEXT.md",
+    "issueTracker": "docs/agents/issue-tracker.md"
+  },
+  "templates": {
+    "dir": ".gantry/templates",
+    "headingMap": {}
+  },
+  "checks": [],
+  "git": {
+    "target": "main",
+    "prefix": "gantry/",
+    "issueBranch": "{prefix}{spec}-{number:02d}"
+  },
+  "delivery": {
+    "strategy": "branch-merge"
+  },
+  "hooks": {
+    "record": [],
+    "deny": []
+  },
+  "budget": {
+    "corrections": 2,
+    "contextShare": 0.15
+  },
+  "dashboard": {
+    "staleAfterSeconds": 900
+  },
+  "caveman": true,
+  "execution": {
+    "hostHarness": "codex",
+    "roles": {
+      "plan": {
+        "harness": "codex",
+        "model": "gpt-6.1-sol"
+      },
+      "implement": {
+        "harness": "codex",
+        "model": "gpt-6.1-sol"
+      },
+      "review": {
+        "harness": "codex",
+        "model": "gpt-6.1-sol"
+      },
+      "critic": {
+        "harness": "codex",
+        "model": "gpt-6.1-sol"
+      }
+    }
+  }
+}
