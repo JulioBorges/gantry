@@ -48,6 +48,72 @@ class ClaudeCodeHookWiringTests(unittest.TestCase):
                 self.assertTrue(command.startswith("python3 "), command)
                 self.assertIn("scripts/guard.py", command)
 
+    def test_installed_commands_emit_harness_json_with_project_directory_fallbacks(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="gantry hook ") as temp:
+            root = Path(temp) / "project with spaces"
+            shutil.copytree(HOOKS.parent, root / ".agents" / "skills" / "gantry")
+            clean_env = {k: v for k, v in os.environ.items()
+                         if not k.startswith("GANTRY_") and k not in {"CLAUDE_PROJECT_DIR", "CURSOR_PROJECT_DIR"}}
+            for source in ("CLAUDE_PROJECT_DIR", "CURSOR_PROJECT_DIR", "cwd", "empty"):
+                env = dict(clean_env)
+                if source in {"CLAUDE_PROJECT_DIR", "CURSOR_PROJECT_DIR"}:
+                    env[source] = str(root)
+                if source == "CURSOR_PROJECT_DIR":
+                    env["CLAUDE_PROJECT_DIR"] = ""
+                if source == "empty":
+                    env.update(CLAUDE_PROJECT_DIR="", CURSOR_PROJECT_DIR="")
+                cwd = Path(temp) if source in {"CLAUDE_PROJECT_DIR", "CURSOR_PROJECT_DIR"} else root
+                for tool, expected in (("Read", "allow"), ("Edit", "deny")):
+                    with self.subTest(source=source, tool=tool):
+                        command = next(iter_commands(self.settings["hooks"]["PreToolUse"]))
+                        result = subprocess.run(
+                            ["sh", "-c", command], cwd=cwd, env=env,
+                            input=json.dumps({"tool_name": tool, "tool_input": {"file_path": "ROADMAP.md"}}),
+                            text=True, capture_output=True,
+                        )
+                        self.assertEqual(0, result.returncode, result.stderr)
+                        response = json.loads(result.stdout)["hookSpecificOutput"]
+                        self.assertEqual("PreToolUse", response["hookEventName"])
+                        self.assertEqual(expected, response["permissionDecision"])
+                        if expected == "deny":
+                            self.assertIn("roadmap-protected", response["permissionDecisionReason"])
+
+            for event, entries in self.settings["hooks"].items():
+                if event == "PreToolUse":
+                    continue
+                with self.subTest(event=event):
+                    result = subprocess.run(
+                        ["sh", "-c", next(iter_commands(entries))], cwd=root, env=clean_env,
+                        input=json.dumps({"tool_name": "Read", "tool_input": {}, "session_id": "test-session"}),
+                        text=True, capture_output=True,
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual({}, json.loads(result.stdout))
+
+    def test_setup_replaces_legacy_commands_and_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            settings_path = root / ".claude" / "settings.json"
+            settings_path.parent.mkdir()
+            legacy = {"permissions": {"allow": ["Read"]}, "hooks": {
+                "PreToolUse": [{"hooks": [{"type": "command", "command":
+                    'python3 "$CLAUDE_PROJECT_DIR/.agents/skills/gantry/scripts/guard.py" PreToolUse --cwd "$CLAUDE_PROJECT_DIR"'}]}],
+                "SessionStart": [{"hooks": [{"type": "command", "command": "echo custom"}]}],
+            }}
+            settings_path.write_text(json.dumps(legacy), encoding="utf-8")
+            setup = HOOKS.parent / "scripts" / "setup.py"
+            for answer in ("y\n", "m\n"):
+                result = subprocess.run(
+                    [sys.executable, str(setup), "--config", "{}"], cwd=root,
+                    input=answer, text=True, capture_output=True,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                settings = json.loads(settings_path.read_text(encoding="utf-8"))
+                self.assertEqual(legacy["permissions"], settings["permissions"])
+                self.assertEqual(legacy["hooks"]["SessionStart"], settings["hooks"]["SessionStart"])
+                self.assertEqual(self.settings["hooks"]["PreToolUse"], settings["hooks"]["PreToolUse"])
+                self.assertIn("--format claude-code", next(iter_commands(settings["hooks"]["PreToolUse"])))
+
 
 class OpenCodeHookWiringTests(unittest.TestCase):
     def setUp(self) -> None:

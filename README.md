@@ -23,6 +23,22 @@ approve the plan and decide how the resulting Run is handed off.
 [Brownfield example](#brownfield-extend-an-existing-project) ·
 [Contribute](#contributing)
 
+## Release 1.1.2
+
+Claude Code hooks imported by Cursor now return the documented
+`hookSpecificOutput` JSON for both allowed and denied tool calls. Recording hooks
+return an empty JSON object. Generated commands resolve the project directory from
+`CLAUDE_PROJECT_DIR`, then `CURSOR_PROJECT_DIR`, then the current directory, including
+when either variable is empty. OpenCode and Antigravity keep their existing guard
+response formats. This fixes the shared hook protocol; it does not establish a new
+Cursor support tier or claim a live Cursor fixture result.
+
+After updating the installed skills, rerun `/gantry-setup` and choose **merge** for
+the existing policy to regenerate `.claude/settings.json`. Updating the skill files
+alone does not rewrite previously generated hook commands. Review the proposed
+policy and hook changes before applying them. Restart Cursor if it retains the old
+configuration.
+
 ## Release 1.1.1
 
 Frontend completion now accepts an executed, passing absolute check named

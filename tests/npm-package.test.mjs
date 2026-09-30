@@ -46,6 +46,26 @@ test('published tarball installs all four skills through npx', () => {
       assert.match(readFileSync(installed, 'utf8'), new RegExp(`name: ${skill}\\n`));
       assert.ok(realpathSync(installed).startsWith(realpathSync(temp)));
     }
+    const hookSettings = JSON.parse(readFileSync(
+      join(temp, '.agents/skills/gantry/hooks/claude-code.settings.json'), 'utf8',
+    ));
+    const hookCommand = hookSettings.hooks.PreToolUse[0].hooks[0].command;
+    const hookEnv = { ...process.env };
+    delete hookEnv.CLAUDE_PROJECT_DIR;
+    delete hookEnv.CURSOR_PROJECT_DIR;
+    for (const key of Object.keys(hookEnv)) {
+      if (key.startsWith('GANTRY_')) delete hookEnv[key];
+    }
+    for (const [tool, decision] of [['Read', 'allow'], ['Edit', 'deny']]) {
+      const hook = spawnSync('sh', ['-c', hookCommand], {
+        cwd: temp, env: hookEnv, encoding: 'utf8', timeout: 10_000,
+        input: JSON.stringify({ tool_name: tool, tool_input: { file_path: 'ROADMAP.md' } }),
+      });
+      assert.equal(hook.status, 0, hook.stderr);
+      const response = JSON.parse(hook.stdout).hookSpecificOutput;
+      assert.equal(response.hookEventName, 'PreToolUse');
+      assert.equal(response.permissionDecision, decision);
+    }
     const invalid = spawnSync('npx', ['--no-install', 'gantry', 'unknown'], { cwd: temp, encoding: 'utf8' });
     assert.equal(invalid.status, 1);
     assert.match(invalid.stderr, /Unknown command/);
