@@ -120,6 +120,38 @@ class HostSetupRepairTests(unittest.TestCase):
         self.assertIn('none (already matches)', repeat.stdout)
         self.assertEqual(first, (claude.read_bytes(), self.policy.read_bytes()))
 
+    def test_empty_unrelated_events_survive_owned_repair_and_idempotent_reapplication(self) -> None:
+        self.initial['hooks'] = {'record': ['PostToolUse'], 'deny': []}
+        self.policy.write_text(json.dumps(self.initial))
+        adapter = self.root / '.claude/settings.json'
+        adapter.parent.mkdir()
+        user = {'type': 'command', 'command': 'echo user-action'}
+        old_post = {'type': 'command', 'command': 'python3 "old/skills/gantry/scripts/guard.py" PostToolUse'}
+        adapter.write_text(json.dumps({'permissions': {'allow': ['Read']}, 'hooks': {
+            'CustomEvent': [],
+            'PreCompact': [],
+            'SubagentStart': [{'hooks': [{'type': 'command', 'command': 'python3 "old/skills/gantry/scripts/guard.py" SubagentStart'}]}],
+            'PostToolUse': [user, {'matcher': '*', 'hooks': [old_post, old_post]}],
+        }}))
+        applied = self.run_setup('--host-only', '--host', 'claude-code', '--apply', answer='y\n')
+        self.assertEqual(0, applied.returncode, applied.stderr)
+        self.assertEqual({
+            'permissions': {'allow': ['Read']},
+            'hooks': {
+                'CustomEvent': [],
+                'PreCompact': [],
+                'PostToolUse': [user, {'matcher': '*', 'hooks': [{
+                    'type': 'command',
+                    'command': 'python3 "$CLAUDE_PROJECT_DIR/.agents/skills/gantry/scripts/guard.py" PostToolUse --cwd "$CLAUDE_PROJECT_DIR"',
+                }]}],
+            },
+        }, json.loads(adapter.read_bytes()))
+        first = (adapter.read_bytes(), self.policy.read_bytes())
+        repeated = self.run_setup('--host-only', '--host', 'claude-code', '--apply', answer='y\n')
+        self.assertEqual(0, repeated.returncode, repeated.stderr)
+        self.assertIn('none (already matches)', repeated.stdout)
+        self.assertEqual(first, (adapter.read_bytes(), self.policy.read_bytes()))
+
     def test_normal_setup_does_not_choose_adapters_from_installations_or_directories(self) -> None:
         (self.root / '.agents/skills').mkdir(parents=True)
         (self.root / '.codex').mkdir()

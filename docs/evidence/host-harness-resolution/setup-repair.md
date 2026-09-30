@@ -59,6 +59,25 @@ than asserting installation heuristics. They retain their original merge, exact-
 unrelated-setting and command-wiring assertions. Static pack inventories include `setup_host.py` and
 continue inspecting every script's imports against standard library and explicit pack modules.
 
+### AC3 Critic correction: pre-existing empty events
+
+The public CLI regression
+`tests.test_host_setup_repair.HostSetupRepairTests.test_empty_unrelated_events_survive_owned_repair_and_idempotent_reapplication`
+initially failed because approved application deleted both `CustomEvent: []` and `PreCompact: []`.
+The repair deletes an event only when its originally nonempty array becomes empty after removing
+Gantry-owned entries. Already-empty arrays remain present.
+
+The focused host-only suite then passed all 13 tests (`Ran 13 tests in 2.645s`, `OK`). The new test
+asserts the complete resulting settings object: both empty arrays survive, a wholly Gantry-owned
+`SubagentStart` event is removed, the user `PostToolUse` command remains and duplicate old guard
+entries become one approved current guard. A second approved CLI application reports
+`none (already matches)` and preserves exact adapter and policy bytes. The executable-substitution
+review regression also passes unchanged. These checks run only in temporary repositories.
+
+```bash
+python3 -m unittest tests.test_host_setup_repair.HostSetupRepairTests.test_empty_unrelated_events_survive_owned_repair_and_idempotent_reapplication -v
+```
+
 ## Validation
 
 The full standard-library suite passed: `python3 -m unittest discover -v` ran 354 tests in 98.943s,

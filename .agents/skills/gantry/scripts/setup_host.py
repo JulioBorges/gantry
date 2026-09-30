@@ -180,8 +180,9 @@ def adapter_proposal(root: Path, host: str, policy: dict) -> tuple[dict[Path, st
     for event in list(hooks):
         if not isinstance(hooks[event], list):
             raise ValueError('Adapter hook events must contain arrays')
-        hooks[event] = without_owned(hooks[event])
-        if not hooks[event]:
+        original_entries = hooks[event]
+        hooks[event] = without_owned(original_entries)
+        if original_entries and not hooks[event]:
             del hooks[event]
     for event, entries in desired.items():
         if event in allowed:
