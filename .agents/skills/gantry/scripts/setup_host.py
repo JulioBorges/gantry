@@ -105,6 +105,11 @@ def owned_command(entry: dict) -> bool:
     command = entry.get('command')
     if entry.get('type') != 'command' or not isinstance(command, str):
         return False
+    # shlex does not evaluate shell expansions, but quoted substitutions become
+    # ordinary tokens. Preserve them conservatively before tokenization: a user
+    # action in a script path or option value is not a standalone Gantry hook.
+    if '$(' in command or '`' in command:
+        return False
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
         lexer.whitespace_split = True

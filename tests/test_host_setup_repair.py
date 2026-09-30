@@ -169,6 +169,39 @@ class HostSetupRepairTests(unittest.TestCase):
         self.assertEqual(settings['hooks']['PreToolUse'][0], final['hooks']['PreToolUse'][0])
         self.assertEqual(2, len(final['hooks']['PreToolUse']))
 
+    def test_executable_substitutions_survive_repair_and_repetition_without_execution(self) -> None:
+        adapter = self.root / '.claude/settings.json'
+        adapter.parent.mkdir()
+        commands = [
+            'python3 "skills/gantry/scripts/guard.py" PreToolUse --cwd "$(touch USER_ACTION; pwd)"',
+            'python3 "skills/gantry/scripts/guard.py" PreToolUse --cwd "`touch USER_ACTION; pwd`"',
+            'python3 "$(touch USER_ACTION; pwd)/skills/gantry/scripts/guard.py" PreToolUse',
+            'python3 "`touch USER_ACTION; pwd`/skills/gantry/scripts/guard.py" PreToolUse',
+        ]
+        static_guard = {'type': 'command', 'command': 'python3 "old/.agents/skills/gantry/scripts/guard.py" PreToolUse'}
+        environment_guard = {
+            'type': 'command',
+            'command': 'python3 "$CLAUDE_PROJECT_DIR/.agents/skills/gantry/scripts/guard.py" PreToolUse --cwd "$CLAUDE_PROJECT_DIR"',
+        }
+        for command in commands:
+            with self.subTest(command=command):
+                user = {'type': 'command', 'command': command, 'timeout': 19}
+                wrapper = {'matcher': 'Read', 'timeout': 23, 'hooks': [user]}
+                adapter.write_text(json.dumps({'hooks': {'PreToolUse': [
+                    {**wrapper, 'hooks': [user, static_guard, environment_guard, static_guard]},
+                ]}}))
+                applied = self.run_setup('--host-only', '--host', 'claude-code', '--apply', answer='y\n')
+                self.assertEqual(0, applied.returncode, applied.stderr)
+                hooks = json.loads(adapter.read_bytes())['hooks']['PreToolUse']
+                self.assertEqual([wrapper, {'matcher': '*', 'hooks': [environment_guard]}], hooks)
+                self.assertFalse((self.root / 'USER_ACTION').exists())
+                first = (adapter.read_bytes(), self.policy.read_bytes())
+                repeat = self.run_setup('--host-only', '--host', 'claude-code', '--apply', answer='y\n')
+                self.assertEqual(0, repeat.returncode, repeat.stderr)
+                self.assertIn('none (already matches)', repeat.stdout)
+                self.assertEqual(first, (adapter.read_bytes(), self.policy.read_bytes()))
+                self.assertFalse((self.root / 'USER_ACTION').exists())
+
     def test_record_only_policy_does_not_silently_enable_denial_hooks(self) -> None:
         self.initial['hooks'] = {'record': ['PreToolUse', 'PostToolUse'], 'deny': []}
         self.policy.write_text(json.dumps(self.initial))

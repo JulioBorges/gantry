@@ -33,6 +33,27 @@ Each behavior was developed through the approved public setup CLI seam before it
 - Recording-only approval test required explicit guidance that `PreToolUse` needs denial opt-in; guidance was added without installing denial-capable wiring.
 - CRLF preservation test exposed newline normalization; byte decoding for the policy and adapter input retained original line endings.
 
+### AC3 review repair: executable substitutions
+
+The public CLI regression
+`tests.test_host_setup_repair.HostSetupRepairTests.test_executable_substitutions_survive_repair_and_repetition_without_execution`
+initially failed all four subcases: `$(touch USER_ACTION; pwd)` and backtick substitutions in either
+`--cwd` or the guard script path were removed as though they were owned hooks. The minimal repair
+rejects ownership when the original command contains `$(` or a backtick, before shell tokenization.
+This is conservative even for escaped or literal syntax; it never evaluates shell expressions.
+Known static and environment-variable guard invocations remain recognizable.
+
+After the change, the same test passed (`Ran 1 test in 0.469s`, `OK`). Every subcase checks the exact
+user command and wrapper metadata after approved CLI application, deduplication of ordinary static
+and environment-variable guard entries, absence of the `USER_ACTION` marker, and exact adapter and
+policy bytes after a second approved application reporting `none (already matches)`.
+
+Reproduce this red/green regression's green result with:
+
+```bash
+python3 -m unittest tests.test_host_setup_repair.HostSetupRepairTests.test_executable_substitutions_survive_repair_and_repetition_without_execution -v
+```
+
 Existing setup regressions now select Claude Code/Antigravity and denial events intentionally rather
 than asserting installation heuristics. They retain their original merge, exact-byte idempotence,
 unrelated-setting and command-wiring assertions. Static pack inventories include `setup_host.py` and
