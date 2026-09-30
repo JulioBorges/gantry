@@ -23,7 +23,7 @@ approve the plan and decide how the resulting Run is handed off.
 [Brownfield example](#brownfield-extend-an-existing-project) ·
 [Contribute](#contributing)
 
-## Release 1.1.2
+## Hook compatibility
 
 Claude Code hooks now return the documented
 `hookSpecificOutput` JSON for both allowed and denied tool calls. Recording hooks
