@@ -383,8 +383,17 @@ def main() -> int:
             failures += code != 0
     result["verdict"] = "no_gates" if not result["gates"] else ("not_run" if not args.run else ("fail" if failures else "pass"))
     result["requirements"] = []
-    if result["git"]["frontend_touched"]:
-        result["requirements"].append("frontend files changed: AGENTS.md requires Playwright validation before completion")
+    browser_validated = any(
+        gate.get("name") == "browser-validation"
+        and gate.get("source") == ".gantry/config.json"
+        and gate.get("mode") == "absolute"
+        and gate.get("status") == "pass"
+        for gate in result["gates"]
+    )
+    if result["git"]["frontend_touched"] and not browser_validated:
+        result["requirements"].append(
+            "frontend files changed: a declared absolute browser-validation check must run and pass before completion"
+        )
     if not result["git"]["tree_clean"]:
         result["requirements"].append("working tree is dirty: uncommitted changes are not part of the delivery")
     if args.json:

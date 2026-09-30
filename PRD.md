@@ -113,6 +113,14 @@ Every agent's result must satisfy the role's result contract in `schemas/`. Wher
 
 Gates are declared in the repository policy by the setup skill (§10) and detected by `gates.py` where no policy exists (package scripts, pytest, Makefile targets, pre-commit). Each declared check is **absolute** (pass/fail by exit code — tests, secret scans) or **differential**: the policy names where `rule`, `file`, `line` and `message` live in the command's structured output, and `gates.py` runs the same command on the round's base and on the delivery, matches findings by rule, file and problem identity, and reports new, aggravated, resolved and preexisting findings. New or aggravated findings block; preexisting ones stay visible and do not. A check without a declared mapping is pass/fail only. `gates.py --json` is what the critic reads; it never paraphrases it. `no_gates` means not complete unless the issue's own criteria create the gates and the critic ran them. Changing a check's command or configuration simply changes what runs on both sides; there is no separate baseline-transition procedure.
 
+Frontend changes retain a completion requirement until an operator-declared absolute check named
+`browser-validation` actually executes and passes. Its command runs real browser validation or
+verifies recorded evidence against the delivered revision; the Critic independently examines both.
+A failed, skipped, unexecuted, differential or unrelated check cannot discharge this requirement.
+Gantry does not infer a Playwright mandate from an unread `AGENTS.md`; stricter repository tool
+requirements still apply. The gate verdict and the separate completion requirements keep their
+existing meanings.
+
 ## 8. Guard hooks
 
 Where the harness supports hooks, `guard.py` reads the harness's event payload on stdin and answers allow, deny or context; `hooks/` holds the wiring per harness (a `settings.json` fragment for Claude Code, a generated plugin for OpenCode, `hooks.json` for Codex). v1 invariants, each also enforced by prose and by the critic so that a harness without hooks loses enforcement, not semantics:

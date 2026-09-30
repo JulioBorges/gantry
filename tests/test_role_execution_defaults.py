@@ -40,7 +40,7 @@ class RoleExecutionSetupAndPolicyTests(unittest.TestCase):
                 "execution": {
                     "roles": {
                         "plan": {"harness": "antigravity", "model": "gemini-3.8-flash-medium"},
-                        "critic": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
+                        "critic": {"harness": "claude-code", "model": "claude-sonnet-5-5"},
                     }
                 }
             }
@@ -142,7 +142,7 @@ class RoleExecutionPreflightTests(unittest.TestCase):
         policy = {
             "execution": {
                 "roles": {
-                    "critic": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
+                    "critic": {"harness": "claude-code", "model": "claude-sonnet-5-5"},
                 }
             }
         }
@@ -181,7 +181,7 @@ class RoleExecutionPreflightTests(unittest.TestCase):
             issue_overrides={},
         )
         self.assertEqual("claude-code", res3["harness"])
-        self.assertEqual("claude-3-7-sonnet-20250219", res3["model"])
+        self.assertEqual("claude-sonnet-5-5", res3["model"])
 
         # Without policy, environment default wins
         res4 = execution.resolve_single_role(
@@ -218,7 +218,7 @@ class RoleExecutionPreflightTests(unittest.TestCase):
             "execution": {
                 "roles": {
                     "critic": {"harness": "antigravity", "model": "gemini-3.1-pro-high"},
-                    "learner": {"harness": "claude-code", "model": "claude-3-7-sonnet-20250219"},
+                    "learner": {"harness": "claude-code", "model": "claude-sonnet-5-5"},
                 }
             }
         }

@@ -671,7 +671,11 @@ budget ceiling is two attempts and must never be raised.
 Run \`python3 ${scripts}/acceptance.py ${A.repoRoot}/${issue.path} --json\` and prove every criterion with
 code plus a real test or required command output. Run
 \`python3 ${scripts}/gates.py --run --diff-base ${A.baseRef} --cwd "$(pwd)" --json\`; parse its JSON verdict
-and requirements. Return that parsed result unchanged in \`gateResult\`; derive \`gatesVerdict\` and
+and requirements. For frontend changes, a declared absolute check named browser-validation must
+execute successfully. Its command must perform real browser validation or verify recorded browser
+evidence against this delivery. Independently inspect that command and its evidence; reject no-op
+commands, stale receipts, fabricated evidence and unmet stricter repository browser requirements.
+Do not clear a pending frontend requirement by prose or override. Return that parsed result unchanged in \`gateResult\`; derive \`gatesVerdict\` and
 \`gateFailures\` from it, never a prose paraphrase. \`no_gates\` and \`not_run\` are not passing results.
 Require a clean tree and commits after ${A.baseRef}. Inspect the diff for skipped,
 disabled or mock-replaced tests, TODO/FIXME/not implemented text, Status/checkbox/ROADMAP edits, and scope
