@@ -1,7 +1,7 @@
 # Bind new workflows to a resolved Run host
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `host-harness-resolution#02`
 Spec: `.scratch/host-harness-resolution/spec.md`
 Created: 2026-09-30
@@ -28,12 +28,12 @@ Keep the initial package within the existing context budget. Locate the relevant
 
 ## Acceptance criteria
 
-- [ ] Both entry paths reject unresolved or unsupported host identity before creating Run worktrees or invoking role agents; no implicit Claude Code or saved-policy fallback remains in the affected routing paths.
-- [ ] A selected Claude Code host with a saved Antigravity preference uses Claude Code capability metadata, reports the mismatch and leaves repository policy unchanged.
-- [ ] A resolved Codex host with a selected Claude Code Critic takes the existing external dispatch path, preserving model/effort and enforcing the Result Contract. A same-host selection takes the intended native path.
-- [ ] All base and derived role selections, Issue/Run overrides, custom policy fields and independent readiness/availability checks retain their semantics.
-- [ ] Concurrent new Runs retain separate resolved-host records; diagnostics and Run metadata contain only sanitized identity/provenance and no secrets.
-- [ ] Existing workflow smoke/fixture seams exercise entry, routing and no-work-on-failure; include sanitized evidence of one real stale-preference invocation and distinguish it from mocked dispatch coverage.
+- [x] Both entry paths reject unresolved or unsupported host identity before creating Run worktrees or invoking role agents; no implicit Claude Code or saved-policy fallback remains in the affected routing paths.
+- [x] A selected Claude Code host with a saved Antigravity preference uses Claude Code capability metadata, reports the mismatch and leaves repository policy unchanged.
+- [x] A resolved Codex host with a selected Claude Code Critic takes the existing external dispatch path, preserving model/effort and enforcing the Result Contract. A same-host selection takes the intended native path.
+- [x] All base and derived role selections, Issue/Run overrides, custom policy fields and independent readiness/availability checks retain their semantics.
+- [x] Concurrent new Runs retain separate resolved-host records; diagnostics and Run metadata contain only sanitized identity/provenance and no secrets.
+- [x] Existing workflow smoke/fixture seams exercise entry, routing and no-work-on-failure; include sanitized evidence of one real stale-preference invocation and distinguish it from mocked dispatch coverage.
 
 ## Blocked by
 
