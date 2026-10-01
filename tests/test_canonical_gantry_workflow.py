@@ -129,6 +129,8 @@ const args = {json.dumps(args)};
 const calls = [];
 const commandCalls = [];
 const hostCalls = [];
+const prompts = [];
+const prompt = async message => {{ prompts.push(message); return (args.promptAnswers || []).shift() || "no"; }};
 let sequence = 0;
 const defaultIssueWorktree = args.issueWorktree || (
   args.isolate && args.issues && args.issues[0]
@@ -240,13 +242,13 @@ const log = () => {{}};
 let result = null;
 let error = null;
 try {{
-  result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'runCommand', source)(
-    args, agent, parallel, pipeline, phase, log, runCommand,
+  result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'runCommand', 'prompt', source)(
+    args, agent, parallel, pipeline, phase, log, runCommand, args.promptAnswers ? prompt : undefined,
   );
 }} catch (err) {{
   error = err && err.message ? err.message : String(err);
 }}
-process.stdout.write(JSON.stringify({{ result, calls, commandCalls, hostCalls, error }}));
+process.stdout.write(JSON.stringify({{ result, calls, commandCalls, hostCalls, prompts, error }}));
 """
         result = subprocess.run(
             ["node", "--input-type=module", "--eval", driver],
@@ -1504,7 +1506,7 @@ Scenario: greet a user
                     "round-workflow.md",
                     {
                         "round": round_number,
-                        "issues": [{"ref": "isomark#01", "path": str(issue.relative_to(root)), "title": "Isolated marker", "specPath": ".scratch/isomark/spec.md"}],
+                        "issues": [] if is_last_round else [{"ref": "isomark#01", "path": str(issue.relative_to(root)), "title": "Isolated marker", "specPath": ".scratch/isomark/spec.md"}],
                         "models": {"implement": "implement", "review": "review", "critic": "critic"},
                         "branch": "gantry/isomark",
                         "baseRef": base_ref,
@@ -1524,7 +1526,7 @@ Scenario: greet a user
                         "tier": "reference",
                         "isFirstRound": is_first_round,
                         "isLastRound": is_last_round,
-                        **({"priorRun": prior_run} if prior_run else {}),
+                        **({"priorRun": prior_run} if prior_run and not is_last_round else {}),
                         # Refuted, so the Issue keeps its worktree into the next round instead of
                         # being merged and completed.
                         "criticResult": {
@@ -1570,7 +1572,7 @@ Scenario: greet a user
 
                 last = invoke(
                     False, True, 2,
-                    {"issue": "isomark#01", "worktree": str(issue_worktree), "branch": issue_branch, "correctionsSpent": 0},
+                    {"run": run_id, "issue": "isomark#01", "worktree": str(issue_worktree), "branch": issue_branch, "correctionsSpent": 0},
                 )
                 self.assertIsNone(last["error"], last["error"])
                 self.assertFalse(marker.exists(), "the Issue worktree's marker is cleared when the Run ends")
@@ -1982,8 +1984,15 @@ Scenario: greet a user
 
             state_root = Path(state_dir)
             unit_id = "efefefefefef"
-            run_id = "run-policydrift-2"
+            run_id = "run-policydrift-1"
 
+            self.append_runlog_event(state_root, unit_id, run_id, {
+                "ts": "2026-09-13T09:00:00Z", "run": run_id, "event": "run.started",
+                "data": {"repositoryRoot": str(root), "policyHash": "deadbeef", "tier": "reference", "staleAfterSeconds": 900,
+                         "host": {"effectiveHost": "claude-code"}},
+            })
+
+            subprocess.run(["git", "switch", "-qc", "gantry/policydrift"], cwd=root, check=True)
             run = self.run_workflow(
                 "round-workflow.md",
                 {
@@ -2004,6 +2013,7 @@ Scenario: greet a user
                     "unitId": unit_id,
                     "stateRoot": str(state_root),
                     "tier": "reference",
+                    "promptAnswers": ["yes"],
                     "priorRun": {
                         "run": "run-policydrift-1",
                         "worktree": str(root),
@@ -2027,7 +2037,7 @@ Scenario: greet a user
             )
             started = events[0]
             changed = next(event for event in events if event["event"] == "policy.changed")
-            self.assertEqual(started["data"]["policyHash"], changed["data"]["policyHash"])
+            self.assertNotEqual(started["data"]["policyHash"], changed["data"]["policyHash"])
             self.assertNotEqual("deadbeef", changed["data"]["policyHash"])
 
     def test_round_workflow_resume_emits_run_resumed_and_preserves_worktree_and_corrections(self) -> None:
@@ -2049,7 +2059,20 @@ Scenario: greet a user
 
             state_root = Path(state_dir)
             unit_id = "cdcdcdcdcdcd"
-            run_id = "run-resume-2"
+            run_id = "run-resume-1"
+
+            self.append_runlog_event(state_root, unit_id, run_id, {
+                "ts": "2026-09-13T09:00:00Z", "run": run_id, "event": "run.started",
+                "data": {"repositoryRoot": str(root), "policyHash": "deadbeef", "tier": "reference", "staleAfterSeconds": 900,
+                         "host": {"effectiveHost": "claude-code"}},
+            })
+            self.append_runlog_event(state_root, unit_id, run_id, {
+                "ts": "2026-09-13T09:00:01Z", "run": run_id, "event": "refutation", "issue": "resume#01", "data": {},
+            })
+            self.append_runlog_event(state_root, unit_id, run_id, {
+                "ts": "2026-09-13T09:00:02Z", "run": run_id, "event": "phase.started", "issue": "resume#01", "phase": "Implement",
+                "data": {"worktree": str(issue_worktree)},
+            })
 
             try:
                 run = self.run_workflow(
@@ -2072,6 +2095,7 @@ Scenario: greet a user
                         "unitId": unit_id,
                         "stateRoot": str(state_root),
                         "tier": "reference",
+                        "promptAnswers": ["yes"],
                         "priorRun": {
                             "run": "run-resume-1",
                             "worktree": str(issue_worktree),
@@ -2107,7 +2131,7 @@ Scenario: greet a user
                 resumed = next(event for event in events if event["event"] == "run.resumed")
                 self.assertEqual("run-resume-1", resumed["data"]["priorRun"])
                 self.assertEqual(str(issue_worktree), resumed["data"]["worktree"])
-                refutation = next(event for event in events if event["event"] == "refutation")
+                refutation = next(event for event in reversed(events) if event["event"] == "refutation")
                 self.assertEqual("resume#01", refutation["issue"])
                 self.assertEqual(["criterion one remains unproven"], refutation["data"]["refutations"])
                 blocked = next(event for event in events if event["event"] == "issue.blocked")
@@ -2196,7 +2220,7 @@ Scenario: greet a user
             state_root = Path(state_dir)
             unit_id = "abcabcabcabc"
             prior_run_id = "run-priorq-1"
-            now_run_id = "run-priorq-2"
+            now_run_id = prior_run_id
 
             try:
                 self.append_runlog_event(state_root, unit_id, prior_run_id, {
@@ -2275,6 +2299,7 @@ Scenario: greet a user
                         "tier": "reference",
                         "issueBranch": issue_branch,
                         "issueWorktree": str(issue_worktree),
+                        "promptAnswers": ["yes"],
                         "priorRun": {
                             "run": match["run"],
                             "worktree": match["worktree"],
@@ -2359,7 +2384,7 @@ Scenario: greet a user
             state_root = Path(state_dir)
             unit_id = "112233445566"
             prior_run_id = "run-greeting-prior"
-            now_run_id = "run-greeting-now"
+            now_run_id = prior_run_id
 
             try:
                 # A genuinely interrupted Run: greeting#02 reached the Implement phase in worktree W and
@@ -2423,6 +2448,7 @@ Scenario: greet a user
                         "tier": "reference",
                         "issueBranch": issue_branch,
                         "issueWorktree": str(issue_worktree),
+                        "promptAnswers": ["yes"],
                         "priorRun": {
                             "run": match["run"], "worktree": match["worktree"], "issue": match["issue"],
                             "correctionsSpent": corrections_spent, "policyHash": match["policyHash"],
@@ -2449,8 +2475,8 @@ Scenario: greet a user
                 self.assertEqual(prior_run_id, resumed["data"]["priorRun"])
                 self.assertEqual(str(issue_worktree), resumed["data"]["worktree"])
                 self.assertEqual("greeting#02", resumed["data"]["issue"])
-                self.assertEqual(1, resumed["data"]["correctionsSpent"])
-                refutation = next(event for event in events if event["event"] == "refutation")
+                self.assertNotIn("correctionsSpent", resumed["data"])
+                refutation = next(event for event in reversed(events) if event["event"] == "refutation")
                 self.assertIn("cli.py prints to stderr", refutation["data"]["refutations"])
                 blocked = next(event for event in events if event["event"] == "issue.blocked")
                 self.assertEqual("greeting#02", blocked["issue"])
@@ -2554,7 +2580,7 @@ Scenario: greet a user
             self.assertIn("subagent.started", [event["event"] for event in critic_events])
             self.assertNotIn("subagent.stopped", [event["event"] for event in critic_events])
 
-    def test_round_workflow_chained_resume_accumulates_corrections_spent_across_runs(self) -> None:
+    def test_round_workflow_chained_resume_preserves_corrections_in_same_run(self) -> None:
         # Covers feedback item 3: a chain of three Runs, each resuming the last, where the documented
         # derivation rule (`run.resumed.data.correctionsSpent` plus refutations that actually started a
         # correction pass) must be applied fresh to each Run's own log and carried forward explicitly.
@@ -2600,9 +2626,9 @@ Scenario: greet a user
                 run1_corrections = self.run_corrections_command(state_root, unit_id, run1_id, "chained#01")
                 self.assertEqual(1, run1_corrections)
 
-                # Run2 resumes Run1, carrying the derived correctionsSpent forward explicitly, and its
+                # A second invocation resumes the same Run with the derived count preserved, and its
                 # Critic refutes twice before the correction ceiling (budget 2) is reached.
-                run2_id = "run-chained-2"
+                run2_id = run1_id
                 run2 = self.run_workflow(
                     "round-workflow.md",
                     {
@@ -2625,6 +2651,7 @@ Scenario: greet a user
                         "tier": "reference",
                         "issueBranch": issue_branch,
                         "issueWorktree": str(issue_worktree),
+                        "promptAnswers": ["yes"],
                         "priorRun": {
                             "run": run1_id,
                             "worktree": str(issue_worktree),
@@ -2657,7 +2684,7 @@ Scenario: greet a user
 
                 run2_events = self.read_run_log_events(state_root, unit_id, run2_id)
                 resumed2 = next(event for event in run2_events if event["event"] == "run.resumed")
-                self.assertEqual(1, resumed2["data"]["correctionsSpent"])
+                self.assertNotIn("correctionsSpent", resumed2["data"])
                 self.assertEqual(run1_id, resumed2["data"]["priorRun"])
                 self.assertEqual("chained#01", resumed2["data"]["issue"])
 
@@ -2666,9 +2693,9 @@ Scenario: greet a user
                 blocked2 = next(event for event in run2_events if event["event"] == "issue.blocked")
                 self.assertEqual(2, blocked2["data"]["corrections"])
 
-                # Run3 resumes Run2 with the derived ceiling already spent: zero correction passes,
-                # exactly one initial Implement call and one Critic call, then the Issue blocks again.
-                run3_id = "run-chained-3"
+                # A third invocation finds an unstarted correction with the ceiling already spent:
+                # no role work can begin and no replacement Run is created.
+                run3_id = run1_id
                 run3 = self.run_workflow(
                     "round-workflow.md",
                     {
@@ -2691,6 +2718,7 @@ Scenario: greet a user
                         "tier": "reference",
                         "issueBranch": issue_branch,
                         "issueWorktree": str(issue_worktree),
+                        "promptAnswers": ["yes"],
                         "priorRun": {
                             "run": run2_id,
                             "worktree": str(issue_worktree),
@@ -2707,17 +2735,11 @@ Scenario: greet a user
                     },
                 )
 
-                delivery3 = run3["result"]["results"][0]
-                self.assertEqual("refuted", delivery3["outcome"])
-                self.assertEqual(2, delivery3["corrections"])
-                implement_calls_run3 = [call for call in run3["calls"] if call["label"].startswith("implement:")]
-                critic_calls_run3 = [call for call in run3["calls"] if call["label"].startswith("critic:")]
-                self.assertEqual(1, len(implement_calls_run3))
-                self.assertEqual(1, len(critic_calls_run3))
-
-                run3_events = self.read_run_log_events(state_root, unit_id, run3_id)
-                blocked3 = next(event for event in run3_events if event["event"] == "issue.blocked")
-                self.assertEqual(2, blocked3["data"]["corrections"])
+                self.assertIn("correction budget exhausted", run3["error"])
+                self.assertEqual([], run3["calls"])
+                self.assertEqual([], run3["commandCalls"])
+                self.assertEqual(2, self.run_corrections_command(state_root, unit_id, run1_id, "chained#01"))
+                self.assertEqual([run1_id + ".jsonl"], [path.name for path in (state_root / unit_id / "runs").glob("*.jsonl")])
             finally:
                 subprocess.run(["git", "worktree", "remove", "--force", str(issue_worktree)], cwd=root, check=False)
 

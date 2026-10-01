@@ -763,7 +763,7 @@ class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):
             log_path = log_dir / f"{run_id}.jsonl"
             # Simulate prior round with paused issue
             log_path.write_text(
-                json.dumps({"ts": "2026-09-16T00:00:00Z", "run": run_id, "event": "run.started", "data": {"repositoryRoot": str(root), "policyHash": "12345678", "tier": "reference", "staleAfterSeconds": 900}}) + "\n"
+                json.dumps({"ts": "2026-09-16T00:00:00Z", "run": run_id, "event": "run.started", "data": {"repositoryRoot": str(root), "policyHash": "12345678", "tier": "reference", "staleAfterSeconds": 900, "host": {"effectiveHost": "claude-code"}}}) + "\n"
                 + json.dumps({"ts": "2026-09-16T00:00:01Z", "run": run_id, "event": "round.started", "data": {"round": 1}}) + "\n"
                 + json.dumps({"ts": "2026-09-16T00:00:02Z", "run": run_id, "event": "issue.paused", "issue": "rec#02", "data": {"role": "critic", "reason": "execution_unavailable"}}) + "\n"
                 + json.dumps({"ts": "2026-09-16T00:00:03Z", "run": run_id, "event": "round.finished", "data": {"round": 1}}) + "\n",
@@ -840,12 +840,21 @@ class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):
             log_dir.mkdir(parents=True)
             log_path = log_dir / f"{run_id}.jsonl"
             log_path.write_text(
-                json.dumps({"ts": "2026-09-16T00:00:00Z", "run": run_id, "event": "run.started", "data": {"repositoryRoot": str(root), "policyHash": "12345678", "tier": "reference", "staleAfterSeconds": 900}}) + "\n"
+                json.dumps({"ts": "2026-09-16T00:00:00Z", "run": run_id, "event": "run.started", "data": {"repositoryRoot": str(root), "policyHash": "12345678", "tier": "reference", "staleAfterSeconds": 900, "host": {"effectiveHost": "claude-code"}}}) + "\n"
                 + json.dumps({"ts": "2026-09-16T00:00:01Z", "run": run_id, "event": "round.started", "data": {"round": 1}}) + "\n"
                 + json.dumps({"ts": "2026-09-16T00:00:02Z", "run": run_id, "event": "issue.paused", "issue": "rec#02", "data": {"role": "critic", "reason": "execution_unavailable"}}) + "\n"
                 + json.dumps({"ts": "2026-09-16T00:00:03Z", "run": run_id, "event": "round.finished", "data": {"round": 1}}) + "\n",
                 encoding="utf-8",
             )
+
+            # This same Run has actually started one correction before pausing. Recovery must
+            # derive the spent count from these events rather than trust the caller's hint.
+            for event in (
+                {"ts": "2026-09-16T00:00:04Z", "run": run_id, "event": "refutation", "issue": "rec#02", "data": {"refutations": ["prior correction"]}},
+                {"ts": "2026-09-16T00:00:05Z", "run": run_id, "event": "phase.started", "issue": "rec#02", "phase": "Implement", "data": {"worktree": str(root)}},
+            ):
+                appended = subprocess.run([sys.executable, str(SCRIPTS / "runlog.py"), "append", unit_id, run_id, "--state-root", str(state_root)], input=json.dumps(event), text=True, capture_output=True)
+                self.assertEqual(0, appended.returncode, appended.stderr)
 
             # 1. Invalid replacement is rejected
             invalid_run = self.run_workflow(

@@ -839,6 +839,10 @@ def main() -> int:
 
     host_parser = subparsers.add_parser("host", help="read-only Host Harness diagnosis")
     host_parser.add_argument("--host", help="operator-confirmed invocation host")
+    host_parser.add_argument("--unit-id", help="execution unit of the existing Run")
+    host_parser.add_argument("--issue", help="Issue whose existing correction count must be preserved")
+    host_parser.add_argument("--run-id", help="existing Run to compare without creating or changing state")
+    host_parser.add_argument("--state-root", help="override machine-local Run state")
     host_parser.add_argument("--cwd", default=".", help="repository root path")
     host_parser.add_argument("--json", action="store_true", help="output JSON")
     host_parser.add_argument("--require-resolved", action="store_true", help="fail closed at workflow entry and include actual host capabilities")
@@ -893,6 +897,40 @@ def main() -> int:
             except (OSError, ValueError):
                 diagnosis.update(status="invalid", effectiveHost=None)
                 diagnosis["diagnostics"] = ["Host capability declaration is unavailable or invalid; no fallback was used."]
+        if args.run_id and diagnosis["status"] == "resolved":
+            try:
+                if not runlog.RUN_ID_RE.fullmatch(args.run_id):
+                    raise runlog.EventError("invalid Run identity")
+                unit = args.unit_id or runlog.unit_id(root)
+                if not runlog.UNIT_ID_RE.fullmatch(unit):
+                    raise runlog.EventError("invalid execution unit")
+                path = runlog.run_log_path(runlog.state_root(args.state_root), unit, args.run_id)
+                events = runlog.read_valid_events(path)
+                if not events or events[0]["event"] != "run.started" or any(e["event"] in runlog.FINISHED_EVENTS for e in events):
+                    raise runlog.EventError("existing unfinished Run required")
+                previous = events[0].get("data", {}).get("host", {}).get("effectiveHost")
+                for event in events[1:]:
+                    transition = event.get("data", {}).get("hostTransition")
+                    if event["event"] == "run.resumed" and transition:
+                        previous = transition["newHost"]
+                if previous is not None and previous not in SUPPORTED_HARNESSES:
+                    raise runlog.EventError("unsupported prior host metadata")
+                current = diagnosis["effectiveHost"]
+                diagnosis["resume"] = {"runId": args.run_id, "previousHost": previous, "effectiveHost": current,
+                    "decision": "establishment-required" if previous is None else "unchanged" if previous == current else "transition-required"}
+                if args.issue:
+                    if not runlog.ISSUE_RE.fullmatch(args.issue):
+                        raise runlog.EventError("invalid Issue reference")
+                    diagnosis["resume"]["correctionsSpent"] = runlog.derive_corrections_spent(events, args.issue)
+                    issue_events = [event for event in events if event.get("issue") == args.issue]
+                    last_refutation = max((index for index, event in enumerate(issue_events) if event["event"] == "refutation"), default=-1)
+                    diagnosis["resume"]["correctionPending"] = last_refutation >= 0 and not any(
+                        event["event"] == "phase.started" and event.get("phase") == "Implement" and not event.get("data", {}).get("recovery")
+                        for event in issue_events[last_refutation + 1:])
+
+            except (runlog.EventError, AttributeError, KeyError, TypeError):
+                diagnosis.update(status="invalid", effectiveHost=None)
+                diagnosis["diagnostics"] = ["Cannot inspect an existing unfinished Run's host metadata; no fallback was used."]
         print(json.dumps(diagnosis, indent=2) if args.json else diagnosis)
         return 1 if diagnosis["status"] == "invalid" or (args.require_resolved and diagnosis["status"] != "resolved") else 0
     policy = resolve_policy(root)

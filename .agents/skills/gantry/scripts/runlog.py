@@ -248,6 +248,17 @@ def validate_event(payload: object) -> dict:
         require_string(data["policyHash"], "data.policyHash")
         require_string(data["tier"], "data.tier")
         require_positive_integer(data["staleAfterSeconds"], "data.staleAfterSeconds")
+    elif event == "run.resumed" and isinstance(data, dict) and "hostTransition" in data:
+        transition = data["hostTransition"]
+        if not isinstance(transition, dict) or set(transition) != {"oldHost", "newHost", "confirmationSource", "tier"}:
+            raise EventError("hostTransition must contain only oldHost, newHost, confirmationSource and tier")
+        hosts = {"antigravity", "claude-code", "codex", "opencode"}
+        if (transition["oldHost"] is not None and (not isinstance(transition["oldHost"], str) or transition["oldHost"] not in hosts)) or not isinstance(transition["newHost"], str) or transition["newHost"] not in hosts:
+            raise EventError("hostTransition requires supported host identities")
+        if transition["confirmationSource"] != "invocation:operator-approved":
+            raise EventError("hostTransition requires sanitized operator confirmation provenance")
+        if not isinstance(transition["tier"], str) or transition["tier"] not in {"reference", "supported", "compatible"}:
+            raise EventError("hostTransition requires a declared support tier")
     elif event in ROUND_EVENTS:
         if not isinstance(data, dict) or "round" not in data:
             raise EventError(f"{event} requires data.round")
@@ -424,6 +435,7 @@ def derive_corrections_spent(events: list[dict], issue_ref: str) -> int:
             later_event["event"] == "phase.started"
             and later_event.get("issue") == issue_ref
             and later_event.get("phase") == "Implement"
+            and not later_event.get("data", {}).get("recovery")
             for later_event in later
         ):
             started_corrections += 1
@@ -497,6 +509,15 @@ def main() -> int:
                 raise EventError("a Run log already starts for this run-id")
             if not path.exists() and event["event"] != "run.started":
                 raise EventError("the first event of a Run must be run.started")
+            transition = event.get("data", {}).get("hostTransition")
+            if transition:
+                events = read_valid_events(path)
+                previous = events[0].get("data", {}).get("host", {}).get("effectiveHost") if events else None
+                for prior in events[1:]:
+                    if prior["event"] == "run.resumed" and prior.get("data", {}).get("hostTransition"):
+                        previous = prior["data"]["hostTransition"]["newHost"]
+                if not events or any(e["event"] in FINISHED_EVENTS for e in events) or transition["oldHost"] != previous:
+                    raise EventError("host transition must match the existing unfinished Run's host")
             append_event(path, event)
             return 0
         if args.command == "corrections":
