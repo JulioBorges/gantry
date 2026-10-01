@@ -41,6 +41,18 @@ alone does not rewrite previously generated hook commands. Review the proposed
 policy and hook changes before applying them. Restart Cursor if it retains the old
 configuration.
 
+## Release 1.2.0
+
+Gantry resolves the current invocation's Host Harness independently from the
+configured role executors. Setup diagnoses missing or incompatible host evidence
+and requires explicit selection when the invocation cannot establish its host.
+Research honors its selected executor while preserving textual results.
+
+Recovery preserves the same Run, role selections, worktree and correction budgets.
+Changing the Host Harness requires explicit operator approval and records sanitized
+transition evidence. Claude Code guard hooks use the native JSON response format,
+and repeated setup recognizes the current hook commands without duplicating them.
+
 ## Release 1.1.1
 
 Frontend completion now accepts an executed, passing absolute check named
