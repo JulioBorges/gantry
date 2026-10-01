@@ -153,6 +153,10 @@ class HostSetupRepairTests(unittest.TestCase):
         self.assertEqual(first, (adapter.read_bytes(), self.policy.read_bytes()))
 
     def test_normal_setup_does_not_choose_adapters_from_installations_or_directories(self) -> None:
+        # With no saved host selection, installed tools and directories alone
+        # must not choose which adapter normal setup changes.
+        self.initial['execution'].pop('hostHarness')
+        self.policy.write_text(json.dumps(self.initial))
         (self.root / '.agents/skills').mkdir(parents=True)
         (self.root / '.codex').mkdir()
         result = self.run_setup('--config', '{"unknown": "new"}', answer='m\n')

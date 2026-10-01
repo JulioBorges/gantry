@@ -118,7 +118,8 @@ def normal_setup(root: Path, args: argparse.Namespace) -> int:
     for mode, candidate in candidates.items():
         print('Proposed .gantry/config.json:' + (f' ({mode})' if existing is not None else ''))
         print(json.dumps(candidate, indent=2))
-        writes, guidance = adapter_proposal(root, host, candidate) if host else ({}, ['No selected host adapter; existing adapters remain unchanged.'])
+        candidate_host = candidate.get('execution', {}).get('hostHarness')
+        writes, guidance = adapter_proposal(root, candidate_host, candidate) if candidate_host else ({}, ['No selected host adapter; existing adapters remain unchanged.'])
         proposals[mode] = writes
         for message in guidance:
             print(message)

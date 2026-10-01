@@ -106,7 +106,7 @@ class ClaudeCodeHookWiringTests(unittest.TestCase):
                 "SessionStart": [{"hooks": [{"type": "command", "command": "echo custom"}]}],
             }}
             settings_path.write_text(json.dumps(legacy), encoding="utf-8")
-            policy = {"execution": {"hostHarness": "opencode", "roles": {
+            policy = {"hooks": {"deny": ["PreToolUse"]}, "execution": {"hostHarness": "claude-code", "roles": {
                 "implement": {"harness": "codex", "model": "gpt-6.1-sol"},
             }}}
             policy_path = root / ".gantry" / "config.json"
