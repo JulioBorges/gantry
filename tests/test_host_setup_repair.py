@@ -142,7 +142,7 @@ class HostSetupRepairTests(unittest.TestCase):
                 'PreCompact': [],
                 'PostToolUse': [user, {'matcher': '*', 'hooks': [{
                     'type': 'command',
-                    'command': 'python3 "$CLAUDE_PROJECT_DIR/.agents/skills/gantry/scripts/guard.py" PostToolUse --cwd "$CLAUDE_PROJECT_DIR"',
+                    'command': 'python3 "${CLAUDE_PROJECT_DIR:-$PWD}/.agents/skills/gantry/scripts/guard.py" PostToolUse --cwd "${CLAUDE_PROJECT_DIR:-$PWD}" --format claude-code',
                 }]}],
             },
         }, json.loads(adapter.read_bytes()))
@@ -213,7 +213,7 @@ class HostSetupRepairTests(unittest.TestCase):
         static_guard = {'type': 'command', 'command': 'python3 "old/.agents/skills/gantry/scripts/guard.py" PreToolUse'}
         environment_guard = {
             'type': 'command',
-            'command': 'python3 "$CLAUDE_PROJECT_DIR/.agents/skills/gantry/scripts/guard.py" PreToolUse --cwd "$CLAUDE_PROJECT_DIR"',
+            'command': 'python3 "${CLAUDE_PROJECT_DIR:-$PWD}/.agents/skills/gantry/scripts/guard.py" PreToolUse --cwd "${CLAUDE_PROJECT_DIR:-$PWD}" --format claude-code',
         }
         for command in commands:
             with self.subTest(command=command):

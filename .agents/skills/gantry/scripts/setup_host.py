@@ -136,6 +136,8 @@ def owned_command(entry: dict) -> bool:
         if option == '--cwd' and options:
             options.pop(0)
             continue
+        if option == '--format' and options and options.pop(0) == 'claude-code':
+            continue
         return False
     return True
 
