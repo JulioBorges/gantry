@@ -186,3 +186,74 @@ Setup actions executed:
 - **Per-Role Models**: Supports role-specific models (`gpt-5.2-codex`, `gpt-5-codex`) and reasoning effort levels (`low`, `medium`, `high`).
 - **Independent Verification**: Works with independent Critic models across harnesses (ADR-0006) to verify acceptance criteria and quality gates (`acceptance.py`, `gates.py`).
 - **Defense in Depth**: Protects repository branches and `ROADMAP.md` via tracked git hooks (`pre-commit`, `pre-push`) and adversarial Critic refutation.
+
+## Read-only Host Harness diagnosis
+
+The Host Harness owns the operator conversation and Run coordination. It is
+separate from saved `execution.hostHarness` preferences and role selections.
+Inspect it without changing policy, adapters or machine-level Run state:
+
+```sh
+python3 .agents/skills/gantry/scripts/execution.py host --cwd /absolute/repository --json
+python3 .agents/skills/gantry/scripts/execution.py host --cwd /absolute/repository --host claude-code --json
+```
+
+`--host` is the operator-confirmed selection for this invocation. Supported
+identifiers are `antigravity`, `claude-code`, `codex` and `opencode`; each uses
+this same explicit-selection path. Passing the flag is an assertion by the
+caller, not verification that that program owns the conversation. Select the
+harness actually hosting the conversation, independently of the role defaults.
+A saved Antigravity preference with `--host claude-code` reports
+`status: resolved`, `effectiveHost: claude-code`, `savedPreference: antigravity`
+and `mismatch: true`. It leaves the preference and all roles unchanged. Updating
+the saved preference requires a separate setup proposal.
+
+The structured result exposes `status`, `effectiveHost`, `savedPreference`,
+`mismatch`, `sources` and `diagnostics`. Source entries contain fixed identifiers,
+a kind (`explicit`, `preference` or `hint`) and a supported host or null. Raw
+environment values, binary paths, process output and policy contents are not
+included. `mismatch` is true only when a resolved host differs from a saved one.
+
+No verified current-invocation evidence adapter is available for these four
+integrations in this delivery. There are no `verified` source entries and no
+automatic `resolved` result. Binary presence, common repository skill directories,
+saved policy and inherited environment hints cannot prove the current host.
+Environment hints inspected by presence are `CODEX_THREAD_ID`, `CODEX_HOME`,
+`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `OPENCODE_SESSION_ID` and
+`ANTIGRAVITY_SESSION_ID`. These can survive nested invocations; they are always
+hints. Common directories are also hints and never identify a host. Missing or
+single-host hints return `unknown`; hints identifying multiple hosts return
+`ambiguous`. The latter is a conflict between hints, not conflicting verified
+invocation evidence. An explicit supported choice resolves either result.
+
+Diagnostic exits differ from operational blocking: inspection exits **0** for
+`resolved`, `unknown` and `ambiguous`, allowing operators to inspect inconclusive
+results. Unsupported explicit or saved identifiers and malformed/unreadable
+policy return `invalid` and exit **1**, without overwrite or fallback. Invalid
+policy diagnostics intentionally omit parser details that could expose values.
+The diagnostic command neither launches roles nor establishes operational
+preflight acceptance. Both canonical workflow entries now require a resolved host
+before initialization or scheduling through `host --require-resolved --json`,
+adding `--host <host>` only after operator confirmation. This operational variant
+exits **1** for unknown or ambiguous identity and includes the actual capability
+declaration on success. The local resolved identity controls native/external
+routing and capability metadata; new recorded Runs include sanitized identity
+and confirmation provenance. A mismatch never writes policy or replaces roles.
+Existing role preflight validates role availability separately and does not
+itself prove Host Harness identity. See
+[`docs/evidence/host-harness-resolution/README.md`](evidence/host-harness-resolution/README.md)
+for bounded live entry evidence and separately labeled simulated dispatch coverage.
+
+To reproduce isolated hints rather than accidentally using the developer's
+environment, run the subprocess tests:
+
+```sh
+python3 -m unittest tests.test_host_resolution_cli -v
+```
+
+Tests use temporary Git repositories, an isolated environment, a fixture binary
+and simulated inherited hints. They verify explicit selection, inconclusive and
+conflicting hints, stale preferences, invalid input, sanitized provenance and
+byte preservation of policy, adapters and state. They establish CLI behavior,
+not live automatic host detection. Real-host evidence must state that explicit
+selection was used when no trustworthy adapter exists.

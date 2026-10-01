@@ -39,9 +39,9 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **48 / 48** |
-| Specs completed | **8 / 8** |
-| Execution waves | **27** |
+| Issues completed | **49 / 52** |
+| Specs completed | **8 / 9** |
+| Execution waves | **30** |
 
 ## Specs
 
@@ -70,6 +70,7 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 14 | `interactive-dashboard` | **done** | 01 | 13 | `scripts/dashboard.py`, dashboard static assets, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | unified multi-project kanban, live agent activity streaming, post-critic human gate with interactive approval, gate verdicts, cycle timer freeze on Done |
 | 15 | `dashboard-lifecycle` | **done** | 01, 14 | 14 | `scripts/dashboard.py`, dashboard static assets, `SKILL.md`, `reference/round-workflow.md`, `tests/test_dashboard.py`, `site/tests/dashboard.spec.ts` | daemon lifecycle controls (`status`, `start --daemon`, `stop`), `POST /api/shutdown`, web UI shutdown button and modal, Gantry round workflow prompts |
 | 16 | `gantry-plan` | **done** | 01 | 14 | `.agents/skills/gantry-plan/`, `.agents/skills/gantry/`, `scripts/runlog.py`, `tests/` | Socratic gate planning skill (grill-me style), tracer-bullet vertical slicing (to-issues style), Plan column kanban telemetry, and gantry delegation |
+| 17 | `host-harness-resolution` | **approved** | 12, 16 | — | execution resolution, setup writer, host adapters, plan/round workflows, Run Log, fixture tests and documentation | current Host Harness diagnosis and Run binding, preserved independent role selections, approved host-only setup repair, and host-aware resumption |
 
 ### Spec waves (structural)
 
@@ -79,7 +80,7 @@ Computed from *Blocked by* only, the same way issue waves are computed from `## 
 |---|---|---|
 | A | 01 | everything else builds on the migration |
 | B | 02, 03, 04, 05, 06, 07, 08, 09, 11, 12, 13, 14, 15, 16 | unblocked the moment 01 is done; the order among them is preference, not dependency |
-| C | 10 | needs the installer from 06 (and a machine) |
+| C | 10, 17 | 10 needs the installer from 06 (and a machine); 17 builds on role execution (12) and standalone planning (16) |
 
 ### Intended order (one spec at a time)
 
@@ -112,9 +113,9 @@ and 05, so they are written after a few real run logs exist, not before.
 
 ## Where work can start
 
-Wave 26 is complete (`codex-tier#04`). Spec 08 (`codex-tier`) is now fully delivered.
-All 27 execution waves (Waves 0–26, 48/48 issues) are complete.
-Work can start with planning the next candidate spec on the roadmap: Spec 02 (`opencode-tier`).
+Waves 0–26 remain complete (48 delivered Issues). Spec 17 (`host-harness-resolution`) and its four-Issue breakdown were approved on 2026-09-30.
+The executable frontier starts with `host-harness-resolution#01` in Wave 27; Wave 28 contains Issues 02 and 03, and Wave 29 contains Issue 04.
+These four Issues are `ready-for-agent`; their implementation remains pending. Spec 02 (`opencode-tier`) remains a separate future planning candidate.
 
 ## Progress by spec
 
@@ -130,6 +131,7 @@ Work can start with planning the next candidate spec on the roadmap: Spec 02 (`o
 | 14 | `interactive-dashboard` | 5/5 | 17–20 |
 | 15 | `dashboard-lifecycle` | 3/3 | 20–21 |
 | 16 | `gantry-plan` | 4/4 | 20–22 |
+| 17 | `host-harness-resolution` | 1/4 | 27–29 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -311,5 +313,21 @@ of the others, and an issue never waits on anything in its own wave or a later o
 
 - [x] **`codex-tier#04`** — Update PRD, README, documentation, and Astro site harness matrix for Codex
   <br>↳ blocked by: codex-tier#03
+
+### Wave 27 — 1/1 done
+
+- [x] **`host-harness-resolution#01`** — Diagnose current Host Harness and stale preferences _(no blockers)_
+
+### Wave 28 — 0/2 done
+
+- [ ] **`host-harness-resolution#02`** — Bind new workflows to a resolved Run host
+  <br>↳ blocked by: host-harness-resolution#01
+- [ ] **`host-harness-resolution#03`** — Apply an approved host-only setup and adapter repair
+  <br>↳ blocked by: host-harness-resolution#01
+
+### Wave 29 — 0/1 done
+
+- [ ] **`host-harness-resolution#04`** — Resume an existing Run with an approved host transition
+  <br>↳ blocked by: host-harness-resolution#02
 
 <!-- END GENERATED: issue checklist -->

@@ -19,7 +19,18 @@ round: implement (TDD) → review (standards + Spec) → Critic → serial integ
 
 ## Resolve the portable runtime
 
-Before a Run, resolve these values once and pass them as `args` to every reference workflow:
+Before a Run, resolve the current Host Harness with
+`python3 <skillDir>/scripts/execution.py host --require-resolved --json --cwd <repoRoot>`.
+No verified current-invocation adapter is available yet: obtain explicit operator selection and add
+`--host <host>` when unresolved. Never use the saved `execution.hostHarness` preference or installed
+binaries as proof. Do this before Caveman/capability initialization, worktree creation or role scheduling.
+Pass the confirmed selection as `args.hostHarness`; each reference entry binds its immutable local
+resolution, actual capabilities and tier before work. Report a stale preference mismatch and leave
+repository policy unchanged. Keep role resolution, role availability, repository readiness and approval
+checks independent; this host choice never supplies role presets or approves work. Recorded new Runs
+include only sanitized host identity/provenance in `run.started.data.host`.
+
+Then resolve these values once and pass them as `args` to every reference workflow:
 
 1. `skillDir` is this `gantry` directory as an absolute real path. A harness-specific symlink resolves
    through `realpath`; never assume a fixed installation directory.

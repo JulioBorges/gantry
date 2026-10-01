@@ -284,13 +284,20 @@ Slice: `portable#01`
         source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
         source = source.replace("export const meta", "const meta", 1)
         driver = f"""
+import {{ spawnSync }} from 'node:child_process';
 const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
 const source = {json.dumps(source)};
 const args = {json.dumps(args)};
+// Explicit fixture invocation selection; repository preference is not host proof.
+args.hostHarness ??= 'claude-code';
 const researchFormat = {json.dumps(research_format)};
 const calls = [];
 const commandCalls = [];
 const runCommand = async (command, options = {{}}) => {{
+  if (command.includes('/execution.py" host ')) {{
+    const host = spawnSync(command, {{ shell: true, encoding: 'utf8' }});
+    return {{ exitCode: host.status ?? 1, stdout: host.stdout || '', stderr: host.stderr || '' }};
+  }}
   commandCalls.push({{ command, cwd: options.cwd || args.repoRoot }});
   if (command.includes('/spec.py')) return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
   if (command.includes('/result.py')) return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
@@ -412,60 +419,66 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
                         f"{path.relative_to(REPO_ROOT)} contains a prohibited literal",
                     )
 
-    def test_no_policy_smoke_runs_canonical_workflow_on_this_repository(self) -> None:
-        self.assertFalse((REPO_ROOT / ".gantry" / "config.json").exists())
+    def test_no_policy_smoke_runs_canonical_workflow_on_tracked_repository_copy(self) -> None:
+        # Exercise the delivered files, independently of the developer's local policy.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            archive = subprocess.run(["git", "archive", "HEAD"], cwd=REPO_ROOT, capture_output=True, check=True)
+            subprocess.run(["tar", "-x", "-C", str(root)], input=archive.stdout, check=True)
+            subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+            self.assertFalse((root / ".gantry" / "config.json").exists())
 
-        policy = resolve_policy(REPO_ROOT)
-        self.assertEqual(".scratch/{slug}/spec.md", policy["artifacts"]["specs"])
-        self.assertEqual(".scratch/{slug}/issues", policy["artifacts"]["issues"])
-        self.assertEqual("docs/adr", policy["artifacts"]["adrs"])
-        self.assertEqual("docs/adr", policy["artifacts"]["decisions"])
-        self.assertEqual("CONTEXT.md", policy["artifacts"]["context"])
-        self.assertEqual("docs/agents/issue-tracker.md", policy["artifacts"]["issueTracker"])
-        self.assertEqual("main", policy["git"]["target"])
-        self.assertEqual("gantry/", policy["git"]["prefix"])
+            policy = resolve_policy(root)
+            self.assertEqual(".scratch/{slug}/spec.md", policy["artifacts"]["specs"])
+            self.assertEqual(".scratch/{slug}/issues", policy["artifacts"]["issues"])
+            self.assertEqual("docs/adr", policy["artifacts"]["adrs"])
+            self.assertEqual("docs/adr", policy["artifacts"]["decisions"])
+            self.assertEqual("CONTEXT.md", policy["artifacts"]["context"])
+            self.assertEqual("docs/agents/issue-tracker.md", policy["artifacts"]["issueTracker"])
+            self.assertEqual("main", policy["git"]["target"])
+            self.assertEqual("gantry/", policy["git"]["prefix"])
 
-        paths = resolve_workflow_paths(REPO_ROOT, "gantry-migration")
-        self.assertEqual(REPO_ROOT / ".scratch" / "gantry-migration" / "issues", paths["issueDir"])
-        self.assertEqual(REPO_ROOT / "CONTEXT.md", paths["context"])
-        self.assertEqual(REPO_ROOT / "docs" / "adr", paths["adrs"])
-        self.assertEqual(REPO_ROOT / "docs" / "agents" / "issue-tracker.md", paths["issueTracker"])
+            paths = resolve_workflow_paths(root, "gantry-migration")
+            self.assertEqual(root / ".scratch" / "gantry-migration" / "issues", paths["issueDir"])
+            self.assertEqual(root / "CONTEXT.md", paths["context"])
+            self.assertEqual(root / "docs" / "adr", paths["adrs"])
+            self.assertEqual(root / "docs" / "agents" / "issue-tracker.md", paths["issueTracker"])
 
-        frontier = self.frontier_json(REPO_ROOT, "gantry-migration", include_parked=False)
-        issue_path = REPO_ROOT / ".scratch" / "gantry-migration" / "issues" / "18-retire-asdlc-and-switch-harness-links.md"
-        parsed_issue = self.acceptance_json(REPO_ROOT, issue_path)
-        self.assertEqual("gantry-migration#18", parsed_issue["ref"])
-        if parsed_issue["status"] == "ready-for-agent":
-            self.assertIn("gantry-migration#18", frontier["selected"])
-        else:
-            self.assertEqual("done", parsed_issue["status"])
+            frontier = self.frontier_json(root, "gantry-migration", include_parked=False)
+            issue_path = root / ".scratch" / "gantry-migration" / "issues" / "18-retire-asdlc-and-switch-harness-links.md"
+            parsed_issue = self.acceptance_json(root, issue_path)
+            self.assertEqual("gantry-migration#18", parsed_issue["ref"])
+            if parsed_issue["status"] == "ready-for-agent":
+                self.assertIn("gantry-migration#18", frontier["selected"])
+            else:
+                self.assertEqual("done", parsed_issue["status"])
 
-        round_args = {
-            "round": 6,
-            "models": {"implement": "test-implement", "review": "test-review", "critic": "test-critic"},
-            "branch": "gantry/wave-6",
-            "baseRef": "51b4d6d",
-            "isolate": False,
-            "correctionBudget": 2,
-            "skillDir": str(SKILL_DIR),
-            "repoRoot": str(REPO_ROOT),
-            "policy": policy,
-            "paths": {name: str(path) for name, path in paths.items()},
-            "date": "2026-09-14",
-            "issues": [parsed_issue],
-        }
-        round_result = self.run_workflow("round-workflow.md", round_args)
-        self.assertEqual(1, len(round_result["result"]["results"]))
-        self.assertEqual("gantry-migration#18", round_result["result"]["results"][0]["ref"])
-        self.assertEqual("done", round_result["result"]["results"][0]["outcome"])
+            round_args = {
+                "round": 6,
+                "models": {"implement": "test-implement", "review": "test-review", "critic": "test-critic"},
+                "branch": "gantry/wave-6",
+                "baseRef": "51b4d6d",
+                "isolate": False,
+                "correctionBudget": 2,
+                "skillDir": str(SKILL_DIR),
+                "repoRoot": str(root),
+                "policy": policy,
+                "paths": {name: str(path) for name, path in paths.items()},
+                "date": "2026-09-14",
+                "issues": [parsed_issue],
+            }
+            round_result = self.run_workflow("round-workflow.md", round_args)
+            self.assertEqual(1, len(round_result["result"]["results"]))
+            self.assertEqual("gantry-migration#18", round_result["result"]["results"][0]["ref"])
+            self.assertEqual("done", round_result["result"]["results"][0]["outcome"])
 
-        implement_prompt = self.prompt_for(round_result["calls"], "implement:gantry-migration#18")
-        self.assertIn(str(paths["context"]), implement_prompt)
-        self.assertIn(str(paths["adrs"]), implement_prompt)
-        self.assertIn("gantry-migration#18", implement_prompt)
+            implement_prompt = self.prompt_for(round_result["calls"], "implement:gantry-migration#18")
+            self.assertIn(str(paths["context"]), implement_prompt)
+            self.assertIn(str(paths["adrs"]), implement_prompt)
+            self.assertIn("gantry-migration#18", implement_prompt)
 
-        critic_prompt = self.prompt_for(round_result["calls"], "critic:gantry-migration#18#1")
-        self.assertIn(f"acceptance.py {REPO_ROOT}/{parsed_issue['path']} --json", critic_prompt)
+            critic_prompt = self.prompt_for(round_result["calls"], "critic:gantry-migration#18#1")
+            self.assertIn(f"acceptance.py {root}/{parsed_issue['path']} --json", critic_prompt)
 
     def test_scripts_import_only_standard_library_or_pack_modules(self) -> None:
         allowed = {

@@ -67,6 +67,63 @@ class ExecutionFailureError(RuntimeError):
     """Raised when an external harness command fails at runtime (crash, timeout, non-zero exit)."""
 
 
+def resolve_host(*, root: Path, explicit_host: str | None = None) -> dict[str, Any]:
+    """Diagnose invocation identity without promoting saved preferences to proof.
+
+    No integration currently supplies a verifiable current-invocation adapter.
+    Explicit selection is operator confirmation, not automatic detection.
+    """
+    diagnosis: dict[str, Any] = {
+        "status": "unknown", "effectiveHost": None, "savedPreference": None,
+        "mismatch": False, "sources": [], "diagnostics": [],
+    }
+    try:
+        policy = resolve_policy(root)
+        execution_policy = policy.get("execution", {})
+        if not isinstance(execution_policy, dict):
+            raise ValueError("execution must be an object")
+        saved = execution_policy.get("hostHarness")
+        if saved is not None and (not isinstance(saved, str) or saved not in SUPPORTED_HARNESSES):
+            raise ValueError("unsupported saved host")
+    except (ValueError, OSError, UnicodeError):
+        diagnosis["status"] = "invalid"
+        diagnosis["diagnostics"] = ["Invalid repository policy; inspect .gantry/config.json and repair it through setup. No fallback was used."]
+        return diagnosis
+    diagnosis["savedPreference"] = saved
+    if saved is not None:
+        diagnosis["sources"].append({"source": "policy:execution.hostHarness", "kind": "preference", "host": saved})
+    # These identifiers can be inherited by nested tools. Presence is a hint,
+    # never proof, and their values must never enter diagnostics.
+    environment_hints = {
+        "CODEX_THREAD_ID": "codex", "CODEX_HOME": "codex",
+        "CLAUDECODE": "claude-code", "CLAUDE_CODE_SESSION_ID": "claude-code",
+        "OPENCODE_SESSION_ID": "opencode", "ANTIGRAVITY_SESSION_ID": "antigravity",
+    }
+    for name, host in environment_hints.items():
+        if os.environ.get(name):
+            diagnosis["sources"].append({"source": f"environment:{name}", "kind": "hint", "host": host})
+    for host, binary in sorted(CLI_NAMES.items()):
+        if shutil.which(binary):
+            diagnosis["sources"].append({"source": f"installation:{binary}", "kind": "hint", "host": host})
+    for directory in (".agents/skills", ".claude/skills", ".opencode/skills", ".gemini/skills"):
+        if (root / directory).is_dir():
+            diagnosis["sources"].append({"source": f"directory:{directory}", "kind": "hint", "host": None})
+    hinted_hosts = {source["host"] for source in diagnosis["sources"] if source["kind"] == "hint" and source["host"]}
+    if explicit_host is not None:
+        if explicit_host not in SUPPORTED_HARNESSES:
+            diagnosis["status"] = "invalid"
+            diagnosis["diagnostics"] = ["Unsupported explicit host; choose antigravity, claude-code, codex or opencode."]
+            return diagnosis
+        diagnosis.update(status="resolved", effectiveHost=explicit_host, mismatch=saved is not None and saved != explicit_host)
+        diagnosis["sources"].append({"source": "invocation:explicit-selection", "kind": "explicit", "host": explicit_host})
+        diagnosis["diagnostics"] = ["Operator-selected invocation identity; automatic detection was not verified."]
+    else:
+        if len(hinted_hosts) > 1:
+            diagnosis["status"] = "ambiguous"
+        diagnosis["diagnostics"] = ["No verified current-invocation evidence adapter is available. Confirm the active Host Harness with --host."]
+    return diagnosis
+
+
 def parse_semver(version_str: str) -> tuple[int, int, int]:
     match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", version_str)
     if not match:
@@ -777,6 +834,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command")
 
+    host_parser = subparsers.add_parser("host", help="read-only Host Harness diagnosis")
+    host_parser.add_argument("--host", help="operator-confirmed invocation host")
+    host_parser.add_argument("--cwd", default=".", help="repository root path")
+    host_parser.add_argument("--json", action="store_true", help="output JSON")
+    host_parser.add_argument("--require-resolved", action="store_true", help="fail closed at workflow entry and include actual host capabilities")
+
     resolve_parser = subparsers.add_parser("resolve", help="resolve effective role executions")
     resolve_parser.add_argument("--role", help="specific role to resolve")
     resolve_parser.add_argument("--run-overrides", help="JSON string of run-level overrides")
@@ -818,6 +881,17 @@ def main() -> int:
 
     args = parser.parse_args()
     root = Path(args.cwd).resolve() if getattr(args, "cwd", None) else Path(".").resolve()
+    if args.command == "host":
+        diagnosis = resolve_host(root=root, explicit_host=args.host)
+        if args.require_resolved and diagnosis["status"] == "resolved":
+            capability_path = Path(__file__).resolve().parents[1] / "capabilities" / f"{diagnosis['effectiveHost']}.json"
+            try:
+                diagnosis["capabilities"] = json.loads(capability_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                diagnosis.update(status="invalid", effectiveHost=None)
+                diagnosis["diagnostics"] = ["Host capability declaration is unavailable or invalid; no fallback was used."]
+        print(json.dumps(diagnosis, indent=2) if args.json else diagnosis)
+        return 1 if diagnosis["status"] == "invalid" or (args.require_resolved and diagnosis["status"] != "resolved") else 0
     policy = resolve_policy(root)
 
     run_ov = json.loads(args.run_overrides) if getattr(args, "run_overrides", None) else None

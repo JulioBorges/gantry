@@ -191,6 +191,24 @@ export const meta = {
 
 const A = args
 const scripts = `${A.skillDir}/scripts`
+// Resolve before any host-dependent initialization, worktree creation or role invocation.
+// hostHarness is an operator-confirmed invocation selection, never a policy preference.
+const hostSelectionFlag = A.hostHarness == null ? '' : ` --host ${shellQuote(A.hostHarness)}`
+const hostCheck = await runCommand(
+  `python3 "${scripts}/execution.py" host --require-resolved --json --cwd ${shellQuote(A.repoRoot)}${hostSelectionFlag}`,
+  { cwd: A.repoRoot },
+)
+let hostResolution
+try { hostResolution = JSON.parse((hostCheck && hostCheck.stdout) || '{}') } catch { hostResolution = {} }
+if (!hostCheck || hostCheck.exitCode !== 0 || hostResolution.status !== 'resolved' || !hostResolution.capabilities) {
+  throw new Error('Host Harness unresolved or unsupported; confirm the invocation host before starting work.')
+}
+const hostHarness = hostResolution.effectiveHost
+const hostCapabilities = hostResolution.capabilities
+if (hostResolution.mismatch && typeof log === 'function') {
+  log(`Host Harness ${hostHarness} differs from saved preference ${hostResolution.savedPreference}; policy unchanged.`)
+}
+
 const paths = A.paths
 const policy = A.policy
 const requestedBudget = A.correctionBudget ?? policy.budget.corrections
@@ -319,7 +337,9 @@ if (runLogEnabled && isFirstRound) {
   const runStartedData = {
     repositoryRoot: A.repoRoot,
     policyHash: stableHash(policy),
-    tier: A.tier || 'unknown',
+    tier: hostCapabilities.tier,
+    host: { effectiveHost: hostHarness, savedPreference: hostResolution.savedPreference, mismatch: hostResolution.mismatch,
+      sources: hostResolution.sources.filter(source => source.kind === 'explicit' || source.kind === 'verified') },
     staleAfterSeconds: (policy.dashboard && policy.dashboard.staleAfterSeconds) || 900,
   }
   await appendRunEvent('run.started', undefined, undefined, runStartedData)
@@ -360,7 +380,7 @@ function resolveRoleForIssue(issueRef, role, options) {
     return A.roles[role] || A.roles[roleKey]
   }
   if (A.models && (A.models[role] || A.models[roleKey])) {
-    return { harness: A.hostHarness || 'claude-code', model: A.models[role] || A.models[roleKey] }
+    return { harness: hostHarness, model: A.models[role] || A.models[roleKey] }
   }
   return null
 }
@@ -447,7 +467,7 @@ if (unresolvedFailures.length > 0) {
 
 async function validRoleResult(role, result) {
   if (!result) return false
-  if (A.structuredOutput === true) return true
+  if (hostCapabilities.structured_output === true && A.structuredOutput === true) return true
   const validation = await runCommand(
     `python3 "${scripts}/result.py" --role "${role}" --json`,
     { cwd: A.repoRoot, input: JSON.stringify(result) },
@@ -457,7 +477,6 @@ async function validRoleResult(role, result) {
 async function requestRole(role, prompt, options) {
   const issueRef = options && options.issueRef
   const selection = resolveRoleForIssue(issueRef, role, options)
-  const hostHarness = A.hostHarness || 'claude-code'
   if (options && options.executionUnavailable) {
     return { executionUnavailable: true, error: options.error || 'Role execution unavailable' }
   }
@@ -469,7 +488,12 @@ async function requestRole(role, prompt, options) {
     const res = await runCommand(cmd, { cwd: A.repoRoot, input: agentPrompt })
     if (res && res.exitCode === 0) {
       try {
-        return JSON.parse(res.stdout)
+        const externalResult = JSON.parse(res.stdout)
+        const validation = await runCommand(
+          `python3 "${scripts}/result.py" --role "${role}" --json`,
+          { cwd: A.repoRoot, input: JSON.stringify(externalResult) },
+        )
+        return validation && validation.exitCode === 0 ? externalResult : null
       } catch (e) {
         return null
       }
@@ -479,11 +503,12 @@ async function requestRole(role, prompt, options) {
     }
     return { executionUnavailable: true, error: (res && res.stderr) || 'Harness execution failed' }
   }
-  const native = A.structuredOutput === true
+  const native = hostCapabilities.structured_output === true && A.structuredOutput === true
   const schema = native ? await roleSchema(role) : null
   const agentPrompt = cavemanActive ? `${prompt}\n\n${cavemanInstruction}` : prompt
   const agentOptions = {
     ...options,
+    ...(selection ? { selection, model: selection.model, effort: selection.effort } : {}),
     ...(cavemanActive ? { skills: (options.skills || []).concat(cavemanState.skill_path || 'caveman'), caveman: true } : {}),
     ...(schema ? { schema } : {}),
   }
@@ -1098,6 +1123,7 @@ if (!integrationStopped && A.isLastRound && !hasPaused) {
   }
 }
 return {
+  hostResolution,
   round: A.round,
   date: A.date,
   results: deliveries,

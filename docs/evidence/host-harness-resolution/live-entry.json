@@ -1,0 +1,37 @@
+{
+  "evidenceKind": "real-canonical-workflow-entry",
+  "selectionBoundary": "operator-confirmed current host; no automatic detection claimed",
+  "scope": "empty round exercises real entry, capabilities and Run lifecycle; role dispatch is not exercised",
+  "effectiveHost": "codex",
+  "savedPreference": "antigravity",
+  "mismatch": true,
+  "tier": "supported",
+  "provenance": [
+    {
+      "source": "invocation:explicit-selection",
+      "kind": "explicit",
+      "host": "codex"
+    }
+  ],
+  "policyUnchanged": true,
+  "rolesUnchanged": true,
+  "roleInvocations": 0,
+  "events": [
+    "run.started",
+    "round.started",
+    "round.finished",
+    "run.finished"
+  ],
+  "recordedHost": {
+    "effectiveHost": "codex",
+    "savedPreference": "antigravity",
+    "mismatch": true,
+    "sources": [
+      {
+        "source": "invocation:explicit-selection",
+        "kind": "explicit",
+        "host": "codex"
+      }
+    ]
+  }
+}

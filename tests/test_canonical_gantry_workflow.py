@@ -115,6 +115,7 @@ Preserve the portable workflow contract.
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
     def run_workflow(self, filename: str, args: dict) -> dict:
+        args = {"hostHarness": "claude-code", **args}
         source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
         source = source.replace("export const meta", "const meta", 1)
         driver = f"""
@@ -127,6 +128,7 @@ const source = {json.dumps(source)};
 const args = {json.dumps(args)};
 const calls = [];
 const commandCalls = [];
+const hostCalls = [];
 let sequence = 0;
 const defaultIssueWorktree = args.issueWorktree || (
   args.isolate && args.issues && args.issues[0]
@@ -134,10 +136,16 @@ const defaultIssueWorktree = args.issueWorktree || (
     : args.repoRoot
 );
 const runCommand = async (command, options = {{}}) => {{
+  if (command.includes('/execution.py" host ')) {{
+    hostCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});
+    const completed = spawnSync(command, {{ cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8' }});
+    return {{ exitCode: completed.status ?? 1, stdout: completed.stdout || '', stderr: completed.stderr || '' }};
+  }}
   commandCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});
   if (command.includes('/spec.py') && args.stubSpecCheck !== false) {{
     return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
   }}
+  if (command.includes('/execution.py" dispatch ') && args.dispatchResults && args.dispatchResults.length) return args.dispatchResults.shift();
   if (args.commandMode === 'real') {{
     const completed = spawnSync(command, {{
       cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8', input: options.input,
@@ -154,7 +162,7 @@ const runCommand = async (command, options = {{}}) => {{
     : command.includes('/spec.py') ? '{{"valid":true}}' : '' }};
 }};
 const agent = async (prompt, options) => {{
-  calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, sequence: sequence++ }});
+  calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, model: options.model, effort: options.effort, selection: options.selection, sequence: sequence++ }});
   if (options.label.startsWith('research:')) return 'factual research';
   if (options.label.startsWith('requirement-critic')) {{
     if (args.requirementCriticRawResults && args.requirementCriticRawResults.length) {{
@@ -238,7 +246,7 @@ try {{
 }} catch (err) {{
   error = err && err.message ? err.message : String(err);
 }}
-process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
+process.stdout.write(JSON.stringify({{ result, calls, commandCalls, hostCalls, error }}));
 """
         result = subprocess.run(
             ["node", "--input-type=module", "--eval", driver],
