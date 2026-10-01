@@ -84,13 +84,16 @@ Every script provides `--help`, and data-producing paths support `--json`.
   preflight derives them before building `args.priorRun` by invoking the shipped query
   `runlog.py corrections <unitId> <match.run> <match.issue> --json`, which reads the match's own Run log
   (`~/.gantry/state/<unitId>/runs/<match.run>.jsonl`, or `--state-root` when overridden) and returns
-  `correctionsSpent` as the sum of two counts: (1) the `run.resumed.data.correctionsSpent` recorded in
-  that same Run log, but only when that same `run.resumed` event's `data.issue` also equals `match.issue`
+  `correctionsSpent` as the sum of two counts: (1) the legacy `run.resumed.data.correctionsSpent` base
+  from the first `run.resumed` event in that same Run log, but only when that event's `data.issue` equals `match.issue`
   — `0` when the log has no `run.resumed` event, or when its `run.resumed` names a different Issue, since
   the base is per-Issue and must never be lent to another Issue that happens to share the Run log; plus
   (2) the number of `refutation` events in that log whose `issue` equals `match.issue` and that are each
-  followed, later in the log, by a `phase.started` event for `Implement` on that same Issue — i.e. only
-  refutations whose correction pass actually started count toward the spent budget. Neither this
+  followed, later in the log, by a `phase.started` event for `Implement` on that same Issue without
+  `data.recovery=true` — i.e. only refutations whose correction pass actually started count toward
+  the spent budget; replaying an already-started phase does not consume another attempt. Current
+  same-Run resumptions omit a copied `correctionsSpent` base; the first-event base remains supported
+  only for legacy logs, and later resume events never add or replace it. Neither this
   derivation rule nor `correctionsSpent` itself is ever computed by prose or by test code: this shipped
   command is the single implementation, and it fails closed (`runlog error: no Run log for <runId>`,
   exit 1) when no Run log exists for the requested Run ID, rather than silently reporting `0`.

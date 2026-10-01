@@ -2581,9 +2581,9 @@ Scenario: greet a user
             self.assertNotIn("subagent.stopped", [event["event"] for event in critic_events])
 
     def test_round_workflow_chained_resume_preserves_corrections_in_same_run(self) -> None:
-        # Covers feedback item 3: a chain of three Runs, each resuming the last, where the documented
-        # derivation rule (`run.resumed.data.correctionsSpent` plus refutations that actually started a
-        # correction pass) must be applied fresh to each Run's own log and carried forward explicitly.
+        # Repeated invocations resume one unfinished Run and derive spent corrections from its log.
+        # Recovery replays preserve the count without a copied resumed base; a newly started
+        # correction pass consumes one attempt, and an exhausted budget prevents further role work.
         with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as state_dir:
             root = Path(temp)
             self.init_repo(root)

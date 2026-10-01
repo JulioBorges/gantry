@@ -411,12 +411,16 @@ def derive_corrections_spent(events: list[dict], issue_ref: str) -> int:
     """Apply the documented derivation rule to one Run's own valid events.
 
     `runlog.py inflight` never reports `correctionsSpent`: it is derived here from (1) the
-    `run.resumed.data.correctionsSpent` recorded on this same Run, but only when that same
+    legacy `run.resumed.data.correctionsSpent` base from the first `run.resumed` event on this Run,
+    but only when that same
     `run.resumed` event also names `issue_ref` as `data.issue` (0 otherwise, including when the Run
     has no `run.resumed` event, or when its `run.resumed` names a different Issue), plus (2) the
     number of `refutation` events for `issue_ref` that are each followed, later in the same log, by a
-    `phase.started` `Implement` event for that same Issue — i.e. only refutations whose correction
-    pass actually started count toward the spent budget. The base is per-Issue, not per-Run: a Run
+    `phase.started` `Implement` event for that same Issue without `data.recovery=true` — i.e. only
+    refutations whose correction pass actually started count toward the spent budget; replaying an
+    already-started phase does not consume another attempt. Current same-Run resumptions omit a
+    copied base; the first-event base is retained for legacy logs, and later resume events never
+    add or replace it. The base is per-Issue, not per-Run: a Run
     resumed for one Issue must never lend its `correctionsSpent` base to any other Issue that also
     happens to appear in the same Run's log.
     """
