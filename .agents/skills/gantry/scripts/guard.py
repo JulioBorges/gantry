@@ -565,6 +565,10 @@ def main() -> int:
         "marker, then a payload session ID that already has a Run log)",
     )
     parser.add_argument("--json", action="store_true", help="emit the decision as a compact JSON object")
+    parser.add_argument(
+        "--format", choices=["claude-code"],
+        help="emit Claude Code hook JSON (also accepted by Cursor's Claude hook imports)",
+    )
     args = parser.parse_args()
 
     payload = read_payload()
@@ -573,6 +577,15 @@ def main() -> int:
     normalized_name = re.sub(r"[^a-z]", "", name)
 
     def allow() -> int:
+        if args.format == "claude-code":
+            if args.event == "PreToolUse":
+                print(json.dumps({"hookSpecificOutput": {
+                    "hookEventName": "PreToolUse", "permissionDecision": "allow",
+                }}, separators=(",", ":")))
+            else:
+                # Recording events have no permission decision or follow-up request.
+                print("{}")
+            return 0
         if args.event == "PostToolUse" and (not args.run_id or normalized_name != "invokesubagent"):
             if args.json:
                 print("{}")
@@ -605,6 +618,12 @@ def main() -> int:
                 record_invoke_subagent_event(payload, args, cwd, "subagent.started")
             return allow()
         message = f"deny: {decision.rule} {decision.path}"
+        if args.format == "claude-code":
+            print(json.dumps({"hookSpecificOutput": {
+                "hookEventName": "PreToolUse", "permissionDecision": "deny",
+                "permissionDecisionReason": message,
+            }}, separators=(",", ":")))
+            return 0
         if args.json:
             print(json.dumps({"decision": "deny", "rule": decision.rule, "path": decision.path, "reason": message}, separators=(",", ":")))
             return 0
