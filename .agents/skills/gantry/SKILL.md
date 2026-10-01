@@ -76,7 +76,7 @@ Every script provides `--help`, and data-producing paths support `--json`.
 
 - Preflight refuses a dirty worktree, offers a dedicated Run worktree before creating anything, resolves
   the effective policy, checks `roadmap.py check`, and asks models for Plan, Implement, Review and Critic.
-  Preflight also resolves `unitId` (`runlog.py unit-id --cwd <repoRoot> --json`) and a fresh `runId`, then
+  Preflight also resolves `unitId` (`runlog.py unit-id --cwd <repoRoot> --json`) and queries existing Runs before assigning a fresh `runId`, then
   queries `runlog.py inflight <unitId> --json`. Every match names an Issue still `ready-for-agent`, its
   phase and its preserved worktree; preflight offers the operator continuation there before doing anything
   else. `runlog.py inflight` reports only `run`, `issue`, `phase`, `worktree`, `repositoryRoot`,
@@ -98,20 +98,34 @@ Every script provides `--help`, and data-producing paths support `--json`.
   `common.issue_branch` and verifies it with `git branch --show-current` in the preserved worktree
   (see `implementationLocation`). Only explicit acceptance carries the derived match forward as
   `args.priorRun` (`run`, `worktree`, `issue`, `correctionsSpent`, `policyHash`, and `branch` when known)
-  into `reference/round-workflow.md`, which appends `run.resumed` naming the prior Run and worktree
+  into `reference/round-workflow.md`, which binds `args.runId = args.priorRun.run` and appends `run.resumed` in that same log, naming the preserved Run and worktree
   instead of starting a fresh worktree, and resumes the spent correction count instead of resetting it.
   When the prior Run's `policyHash` differs from the effective policy resolved for this Run,
   `reference/round-workflow.md` appends `policy.changed` with the new hash so the drift is recorded
   before any Issue work resumes. The Run log is read only to offer that continuation and to derive
   `correctionsSpent`; it never decides readiness or completion — `frontier.py`, Issue `Status:` lines
   and `roadmap.py` do.
+- Resume resolves current host again through `execution.py host --require-resolved --host <confirmed-host>
+  --run-id <existing-run> --unit-id <unit-id> --issue <issue-ref> --json --cwd <repoRoot>`
+  (and `--state-root` when configured). This is read-only: another Run or worktree's marker cannot
+  prove current host identity. Unknown, ambiguous, unsupported, absent or finished Runs stop before
+  any role work. The CLI reports `resume.previousHost`, `effectiveHost`, `decision` and the existing
+  Issue's authoritative `correctionsSpent`. For a changed host, the workflow presents old/new identity,
+  new capabilities/routing and preservation effects, then requires an explicit `yes`; missing older
+  host metadata likewise requires explicit establishment. No prompt facility means no continuation.
+  Decline writes nothing. Approval appends sanitized `run.resumed.data.hostTransition` (`oldHost`,
+  `newHost`, fixed `confirmationSource`, capability `tier`) under the same Run before marking or
+  scheduling work. Unchanged host needs no transition decision. No setup policy or adapter changes,
+  role fallback, worktree replacement or correction-budget reset occur. Preserve the effective role
+  selections and overrides supplied for recovery. Recovery Implement events carry `data.recovery=true`
+  only when replaying an already-started phase. An unstarted refutation correction consumes one
+  attempt when resumption starts it; if the ceiling is already spent, continuation stops before role work. Subsequent correction passes
+  retain ordinary counting. Do not copy `correctionsSpent` into a new resumed base in the same log.
 - `reference/round-workflow.md` appends every recorded-Run lifecycle event through `runlog.py append
   <unitId> <runId>` when the caller supplies both. A Run spans one or more rounds, each a separate
   invocation of this workflow sharing the same `runId`/`unitId`: only the first round (`args.isFirstRound`
   not explicitly `false`) appends `run.started` (with the repository root, a policy hash, the harness
-  tier and the effective `staleAfterSeconds` in `data`) and, when resuming, `run.resumed` and
-  `policy.changed`; every subsequent round of the same Run passes `args.isFirstRound = false` so these
-  three events are never appended again — a Run log accepts only one `run.started` and rejects a
+  tier and the effective `staleAfterSeconds` in `data`). A resumed invocation never opens another Run: it appends `run.resumed` and any `policy.changed` in the existing log; every subsequent round passes `args.isFirstRound = false` so `run.started` is never appended again — a Run log accepts only one `run.started` and rejects a
   duplicate. Every round, first or not, then appends `round.started`, one `phase.started` /
   `phase.finished` pair per phase that actually runs (Implement, Review and Critic per Issue, plus the
   optional Learner phase on the last round when it finds recurring evidence), one
