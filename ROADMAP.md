@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **51 / 52** |
-| Specs completed | **8 / 9** |
+| Issues completed | **52 / 52** |
+| Specs completed | **9 / 9** |
 | Execution waves | **30** |
 
 ## Specs
@@ -131,7 +131,7 @@ These four Issues are `ready-for-agent`; their implementation remains pending. S
 | 14 | `interactive-dashboard` | 5/5 | 17–20 |
 | 15 | `dashboard-lifecycle` | 3/3 | 20–21 |
 | 16 | `gantry-plan` | 4/4 | 20–22 |
-| 17 | `host-harness-resolution` | 3/4 | 27–29 |
+| 17 | `host-harness-resolution` | 4/4 | 27–29 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -325,9 +325,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`host-harness-resolution#03`** — Apply an approved host-only setup and adapter repair
   <br>↳ blocked by: host-harness-resolution#01
 
-### Wave 29 — 0/1 done
+### Wave 29 — 1/1 done
 
-- [ ] **`host-harness-resolution#04`** — Resume an existing Run with an approved host transition
+- [x] **`host-harness-resolution#04`** — Resume an existing Run with an approved host transition
   <br>↳ blocked by: host-harness-resolution#02
 
 <!-- END GENERATED: issue checklist -->
