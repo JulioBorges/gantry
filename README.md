@@ -23,6 +23,24 @@ approve the plan and decide how the resulting Run is handed off.
 [Brownfield example](#brownfield-extend-an-existing-project) ·
 [Contribute](#contributing)
 
+## Hook compatibility
+
+Claude Code hooks now return the documented
+`hookSpecificOutput` JSON for both allowed and denied tool calls. Recording hooks
+return an empty JSON object. Generated commands resolve the project directory from
+`CLAUDE_PROJECT_DIR`, falling back to the current directory when that variable is
+absent or empty. Each harness's wiring owns its protocol and environment conventions;
+the Claude template does not depend on Cursor-specific variables. Host Harness and
+role selections remain repository policy decisions. OpenCode and Antigravity keep
+their existing guard response formats. Cursor can import the corrected Claude hook
+protocol; this does not establish a new support tier or claim a live Cursor fixture result.
+
+After updating the installed skills, rerun `/gantry-setup` and choose **merge** for
+the existing policy to regenerate `.claude/settings.json`. Updating the skill files
+alone does not rewrite previously generated hook commands. Review the proposed
+policy and hook changes before applying them. Restart Cursor if it retains the old
+configuration.
+
 ## Release 1.1.1
 
 Frontend completion now accepts an executed, passing absolute check named
