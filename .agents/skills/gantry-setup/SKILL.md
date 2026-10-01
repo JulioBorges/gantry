@@ -35,13 +35,15 @@ You are the sole conversational writer of repository policy.
 4. **Role Execution Defaults & Antigravity**:
    - Persist sparse repository role execution defaults under `execution.roles` in `.gantry/config.json`.
    - Each role selection contains `harness`, `model` and optional `effort`.
-   - When Antigravity is detected (`.agents/` directory or `agy` CLI on PATH), `setup.py` generates or merges `.agents/hooks.json` to wire `PreToolUse` to `guard.py PreToolUse --json`.
+   - Only an intentional host selection in the proposed policy or `--harness` selects an adapter. Installed binaries, `.agents/`, `.codex/` and inherited environment hints never select adapters.
+   - Persist approved hook event names in `hooks.record` and `hooks.deny`. Decision-bearing `PreToolUse` requires explicit denial approval; recording-only approval cannot install its existing denial-capable guard. Recording events such as `PostToolUse` use `hooks.record`.
+   - For selected Claude Code or Antigravity, setup reuses the existing pack fragment for approved events only. It preserves unrelated commands, wrapper settings and all other adapters. Capability declarations describe the existing boundary; adapter installation is not live hook compatibility proof.
    - Unrelated repository policy, hook settings and Caveman opt-in are preserved during merges.
 
 5. **Codex Host Harness & Defense in Depth**:
-   - Detect Codex in environment via `codex` CLI on PATH, `.codex` configuration, or explicit `--harness codex`.
+   - Select Codex explicitly through the normal setup conversation or `--harness codex`. Installation hints are not invocation identity.
    - Guide operator to verify authentication (`codex login`) and test model discovery (`discovery.py --harness codex`) before finalizing configuration.
-   - Configure `execution.hostHarness: "codex"` and role model assignments in `.gantry/config.json`.
+   - Normal setup with `--harness codex` and no config input proposes legacy role defaults and asks approval for the full policy. A supplied config file specifies independent role selections instead. Host-only repair never initializes or replaces roles.
    - Inject Codex-specific orchestration rules (bounded subprocess dispatch via `codex exec`) and defense-in-depth guardrail directives into the marked Gantry policy block in `AGENTS.md`.
 
 6. **Constraints**:
@@ -49,10 +51,49 @@ You are the sole conversational writer of repository policy.
    - All setup-generated policy, prompts, and marked content must be English.
 
 7. **Applying the Policy**:
-   Once the operator confirms the settings, construct the JSON configuration and pipe it to `setup.py`:
-   
+   Write the reviewed JSON to a local file, then pass its path as a structured argument:
+
    ```bash
-   python3 .agents/skills/gantry/scripts/setup.py --config '{...}'
+   python3 .agents/skills/gantry/scripts/setup.py --config-file /absolute/path/to/proposed-policy.json
    ```
-   
-   The `setup.py` script renders the full proposed `.gantry/config.json` before writing, supports merge, overwrite, and abort for an existing policy, handles idempotent merging of the Claude Code hook fragment into `.claude/settings.json`, configures `.agents/hooks.json` when Antigravity is detected, supports `--harness codex` with discovery verification, and adds or replaces only the marked Gantry section in `AGENTS.md`. Do not modify these files directly.
+
+   The script previews the full policy and selected adapter contents before approval. An existing policy
+   offers separate merge and overwrite proposals plus abort; a missing policy requires explicit normal
+   setup approval. Never interpolate JSON into a shell command or provide synthetic overwrite confirmation.
+   When invoking through a tool, pass the executable and arguments as an argument array where available.
+   Quotes, dollar signs, backticks and shell metacharacters in configuration remain data.
+
+8. **Host-only Diagnosis and Repair**:
+   Diagnose the invocation with `execution.py host --host <operator-confirmed-host> --json`. Automatic
+   detection is not verified for the current integrations. The saved preference is shown separately;
+   a mismatch does not change roles or tracked policy during a Run.
+
+   ```bash
+   python3 .agents/skills/gantry/scripts/setup.py --host-only --host claude-code
+   python3 .agents/skills/gantry/scripts/setup.py --host-only --host claude-code --apply
+   ```
+
+   The first command previews only. The second still displays the concrete policy and adapter effects
+   and asks `Apply this host-only proposal? [y/N]`. Decline, EOF or any answer other than `y`/`yes` writes
+   nothing. Unsupported identity, malformed policy or a malformed selected adapter fails before writes.
+   `--config`, `--config-file`, `--harness` and `--verify-auth` cannot accompany host-only repair.
+
+   Host-only repair changes `execution.hostHarness` and only Gantry-owned entries in the selected JSON
+   adapter, according to existing approved hook policy. It preserves every base/derived role, model,
+   effort, execution extension, check, artifact, Caveman preference and unknown field. Policy member bytes
+   outside the host value remain intact; adapter bytes outside the hooks value and unrelated hook values
+   remain intact. Other adapter files and `AGENTS.md` remain byte-for-byte unchanged. Repetition is a no-op.
+   Existing command entries are owned only when they are standalone Python invocations of Gantry's exact
+   guard script; unrelated commands mentioning that path or combining additional user actions survive.
+
+   Codex has no native hook events. OpenCode has a declared plugin adapter, but setup does not install or
+   rewrite that plugin automatically. Both receive manual workflow and independent Critic guidance without
+   fabricated enforcement. Antigravity reuses the existing fragment without expanding its compatibility
+   claims or addressing the separate hook compatibility work.
+
+   A missing policy stops host-only repair and directs the operator to the normal setup conversation.
+   An ignored policy stops application and prints a tracked-policy migration proposal, including concrete
+   `.gitignore` exceptions and staging guidance. The operator reviews effective repository, local and global
+   ignore rules; setup never edits ignore rules, relocates state or forces files into Git. After the approved
+   migration, repeat diagnosis and preview. See [operator examples](../../../docs/role-execution.md) and the
+   [reproducible CLI evidence](../../../docs/evidence/host-harness-resolution/setup-repair.md).

@@ -420,11 +420,12 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
                     )
 
     def test_no_policy_smoke_runs_canonical_workflow_on_tracked_repository_copy(self) -> None:
-        # Exercise the delivered files, independently of the developer's local policy.
+        # Exercise delivered files without policy, even when the repository tracks one.
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
             archive = subprocess.run(["git", "archive", "HEAD"], cwd=REPO_ROOT, capture_output=True, check=True)
             subprocess.run(["tar", "-x", "-C", str(root)], input=archive.stdout, check=True)
+            (root / ".gantry" / "config.json").unlink(missing_ok=True)
             subprocess.run(["git", "init", "--quiet", str(root)], check=True)
             self.assertFalse((root / ".gantry" / "config.json").exists())
 
@@ -500,6 +501,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
             "re",
             "result",
             "runlog",
+            "setup_host",
             "shlex",
             "shutil",
             "skipscan",

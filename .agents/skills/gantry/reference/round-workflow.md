@@ -20,12 +20,14 @@ event payload passed as `input` rather than as a command-line argument, so a har
 
 When the caller also supplies `args.runId` and `args.unitId` (the value of
 `runlog.py unit-id --cwd <repoRoot>`), this workflow appends every lifecycle event through
-`runlog.py append <unitId> <runId>`: on the first round of a Run (`args.isFirstRound` not explicitly
-`false`), `run.started` always opens the recorded Run first (this Run log's required first event, per
-`runlog.py`'s own rule), and `run.resumed` follows immediately after when `args.priorRun` names the Run
-and worktree being continued; a later round of the same Run passes `args.isFirstRound = false` so
-`run.started`, `run.resumed` and `policy.changed` are never appended again — a Run log accepts only one
-`run.started` and rejects a duplicate. Every round, first or not, appends `round.started`, one `phase.started` /
+`runlog.py append <unitId> <runId>`: a new Run's first round appends `run.started` once.
+A recovery with `args.priorRun` binds `args.runId` to that existing Run, revalidates the current host
+against that Run's own log, and appends `run.resumed` in the same log without a new start or a copied
+correction base. A changed host or older missing host record requires explicit approval of the shown
+old/new identity and effects before any mutation; decline leaves all state untouched. The approved
+transition records sanitized host identities, operator confirmation provenance and actual support tier.
+An unchanged host follows normal recovery. Subsequent rounds (`args.isFirstRound = false`) also
+revalidate the recorded host before work. Every round, first or not, appends `round.started`, one `phase.started` /
 `phase.finished` pair per phase that actually runs — Implement, Review and Critic for each Issue, plus the
 optional Learner phase (below) on the last round when it finds recurring evidence — one `subagent.started` /
 `subagent.stopped` pair per fresh agent carrying the role result, `review.finding` after the Reviewer returns,
@@ -193,15 +195,39 @@ const A = args
 const scripts = `${A.skillDir}/scripts`
 // Resolve before any host-dependent initialization, worktree creation or role invocation.
 // hostHarness is an operator-confirmed invocation selection, never a policy preference.
+if (A.priorRun) {
+  if (!A.priorRun.run || !A.unitId || !A.priorRun.worktree || !A.priorRun.issue) {
+    throw new Error('Resume requires the existing Run, execution unit and Issue assignment.')
+  }
+  A.runId = A.priorRun.run
+}
+const existingRun = A.priorRun || A.isFirstRound === false
+const resumeFlag = existingRun && A.runId && A.unitId
+  ? ` --run-id ${shellQuote(A.runId)} --unit-id ${shellQuote(A.unitId)}${A.priorRun ? ` --issue ${shellQuote(A.priorRun.issue)}` : ''}${A.stateRoot ? ` --state-root ${shellQuote(A.stateRoot)}` : ''}` : ''
 const hostSelectionFlag = A.hostHarness == null ? '' : ` --host ${shellQuote(A.hostHarness)}`
 const hostCheck = await runCommand(
-  `python3 "${scripts}/execution.py" host --require-resolved --json --cwd ${shellQuote(A.repoRoot)}${hostSelectionFlag}`,
+  `python3 "${scripts}/execution.py" host --require-resolved --json --cwd ${shellQuote(A.repoRoot)}${hostSelectionFlag}${resumeFlag}`,
   { cwd: A.repoRoot },
 )
 let hostResolution
 try { hostResolution = JSON.parse((hostCheck && hostCheck.stdout) || '{}') } catch { hostResolution = {} }
 if (!hostCheck || hostCheck.exitCode !== 0 || hostResolution.status !== 'resolved' || !hostResolution.capabilities) {
   throw new Error('Host Harness unresolved or unsupported; confirm the invocation host before starting work.')
+}
+if (A.priorRun) {
+  A.priorRun.correctionsSpent = hostResolution.resume.correctionsSpent
+  A.priorRun.correctionPending = hostResolution.resume.correctionPending
+}
+let approvedHostTransition = null
+if (hostResolution.resume && hostResolution.resume.decision !== 'unchanged') {
+  const oldHost = hostResolution.resume.previousHost
+  const newHost = hostResolution.effectiveHost
+  const requestedEffects = `Resume Run ${A.runId}: ${oldHost || 'unrecorded host'} → ${newHost}. ` +
+    'Use the new host capabilities and native/external role routing; preserve existing Issue worktrees, revisions, role selections and spent correction budgets. Repository policy and adapters remain unchanged.'
+  if (typeof prompt !== 'function' || String(await prompt(`${requestedEffects} Approve this host transition? (yes/no)`)).trim().toLowerCase() !== 'yes') {
+    throw new Error('Host transition declined or unconfirmed; existing Run state preserved.')
+  }
+  approvedHostTransition = { oldHost, newHost, confirmationSource: 'invocation:operator-approved', tier: hostResolution.capabilities.tier }
 }
 const hostHarness = hostResolution.effectiveHost
 const hostCapabilities = hostResolution.capabilities
@@ -215,6 +241,11 @@ const requestedBudget = A.correctionBudget ?? policy.budget.corrections
 const budget = Number.isInteger(requestedBudget) && requestedBudget >= 0
   ? Math.min(requestedBudget, 2)
   : 2
+
+if (A.priorRun && A.priorRun.correctionPending) {
+  if (A.priorRun.correctionsSpent >= budget) throw new Error('Existing Run correction budget exhausted; pending correction requires explicit recovery.')
+  A.priorRun.correctionsSpent += 1
+}
 
 const runLogEnabled = Boolean(A.runId && A.unitId)
 const stateRootFlag = A.stateRoot ? ` --state-root '${String(A.stateRoot).replaceAll("'", "'\\''")}'` : ''
@@ -333,7 +364,7 @@ function priorAssignment(issue) {
 const LEARN_PHASE_ISSUE = 'learn#00'
 
 const isFirstRound = A.isFirstRound !== false
-if (runLogEnabled && isFirstRound) {
+if (runLogEnabled && isFirstRound && !A.priorRun) {
   const runStartedData = {
     repositoryRoot: A.repoRoot,
     policyHash: stableHash(policy),
@@ -343,16 +374,16 @@ if (runLogEnabled && isFirstRound) {
     staleAfterSeconds: (policy.dashboard && policy.dashboard.staleAfterSeconds) || 900,
   }
   await appendRunEvent('run.started', undefined, undefined, runStartedData)
-  if (A.priorRun && A.priorRun.run) {
-    await appendRunEvent('run.resumed', undefined, undefined, {
-      priorRun: A.priorRun.run,
-      worktree: A.priorRun.worktree,
-      issue: A.priorRun.issue,
-      correctionsSpent: A.priorRun.correctionsSpent,
-    })
-  }
-  if (A.priorRun && A.priorRun.policyHash && A.priorRun.policyHash !== runStartedData.policyHash) {
-    await appendRunEvent('policy.changed', undefined, undefined, { policyHash: runStartedData.policyHash })
+
+}
+if (runLogEnabled && (A.priorRun || approvedHostTransition)) {
+  await appendRunEvent('run.resumed', undefined, undefined, {
+    priorRun: A.runId,
+    ...(A.priorRun ? { worktree: A.priorRun.worktree, issue: A.priorRun.issue } : {}),
+    ...(approvedHostTransition ? { hostTransition: approvedHostTransition } : {}),
+  })
+  if (A.priorRun && A.priorRun.policyHash && A.priorRun.policyHash !== stableHash(policy)) {
+    await appendRunEvent('policy.changed', undefined, undefined, { policyHash: stableHash(policy) })
   }
 }
 if (runLogEnabled) {
@@ -567,8 +598,8 @@ async function configuredIssueBranch(issue) {
 }
 
 async function implementationLocation(issue, previous) {
-  if (!A.isolate) return { worktree: A.repoRoot, branch: A.branch }
   const prior = priorAssignment(issue)
+  if (!A.isolate && !prior) return { worktree: A.repoRoot, branch: A.branch }
   if (!previous && prior && prior.worktree) {
     const branch = prior.branch || await configuredIssueBranch(issue)
     if (!branch) return null
@@ -724,7 +755,7 @@ async function implement(issue, feedback, previous) {
     ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'implementer' ? { executionUnavailable: true } : {}),
   }
   await markRunIn(assigned.worktree)
-  await appendRunEvent('phase.started', issue.ref, 'Implement', { worktree: assigned.worktree })
+  await appendRunEvent('phase.started', issue.ref, 'Implement', { worktree: assigned.worktree, ...(priorAssignment(issue) && !priorAssignment(issue).correctionPending && !feedback && !previous ? { recovery: true } : {}) })
   await appendRunEvent('subagent.started', issue.ref, 'Implement', { role: 'implementer' })
   const result = await requestRole('implementer', implementPrompt(issue, feedback, assigned), options)
   if (result && result.executionUnavailable) {
@@ -1123,6 +1154,7 @@ if (!integrationStopped && A.isLastRound && !hasPaused) {
   }
 }
 return {
+  runId: A.runId,
   hostResolution,
   round: A.round,
   date: A.date,

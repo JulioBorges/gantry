@@ -1,239 +1,34 @@
 #!/usr/bin/env python3
-"""Conversational setup wizard for Gantry policy and hooks."""
+"""Conversational setup writer for Gantry policy and selected-host adapters."""
+from __future__ import annotations
+
 import argparse
+import copy
 import json
-import os
-import shutil
 import sys
 from pathlib import Path
 
+from execution import SUPPORTED_HARNESSES
+from setup_host import (adapter_proposal, confirm, host_only, ignored_policy,
+                        migration_proposal, read_object, validate_policy)
+
+
 def merge_dicts(base: dict, update: dict) -> dict:
-    for k, v in update.items():
-        if isinstance(v, dict) and k in base and isinstance(base[k], dict):
-            merge_dicts(base[k], v)
+    for key, value in update.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            merge_dicts(base[key], value)
         else:
-            base[k] = v
+            base[key] = copy.deepcopy(value)
     return base
 
-def detect_codex(repo_root: Path) -> bool:
-    """Detect presence of Codex CLI on PATH or .codex directory in project."""
-    return bool(
-        shutil.which("codex")
-        or (repo_root / ".codex").exists()
-        or os.environ.get("CODEX_HOME")
-        or os.environ.get("CODEX_CLI")
-    )
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Gantry Setup config writer")
-    parser.add_argument("--config", help="JSON config string")
-    parser.add_argument("--config-file", help="Path to JSON config file")
-    parser.add_argument("--harness", choices=["codex", "claude-code", "antigravity", "opencode"], help="Explicit target harness")
-    parser.add_argument("--verify-auth", action="store_true", help="Explicitly guide/verify authentication and discovery before finalizing")
-    args = parser.parse_args()
-
-    repo_root = Path.cwd()
-    config = None
-
-    if args.config_file:
-        config = json.loads(Path(args.config_file).read_text(encoding="utf-8"))
-    elif args.config:
-        config = json.loads(args.config)
-    elif args.harness == "codex":
-        config = {
-            "execution": {
-                "hostHarness": "codex",
-                "roles": {
-                    "plan": {"harness": "codex", "model": "gpt-5.2-codex"},
-                    "implement": {"harness": "codex", "model": "gpt-5.2-codex"},
-                    "review": {"harness": "codex", "model": "gpt-5.2-codex"},
-                    "critic": {"harness": "codex", "model": "gpt-5.2-codex"},
-                },
-            }
-        }
-    else:
-        # Interactive detection when no config is passed
-        if detect_codex(repo_root):
-            source = "PATH" if shutil.which("codex") else ".codex"
-            print(f"Detected Codex in environment ({source}).")
-            try:
-                ans = input("Configure Codex as host harness? [Y/n] ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                ans = "n"
-            if ans in ("", "y", "yes"):
-                config = {
-                    "execution": {
-                        "hostHarness": "codex",
-                        "roles": {
-                            "plan": {"harness": "codex", "model": "gpt-5.2-codex"},
-                            "implement": {"harness": "codex", "model": "gpt-5.2-codex"},
-                            "review": {"harness": "codex", "model": "gpt-5.2-codex"},
-                            "critic": {"harness": "codex", "model": "gpt-5.2-codex"},
-                        },
-                    }
-                }
-
-    if config is None:
-        print("Error: No config provided", file=sys.stderr)
-        sys.exit(2)
-
-    if args.harness:
-        if "execution" not in config or not isinstance(config["execution"], dict):
-            config["execution"] = {}
-        config["execution"]["hostHarness"] = args.harness
-
-    is_codex = (
-        (args.harness == "codex")
-        or (isinstance(config, dict) and config.get("execution", {}).get("hostHarness") == "codex")
-    )
-
-    if is_codex or args.verify_auth:
-        print("Codex host harness selected or detected.")
-        print("Guidance: Ensure Codex CLI is authenticated via `codex login` before execution.")
-        print("Testing Codex model discovery...")
-        scripts_dir = Path(__file__).resolve().parent
-        if str(scripts_dir) not in sys.path:
-            sys.path.insert(0, str(scripts_dir))
-        try:
-            import discovery
-            models = discovery.discover_codex_models(use_cache=False)
-            model_ids = [m["id"] for m in models]
-            print(f"Codex discovery verified: {len(models)} model(s) discovered ({', '.join(model_ids[:3])}).")
-        except Exception as exc:
-            print(f"Notice: Codex discovery check: {exc}")
-            print("Remediation: Run `codex login` to verify credentials before running Gantry tasks.")
-
-    print("Proposed .gantry/config.json:")
-    print(json.dumps(config, indent=2))
-
-    gantry_dir = repo_root / ".gantry"
-    config_path = gantry_dir / "config.json"
-
-    if config_path.exists():
-        choice = input("Config exists. [M]erge, [O]verwrite, or [A]bort? ").strip().lower()
-        if choice.startswith('a'):
-            print("Aborted.")
-            sys.exit(1)
-        elif choice.startswith('o'):
-            final_config = config
-        elif choice.startswith('m'):
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
-            final_config = merge_dicts(existing, config)
-        else:
-            print("Invalid choice, aborted.")
-            sys.exit(1)
-    else:
-        choice = input("Write this policy? [y/N] ").strip().lower()
-        if not choice.startswith('y'):
-            print("Aborted.")
-            sys.exit(1)
-        final_config = config
-
-    gantry_dir.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(final_config, indent=2) + "\n", encoding="utf-8")
-
-    hook_frag_path = Path(__file__).resolve().parents[1] / "hooks" / "claude-code.settings.json"
-    if hook_frag_path.exists():
-        hook_frag = json.loads(hook_frag_path.read_text(encoding="utf-8"))
-        settings_path = repo_root / ".claude" / "settings.json"
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        content = settings_path.read_text(encoding="utf-8") if settings_path.exists() else ""
-        
-        new_hooks = hook_frag.get("hooks", {})
-        if not content.strip():
-            settings_path.write_text(json.dumps({"hooks": new_hooks}, indent=2) + "\n", encoding="utf-8")
-        else:
-            # Parse top level to check if hooks exists
-            parsed = json.loads(content)
-            if "hooks" not in parsed:
-                last_brace = content.rfind('}')
-                if last_brace != -1:
-                    hooks_json = json.dumps({"hooks": new_hooks}, indent=2)[1:-1]
-                    if not parsed:
-                        new_content = content[:last_brace] + hooks_json + content[last_brace:]
-                    else:
-                        new_content = content[:last_brace] + "," + hooks_json + content[last_brace:]
-                    settings_path.write_text(new_content, encoding="utf-8")
-            else:
-                import re
-                match = re.search(r'"hooks"\s*:\s*\{', content)
-                if match:
-                    start_idx = match.end() - 1
-                    brace_count = 0
-                    end_idx = start_idx
-                    in_string = False
-                    escape = False
-                    for i in range(start_idx, len(content)):
-                        c = content[i]
-                        if not in_string:
-                            if c == '{': brace_count += 1
-                            elif c == '}':
-                                brace_count -= 1
-                                if brace_count == 0:
-                                    end_idx = i + 1
-                                    break
-                            elif c == '"': in_string = True
-                        else:
-                            if escape: escape = False
-                            elif c == '\\': escape = True
-                            elif c == '"': in_string = False
-                    old_hooks = json.loads(content[start_idx:end_idx])
-                    for k, v in new_hooks.items():
-                        old_hooks[k] = v
-                    lines = content[:start_idx].split('\n')
-                    base_indent = len(lines[-1]) - len(lines[-1].lstrip()) if lines else 2
-                    new_hooks_text = json.dumps(old_hooks, indent=2)
-                    indented_new_hooks = new_hooks_text.replace('\n', '\n' + ' ' * base_indent)
-                    settings_path.write_text(content[:start_idx] + indented_new_hooks + content[end_idx:], encoding="utf-8")
-
-    # Antigravity hook wiring: when Antigravity is detected, generate or merge .agents/hooks.json
-    if (repo_root / ".agents").exists() or shutil.which("agy") or os.environ.get("ANTIGRAVITY_PROJECT_DIR") or os.environ.get("GEMINI_CLI"):
-        ag_hook_frag_path = Path(__file__).resolve().parents[1] / "hooks" / "antigravity.hooks.json"
-        if ag_hook_frag_path.exists():
-            ag_hook_frag = json.loads(ag_hook_frag_path.read_text(encoding="utf-8"))
-        else:
-            guard_cmd = 'python3 "skills/gantry/scripts/guard.py" PreToolUse --json'
-            ag_hook_frag = {
-                "hooks": {
-                    "PreToolUse": [
-                        {
-                            "matcher": "*",
-                            "hooks": [
-                                {
-                                    "type": "command",
-                                    "command": guard_cmd,
-                                }
-                            ]
-                        }
-                    ]
-                }
-            }
-        agents_dir = repo_root / ".agents"
-        agents_dir.mkdir(parents=True, exist_ok=True)
-        hooks_json_path = agents_dir / "hooks.json"
-        if hooks_json_path.exists():
-            try:
-                existing_hooks = json.loads(hooks_json_path.read_text(encoding="utf-8"))
-                if not isinstance(existing_hooks, dict):
-                    existing_hooks = {}
-            except Exception:
-                existing_hooks = {}
-            merged_hooks = merge_dicts(existing_hooks, ag_hook_frag)
-            hooks_json_path.write_text(json.dumps(merged_hooks, indent=2) + "\n", encoding="utf-8")
-        else:
-            hooks_json_path.write_text(json.dumps(ag_hook_frag, indent=2) + "\n", encoding="utf-8")
-
-    is_codex_final = (
-        final_config.get("execution", {}).get("hostHarness") == "codex"
-        or args.harness == "codex"
-    )
-
+def update_agents(repo_root: Path, host: str | None) -> None:
     agents_path = repo_root / "AGENTS.md"
     content = agents_path.read_text(encoding="utf-8") if agents_path.exists() else ""
     begin_marker = "<!-- gantry:begin -->"
     end_marker = "<!-- gantry:end -->"
     
-    if is_codex_final:
+    if host == "codex":
         new_section = (
             f"{begin_marker}\n"
             "## Gantry Repository Policy\n\n"
@@ -267,5 +62,111 @@ def main() -> None:
 
     agents_path.write_text(new_content, encoding="utf-8")
 
-if __name__ == "__main__":
-    main()
+
+def codex_defaults() -> dict:
+    return {'execution': {'hostHarness': 'codex', 'roles': {
+        role: {'harness': 'codex', 'model': 'gpt-5.2-codex'}
+        for role in ('plan', 'implement', 'review', 'critic')
+    }}}
+
+
+def normal_setup(root: Path, args: argparse.Namespace) -> int:
+    path = root / '.gantry/config.json'
+    existing = read_object(path.read_text(encoding='utf-8')) if path.exists() else None
+    if existing is not None:
+        validate_policy(existing)
+    if ignored_policy(root):
+        migration_proposal()
+        return 2
+    if args.config_file:
+        config = read_object(Path(args.config_file).read_text(encoding='utf-8'))
+    elif args.config:
+        config = read_object(args.config)
+    elif args.harness == 'codex':
+        # Legacy normal setup explicitly initializes roles only when requested.
+        config = codex_defaults()
+    elif args.harness:
+        config = {'execution': {'hostHarness': args.harness}}
+    else:
+        print('Installed binaries and configuration directories are hints, not active host identity.')
+        host = confirm('Choose Host Harness [antigravity/claude-code/codex/opencode], or Enter to abort: ')
+        if host not in SUPPORTED_HARNESSES:
+            print('Aborted. No valid explicit host selection.')
+            return 2
+        config = codex_defaults() if host == 'codex' else {'execution': {'hostHarness': host}}
+    validate_policy(config)
+    if args.harness:
+        config.setdefault('execution', {})['hostHarness'] = args.harness
+    # Only this proposal's intentional host selection controls adapter changes.
+    host = config.get('execution', {}).get('hostHarness')
+    if host is not None and host not in SUPPORTED_HARNESSES:
+        raise ValueError('Unsupported explicit host')
+    if host == 'codex' or args.verify_auth:
+        print('Guidance: Ensure Codex CLI is authenticated via `codex login` before execution.')
+        print('Testing Codex model discovery...')
+        try:
+            import discovery
+            models = discovery.discover_codex_models(use_cache=False)
+            print(f'Codex discovery verified: {len(models)} model(s) discovered.')
+        except Exception as error:
+            print(f'Notice: Codex discovery check: {error}')
+            print('Remediation: Run `codex login` before running Gantry tasks.')
+    candidates = {'overwrite': config}
+    if existing is not None:
+        candidates['merge'] = merge_dicts(copy.deepcopy(existing), config)
+    proposals = {}
+    for mode, candidate in candidates.items():
+        print('Proposed .gantry/config.json:' + (f' ({mode})' if existing is not None else ''))
+        print(json.dumps(candidate, indent=2))
+        candidate_host = candidate.get('execution', {}).get('hostHarness')
+        writes, guidance = adapter_proposal(root, candidate_host, candidate) if candidate_host else ({}, ['No selected host adapter; existing adapters remain unchanged.'])
+        proposals[mode] = writes
+        for message in guidance:
+            print(message)
+        for adapter, content in writes.items():
+            print(f'Proposed adapter effects ({mode}): {adapter.relative_to(root)}')
+            print(content)
+        agents_host = candidate.get('execution', {}).get('hostHarness')
+        print('AGENTS.md effect: update only the marked Gantry section' + (' with Codex guardrails.' if agents_host == 'codex' else '.'))
+    if existing is not None:
+        answer = confirm('Config exists. [M]erge, [O]verwrite, or [A]bort? ')
+        mode = {'m': 'merge', 'merge': 'merge', 'o': 'overwrite', 'overwrite': 'overwrite'}.get(answer)
+    else:
+        mode = 'overwrite' if confirm('Write this policy? [y/N] ') in ('y', 'yes') else None
+    if mode is None:
+        print('Aborted. No files changed.')
+        return 1
+    final = candidates[mode]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(final, indent=2) + '\n', encoding='utf-8')
+    for adapter, content in proposals[mode].items():
+        adapter.parent.mkdir(parents=True, exist_ok=True)
+        adapter.write_text(content, encoding='utf-8')
+    update_agents(root, final.get('execution', {}).get('hostHarness'))
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument('--config', help='JSON config as one structured argument')
+    source.add_argument('--config-file', help='Path to JSON config file (recommended)')
+    parser.add_argument('--harness', choices=sorted(SUPPORTED_HARNESSES), help='Intentional normal setup host selection')
+    parser.add_argument('--verify-auth', action='store_true', help='Verify Codex discovery during normal setup')
+    parser.add_argument('--host-only', action='store_true', help='Preview host-only policy and selected adapter repair without role presets')
+    parser.add_argument('--host', help='Operator-confirmed identity for host-only repair')
+    parser.add_argument('--apply', action='store_true', help='Ask approval to apply the displayed host-only proposal')
+    args = parser.parse_args()
+    if args.host_only and (args.config or args.config_file or args.harness or args.verify_auth):
+        parser.error('--host-only accepts only --host and --apply; role/config updates require normal setup')
+    if not args.host_only and (args.host or args.apply):
+        parser.error('--host and --apply require --host-only')
+    try:
+        return host_only(Path.cwd(), args.host, args.apply) if args.host_only else normal_setup(Path.cwd(), args)
+    except (ValueError, OSError, UnicodeError) as error:
+        print(f'Setup error: {error}. Application stopped.', file=sys.stderr)
+        return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main())

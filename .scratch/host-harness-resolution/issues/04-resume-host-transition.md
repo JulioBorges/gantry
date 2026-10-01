@@ -1,7 +1,7 @@
 # Resume an existing Run with an approved host transition
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `host-harness-resolution#04`
 Spec: `.scratch/host-harness-resolution/spec.md`
 Created: 2026-09-30
@@ -28,12 +28,12 @@ Keep the initial package within the existing context budget. Locate the relevant
 
 ## Acceptance criteria
 
-- [ ] Resumption with unknown, conflicting or unsupported host identity performs no new role work; another Run's host record cannot resolve the ambiguity.
-- [ ] An unchanged resolved host resumes through the normal existing recovery path. A changed host presents old/new identity and requested effects before continuation.
-- [ ] Declining a host transition leaves worktrees, revisions, role overrides and correction counts unchanged; no new Run or worktree silently substitutes for the existing one.
-- [ ] Approving the transition records sanitized old/new host and confirmation provenance under the same Run and uses the newly resolved host for capabilities and role routing.
-- [ ] Resumed workflow fixture evidence demonstrates existing Issue worktrees and spent correction attempts survive the transition; missing older host metadata requires explicit establishment rather than a guessed fallback.
-- [ ] Concurrent worktree/Run tests prove transition metadata isolation; documentation and final verification receipts identify simulated coverage and any live resumption evidence separately.
+- [x] Resumption with unknown, conflicting or unsupported host identity performs no new role work; another Run's host record cannot resolve the ambiguity.
+- [x] An unchanged resolved host resumes through the normal existing recovery path. A changed host presents old/new identity and requested effects before continuation.
+- [x] Declining a host transition leaves worktrees, revisions, role overrides and correction counts unchanged; no new Run or worktree silently substitutes for the existing one.
+- [x] Approving the transition records sanitized old/new host and confirmation provenance under the same Run and uses the newly resolved host for capabilities and role routing.
+- [x] Resumed workflow fixture evidence demonstrates existing Issue worktrees and spent correction attempts survive the transition; missing older host metadata requires explicit establishment rather than a guessed fallback.
+- [x] Concurrent worktree/Run tests prove transition metadata isolation; documentation and final verification receipts identify simulated coverage and any live resumption evidence separately.
 
 ## Blocked by
 

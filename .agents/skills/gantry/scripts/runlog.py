@@ -248,6 +248,17 @@ def validate_event(payload: object) -> dict:
         require_string(data["policyHash"], "data.policyHash")
         require_string(data["tier"], "data.tier")
         require_positive_integer(data["staleAfterSeconds"], "data.staleAfterSeconds")
+    elif event == "run.resumed" and isinstance(data, dict) and "hostTransition" in data:
+        transition = data["hostTransition"]
+        if not isinstance(transition, dict) or set(transition) != {"oldHost", "newHost", "confirmationSource", "tier"}:
+            raise EventError("hostTransition must contain only oldHost, newHost, confirmationSource and tier")
+        hosts = {"antigravity", "claude-code", "codex", "opencode"}
+        if (transition["oldHost"] is not None and (not isinstance(transition["oldHost"], str) or transition["oldHost"] not in hosts)) or not isinstance(transition["newHost"], str) or transition["newHost"] not in hosts:
+            raise EventError("hostTransition requires supported host identities")
+        if transition["confirmationSource"] != "invocation:operator-approved":
+            raise EventError("hostTransition requires sanitized operator confirmation provenance")
+        if not isinstance(transition["tier"], str) or transition["tier"] not in {"reference", "supported", "compatible"}:
+            raise EventError("hostTransition requires a declared support tier")
     elif event in ROUND_EVENTS:
         if not isinstance(data, dict) or "round" not in data:
             raise EventError(f"{event} requires data.round")
@@ -400,12 +411,16 @@ def derive_corrections_spent(events: list[dict], issue_ref: str) -> int:
     """Apply the documented derivation rule to one Run's own valid events.
 
     `runlog.py inflight` never reports `correctionsSpent`: it is derived here from (1) the
-    `run.resumed.data.correctionsSpent` recorded on this same Run, but only when that same
+    legacy `run.resumed.data.correctionsSpent` base from the first `run.resumed` event on this Run,
+    but only when that same
     `run.resumed` event also names `issue_ref` as `data.issue` (0 otherwise, including when the Run
     has no `run.resumed` event, or when its `run.resumed` names a different Issue), plus (2) the
     number of `refutation` events for `issue_ref` that are each followed, later in the same log, by a
-    `phase.started` `Implement` event for that same Issue — i.e. only refutations whose correction
-    pass actually started count toward the spent budget. The base is per-Issue, not per-Run: a Run
+    `phase.started` `Implement` event for that same Issue without `data.recovery=true` — i.e. only
+    refutations whose correction pass actually started count toward the spent budget; replaying an
+    already-started phase does not consume another attempt. Current same-Run resumptions omit a
+    copied base; the first-event base is retained for legacy logs, and later resume events never
+    add or replace it. The base is per-Issue, not per-Run: a Run
     resumed for one Issue must never lend its `correctionsSpent` base to any other Issue that also
     happens to appear in the same Run's log.
     """
@@ -424,6 +439,7 @@ def derive_corrections_spent(events: list[dict], issue_ref: str) -> int:
             later_event["event"] == "phase.started"
             and later_event.get("issue") == issue_ref
             and later_event.get("phase") == "Implement"
+            and not later_event.get("data", {}).get("recovery")
             for later_event in later
         ):
             started_corrections += 1
@@ -497,6 +513,15 @@ def main() -> int:
                 raise EventError("a Run log already starts for this run-id")
             if not path.exists() and event["event"] != "run.started":
                 raise EventError("the first event of a Run must be run.started")
+            transition = event.get("data", {}).get("hostTransition")
+            if transition:
+                events = read_valid_events(path)
+                previous = events[0].get("data", {}).get("host", {}).get("effectiveHost") if events else None
+                for prior in events[1:]:
+                    if prior["event"] == "run.resumed" and prior.get("data", {}).get("hostTransition"):
+                        previous = prior["data"]["hostTransition"]["newHost"]
+                if not events or any(e["event"] in FINISHED_EVENTS for e in events) or transition["oldHost"] != previous:
+                    raise EventError("host transition must match the existing unfinished Run's host")
             append_event(path, event)
             return 0
         if args.command == "corrections":

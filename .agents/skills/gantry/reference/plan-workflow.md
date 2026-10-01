@@ -78,7 +78,7 @@ When Codex CLI operates as the Host Harness:
    - Plan Critic adversarial refutation
    - Halting for mandatory operator approval before transitioning issues (`roadmap.py status <ref> ready-for-agent`, `roadmap.py waves`, `roadmap.py check`)
 3. **Bounded Subprocess Execution**: Roles are dispatched via `python3 "$skillDir/scripts/execution.py" dispatch --role <role> --cwd <dir>`. If a role uses Codex, it executes bounded `codex exec "<prompt>" --model <model>`. If a role is delegated to an external harness (such as Claude Code or Antigravity), cross-harness dispatch is invoked.
-4. **Contract Verification**: Every role result is parsed through `result.extract_json()` and validated against its schema contract (`result.py`). Delimiters and markdown code fences (` ```json `) are handled robustly, and protocol failures trigger bounded retries.
+4. **Contract Verification**: Research returns text without a Result Contract. Every contracted role result is parsed through `result.extract_json()` and validated against its schema contract (`result.py`). Delimiters and markdown code fences (` ```json `) are handled robustly, and protocol failures trigger bounded retries.
 
 ## Executable Claude Code Workflow
 
@@ -189,7 +189,7 @@ async function validRoleResult(role, result) {
 }
 
 async function requestRole(role, prompt, options) {
-  const selection = (options && options.selection) || (A.roles && (A.roles[role] || (role === 'planner' && A.roles.plan)))
+  const selection = (options && options.selection) || (A.roles && (A.roles[role] || ((role === 'planner' || role === 'research') && A.roles.plan)))
   if (selection && selection.harness && selection.harness !== hostHarness) {
     const cwd = (options && options.cwd) || A.repoRoot
     const selectionJson = JSON.stringify(selection)
@@ -199,18 +199,24 @@ async function requestRole(role, prompt, options) {
     if (res && res.exitCode === 0) {
       try {
         const externalResult = JSON.parse(res.stdout)
+        if (role === 'research') {
+          if (typeof externalResult === 'string' && externalResult.trim()) return externalResult
+          throw new Error('Research returned no text')
+        }
         const validation = await runCommand(
           `python3 "${scripts}/result.py" --role "${role}" --json`,
           { cwd: A.repoRoot, input: JSON.stringify(externalResult) },
         )
         return validation && validation.exitCode === 0 ? externalResult : null
       } catch (e) {
+        if (role === 'research') throw new Error('Research execution failed; preserve the selected role and stop planning.')
         return null
       }
     }
+    if (role === 'research') throw new Error('Research execution failed; preserve the selected role and stop planning.')
     return null
   }
-  const native = hostCapabilities.structured_output === true && A.structuredOutput === true
+  const native = role !== 'research' && hostCapabilities.structured_output === true && A.structuredOutput === true
   const agentPrompt = cavemanActive ? `${prompt}\n\n${cavemanInstruction}` : prompt
   const agentOptions = {
     ...options,
@@ -219,6 +225,10 @@ async function requestRole(role, prompt, options) {
     ...(native ? { schema: await roleSchema(role) } : {}),
   }
   const result = await agent(agentPrompt, agentOptions)
+  if (role === 'research') {
+    if (typeof result !== 'string' || !result.trim()) throw new Error('Research returned no text; preserve the selected role and stop planning.')
+    return result
+  }
   if (await validRoleResult(role, result)) return result
   const retryPrompt = `${agentPrompt}\nYour prior result was invalid. Return the complete ${role} result contract.`
   const retryOptions = {
@@ -359,21 +369,14 @@ and budgets as structured output.`
 }
 
 phase('Research')
-const researchPrompt = (text) => (cavemanActive ? `${text}\n\n${cavemanInstruction}` : text)
-const researchOptions = (opts) => ({
-  ...opts,
-  phase: 'Research',
-  model: A.models.plan,
-  ...(cavemanActive ? { skills: (opts.skills || []).concat(cavemanState.skill_path || 'caveman'), caveman: true } : {}),
-})
 const research = await parallel([
-  () => agent(researchPrompt(`Survey ${A.repoRoot}: conventions, current code/tests, ${paths.context}, and ${paths.adrs}.
-Return facts and paths for the Planner.`), researchOptions({ label: 'research:codebase' })),
-  () => agent(researchPrompt(`Read ${t.specPath || paths.specPath}, ${paths.decisions}, and the relevant repository documents.
-Return owned and consumed contracts, settled decisions, and the testing seam.`), researchOptions({ label: 'research:spec' })),
-  () => agent(researchPrompt(`Read ${paths.exemplarIssue} and ${paths.issueTracker}. Run
-\`python3 ${scripts}/frontier.py --scope frontier --json\`. Return the exact Issue format and frontier facts.`),
-    researchOptions({ label: 'research:format' })),
+  () => requestRole('research', `Survey ${A.repoRoot}: conventions, current code/tests, ${paths.context}, and ${paths.adrs}.
+Return facts and paths for the Planner.`, { label: 'research:codebase', phase: 'Research', model: A.models.plan }),
+  () => requestRole('research', `Read ${t.specPath || paths.specPath}, ${paths.decisions}, and the relevant repository documents.
+Return owned and consumed contracts, settled decisions, and the testing seam.`, { label: 'research:spec', phase: 'Research', model: A.models.plan }),
+  () => requestRole('research', `Read ${paths.exemplarIssue} and ${paths.issueTracker}. Run
+\`python3 ${scripts}/frontier.py --scope frontier --json\`. Return the exact Issue format and frontier facts.`,
+    { label: 'research:format', phase: 'Research', model: A.models.plan }),
 ])
 
 phase('Plan')
