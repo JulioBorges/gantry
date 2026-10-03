@@ -1,0 +1,3 @@
+"""Simulated successful readiness matching the public evidence contract."""
+
+VERIFIED_PREFLIGHT = {'valid': True, 'status': 'verified', 'dimensions': {'compatibility': {'status': 'verified', 'source': 'bounded-version-and-parser-probes'}, 'authentication': {'status': 'verified', 'source': 'bounded-login-status'}, 'modelEffort': {'status': 'verified', 'source': 'bounded-selected-profile-probe', 'identity': 'requested arguments; effective model/effort unobserved'}, 'transport': {'status': 'verified', 'source': 'completed-codex-jsonl-probe'}, 'permissions': {'status': 'verified', 'source': 'operator-selection'}}, 'error': None, 'remedy': 'Select an explicitly approved profile or authorize a bounded read-only probe; no fallback was used.', 'reused': False}

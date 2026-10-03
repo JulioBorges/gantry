@@ -1,0 +1,163 @@
+{
+  "kind": "bounded-real-role-canonical-host-driver",
+  "date": "2026-10-03T05:27:50.733981+00:00",
+  "hostDriver": "Node canonical workflow adapter; conversational turn steering simulated",
+  "roleSelection": {
+    "harness": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "medium"
+  },
+  "timeoutSeconds": 90,
+  "error": null,
+  "outcome": "paused",
+  "issueStatus": "ready-for-agent",
+  "branch": "feat/run",
+  "clean": true,
+  "statusReplies": [
+    {
+      "issue": "continuation#01",
+      "state": "running",
+      "delivered": false,
+      "modelProgress": "unknown"
+    }
+  ],
+  "events": [
+    {
+      "event": "run.started",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:26:19.332Z"
+    },
+    {
+      "event": "round.started",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:26:19.428Z"
+    },
+    {
+      "event": "phase.started",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:26:19.473Z"
+    },
+    {
+      "event": "subagent.started",
+      "role": "implementer",
+      "status": null,
+      "ts": "2026-10-03T05:26:19.519Z"
+    },
+    {
+      "event": "role.result.ready",
+      "role": "implementer",
+      "status": null,
+      "ts": "2026-10-03T05:26:19.705Z"
+    },
+    {
+      "event": "role.result.consumed",
+      "role": "implementer",
+      "status": null,
+      "ts": "2026-10-03T05:26:19.751Z"
+    },
+    {
+      "event": "subagent.stopped",
+      "role": "implementer",
+      "status": null,
+      "ts": "2026-10-03T05:26:19.796Z"
+    },
+    {
+      "event": "phase.finished",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:26:19.840Z"
+    },
+    {
+      "event": "phase.started",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:26:19.885Z"
+    },
+    {
+      "event": "subagent.started",
+      "role": "reviewer",
+      "status": null,
+      "ts": "2026-10-03T05:26:19.929Z"
+    },
+    {
+      "event": "role.result.ready",
+      "role": "reviewer",
+      "status": null,
+      "ts": "2026-10-03T05:26:20.088Z"
+    },
+    {
+      "event": "role.result.consumed",
+      "role": "reviewer",
+      "status": null,
+      "ts": "2026-10-03T05:26:20.135Z"
+    },
+    {
+      "event": "subagent.stopped",
+      "role": "reviewer",
+      "status": null,
+      "ts": "2026-10-03T05:26:20.180Z"
+    },
+    {
+      "event": "phase.finished",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:26:20.228Z"
+    },
+    {
+      "event": "review.finding",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:26:20.275Z"
+    },
+    {
+      "event": "phase.started",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:26:20.323Z"
+    },
+    {
+      "event": "subagent.started",
+      "role": "critic",
+      "status": null,
+      "ts": "2026-10-03T05:26:20.369Z"
+    },
+    {
+      "event": "role.invocation.started",
+      "role": "critic",
+      "status": null,
+      "ts": "2026-10-03T05:26:20Z"
+    },
+    {
+      "event": "role.invocation.finished",
+      "role": "critic",
+      "status": "timeout",
+      "ts": "2026-10-03T05:27:50Z"
+    },
+    {
+      "event": "subagent.stopped",
+      "role": "critic",
+      "status": "execution-failure",
+      "ts": "2026-10-03T05:27:50.588Z"
+    },
+    {
+      "event": "issue.paused",
+      "role": "critic",
+      "status": null,
+      "ts": "2026-10-03T05:27:50.636Z"
+    },
+    {
+      "event": "round.finished",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:27:50.684Z"
+    }
+  ],
+  "limitations": [
+    "Only the Critic model invocation is real. Implement/Review are deterministic fixtures.",
+    "No daemon or continuation after closing the Host is claimed.",
+    "Requested model/effort is not proof of server-side model identity."
+  ]
+}

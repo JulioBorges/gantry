@@ -25,6 +25,9 @@ EVENTS = {
     "subagent.stopped",
     "role.invocation.started",
     "role.invocation.finished",
+    "role.result.ready",
+    "role.result.consumed",
+    "host.handoff",
     "compaction",
     "hook.denied",
     "hook.degraded",
@@ -37,6 +40,7 @@ EVENTS = {
     "role.selected",
     "role.changed",
     "operator.approved",
+    "operator.waiting",
 }
 RUN_EVENTS = {"run.started", "run.resumed", "run.cancelled", "run.finished"}
 ROUND_EVENTS = {"round.started", "round.finished"}
@@ -294,6 +298,9 @@ def validate_event(payload: object) -> dict:
         if not isinstance(data, dict) or "policyHash" not in data:
             raise EventError("policy.changed requires data.policyHash")
         require_string(data["policyHash"], "data.policyHash")
+    elif event == "operator.waiting":
+        if "issue" not in payload or not isinstance(data, dict) or data.get("decision") != "post_critic_integration":
+            raise EventError("operator.waiting requires a configured integration decision")
     elif event == "issue.paused":
         if "issue" not in payload:
             raise EventError("issue.paused requires issue")
@@ -301,6 +308,22 @@ def validate_event(payload: object) -> dict:
             raise EventError("issue.paused requires data.role and data.reason")
         require_string(data["role"], "data.role")
         require_string(data["reason"], "data.reason")
+    elif event in {"role.result.ready", "role.result.consumed", "host.handoff"}:
+        required = {"role", "invocationId", "worktree", "branch", "revision", "modelProgress"}
+        if "issue" not in payload or not isinstance(data, dict) or not required <= set(data):
+            raise EventError(f"{event} requires attributable result metadata")
+        for field in required - {"branch", "revision"}:
+            require_string(data[field], f"data.{field}")
+        for field in ("branch", "revision"):
+            if data[field] is not None:
+                require_string(data[field], f"data.{field}")
+        if data["modelProgress"] != "unknown":
+            raise EventError("model progress must remain unknown")
+        if event == "host.handoff":
+            if data.get("reason") not in {"operator_stop", "host_capability_lost", "authorized_handoff"}:
+                raise EventError("host.handoff requires a supported boundary reason")
+        else:
+            require_string(data.get("resultHash"), "data.resultHash")
     elif event in {"role.invocation.started", "role.invocation.finished"}:
         required = {"role", "attempt", "cliVersion", "requestedSelection", "observedSelection", "permissionScope"}
         if not isinstance(data, dict) or not required <= set(data):
@@ -474,6 +497,12 @@ def main() -> int:
     query_parser.add_argument("unit_id", help="twelve-hex repository execution-unit ID")
     query_parser.add_argument("--state-root", help="override ~/.gantry/state")
     query_parser.add_argument("--json", action="store_true", help="emit machine-readable output")
+    results_parser = subparsers.add_parser("results", help="query observed result identities without role payloads")
+    results_parser.add_argument("unit_id")
+    results_parser.add_argument("run_id")
+    results_parser.add_argument("--state-root")
+    results_parser.add_argument("--json", action="store_true")
+    results_parser.add_argument("--retained", action="store_true", help="include previously recorded Implement/Review contracts for reconciliation")
     corrections_parser = subparsers.add_parser(
         "corrections", help="derive correctionsSpent for one Issue from one Run's own log"
     )
@@ -527,6 +556,8 @@ def main() -> int:
                 raise EventError("a Run log already starts for this run-id")
             if not path.exists() and event["event"] != "run.started":
                 raise EventError("the first event of a Run must be run.started")
+            if event["event"].startswith("role.result.") and any(prior["event"] in FINISHED_EVENTS for prior in read_valid_events(path)):
+                raise EventError("closed Run cannot receive result observations")
             transition = event.get("data", {}).get("hostTransition")
             if transition:
                 events = read_valid_events(path)
@@ -537,6 +568,32 @@ def main() -> int:
                 if not events or any(e["event"] in FINISHED_EVENTS for e in events) or transition["oldHost"] != previous:
                     raise EventError("host transition must match the existing unfinished Run's host")
             append_event(path, event)
+            return 0
+        if args.command == "results":
+            path = run_log_path(root, args.unit_id, args.run_id)
+            if not path.exists():
+                raise EventError(f"no Run log for {args.run_id}")
+            events = read_valid_events(path)
+            consumed = {event["data"]["invocationId"] for event in events if event["event"] == "role.result.consumed"}
+            results = [{**event["data"], "issue": event["issue"], "consumed": event["data"]["invocationId"] in consumed}
+                       for event in events if event["event"] == "role.result.ready"]
+            payload = {"runId": args.run_id, "availability": "observed" if results else "unknown", "modelProgress": "unknown",
+                       "finished": any(event["event"] in FINISHED_EVENTS for event in events), "results": results}
+            if args.retained:
+                retained = []
+                for index, event in enumerate(events):
+                    if event["event"] != "role.result.ready" or event["data"]["role"] not in {"implementer", "reviewer"}:
+                        continue
+                    for later in events[index + 1:]:
+                        if later.get("issue") != event["issue"] or later.get("data", {}).get("role") != event["data"]["role"]:
+                            continue
+                        if later["event"] == "role.result.ready":
+                            break
+                        if later["event"] == "subagent.stopped" and isinstance(later["data"].get("result"), dict):
+                            retained.append({**event["data"], "issue": event["issue"], "result": later["data"]["result"]})
+                            break
+                payload["retainedResults"] = retained
+            print(json.dumps(payload, sort_keys=True))
             return 0
         if args.command == "corrections":
             if not ISSUE_RE.fullmatch(args.issue):

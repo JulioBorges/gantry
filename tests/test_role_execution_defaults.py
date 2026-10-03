@@ -265,8 +265,9 @@ class RoleExecutionPreflightTests(unittest.TestCase):
         res = execution.preflight_validate(policy=policy, check_auth=False)
         # Advisory notes should be present
         self.assertTrue(any("Advisory:" in g for g in res["guidance"]))
-        # But valid is still True (not blocked by guessed ranking)
-        self.assertTrue(res["valid"])
+        # Ranking remains advisory; missing execution evidence independently refuses readiness.
+        self.assertFalse(res["valid"])
+        self.assertTrue(res["errors"])
 
 
 class AntigravityGuardNormalizationTests(unittest.TestCase):

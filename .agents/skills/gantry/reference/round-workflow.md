@@ -231,6 +231,72 @@ if (hostResolution.resume && hostResolution.resume.decision !== 'unchanged') {
 }
 const hostHarness = hostResolution.effectiveHost
 const hostCapabilities = hostResolution.capabilities
+
+// Selected-profile readiness is independent of Host identity. Probe authorization
+// must be explicit; failure never changes policy, permissions, models or defaults.
+// Keep only the sanitized CLI diagnosis, never command streams or unrelated fields.
+const preflightFallback = 'Execution preflight refused or unknown; explicit profile recovery required. Select a replacement or authorize a bounded read-only probe explicitly.'
+function preflightFailureMessage(readiness) {
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+  const statuses = ['verified', 'unavailable', 'unknown']
+  if (!object(readiness) || !statuses.includes(readiness.status) ||
+      !object(readiness.dimensions) || typeof readiness.error !== 'string' ||
+      typeof readiness.remedy !== 'string') return preflightFallback
+  const dimensions = {}
+  for (const name of ['compatibility', 'authentication', 'modelEffort', 'transport', 'permissions']) {
+    const dimension = readiness.dimensions[name]
+    if (!object(dimension) || !statuses.includes(dimension.status) || typeof dimension.source !== 'string' ||
+        (dimension.identity !== undefined && typeof dimension.identity !== 'string')) return preflightFallback
+    dimensions[name] = { status: dimension.status, source: dimension.source }
+    if (dimension.identity !== undefined) dimensions[name].identity = dimension.identity
+  }
+  return `Execution preflight failed: ${JSON.stringify({ status: readiness.status, dimensions, error: readiness.error, remedy: readiness.remedy })}`
+}
+
+function validPreflightEvidence(readiness) {
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+  const exactKeys = (value, keys) => object(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
+  if (!exactKeys(readiness, ['valid', 'status', 'dimensions', 'error', 'remedy', 'reused']) ||
+      readiness.valid !== true || readiness.status !== 'verified' || readiness.error !== null ||
+      readiness.remedy !== 'Select an explicitly approved profile or authorize a bounded read-only probe; no fallback was used.' ||
+      typeof readiness.reused !== 'boolean') return false
+  const sources = {
+    compatibility: 'bounded-version-and-parser-probes', authentication: 'bounded-login-status',
+    modelEffort: 'bounded-selected-profile-probe', transport: 'completed-codex-jsonl-probe', permissions: 'operator-selection',
+  }
+  if (!exactKeys(readiness.dimensions, Object.keys(sources))) return false
+  return Object.entries(sources).every(([name, source]) => {
+    const dimension = readiness.dimensions[name]
+    return exactKeys(dimension, name === 'modelEffort' ? ['status', 'source', 'identity'] : ['status', 'source']) &&
+      dimension.status === 'verified' && dimension.source === source &&
+      (name !== 'modelEffort' || dimension.identity === 'requested arguments; effective model/effort unobserved')
+  })
+}
+
+async function requireProfilePreflight(selection, cwd = A.repoRoot) {
+  const flags = []
+  if (A.authorizePreflightProbe === true) flags.push('--authorize-probe')
+  if (A.runId && A.unitId) {
+    flags.push(`--run-id ${shellQuote(A.runId)}`, `--unit-id ${shellQuote(A.unitId)}`)
+    if (A.stateRoot) flags.push(`--state-root ${shellQuote(A.stateRoot)}`)
+  }
+  const profileArg = selection
+    ? `--selection ${shellQuote(JSON.stringify(selection))}`
+    : `--run-overrides ${shellQuote(JSON.stringify(A.roles || {}))}`
+  const checked = await runCommand(
+    `python3 "${scripts}/execution.py" preflight --json --cwd ${shellQuote(cwd)} ${profileArg} ${flags.join(' ')}`,
+    { cwd: A.repoRoot },
+  )
+  let readiness
+  try { readiness = JSON.parse((checked && checked.stdout) || '{}') } catch { readiness = {} }
+  if (!checked || checked.exitCode !== 0 || !validPreflightEvidence(readiness)) {
+    const failure = new Error(readiness && readiness.valid === false ? preflightFailureMessage(readiness) : preflightFallback)
+    failure.gantryPreflightFailure = true
+    throw failure
+  }
+  return readiness
+}
+
 if (hostResolution.mismatch && typeof log === 'function') {
   log(`Host Harness ${hostHarness} differs from saved preference ${hostResolution.savedPreference}; policy unchanged.`)
 }
@@ -505,9 +571,14 @@ async function validRoleResult(role, result) {
   )
   return Boolean(validation && validation.exitCode === 0)
 }
-async function requestRole(role, prompt, options) {
+async function executeRole(role, prompt, options) {
   const issueRef = options && options.issueRef
   const selection = resolveRoleForIssue(issueRef, role, options)
+  try {
+    await requireProfilePreflight(selection || {}, (options && options.cwd) || A.repoRoot)
+  } catch (failure) {
+    return { executionUnavailable: true, error: failure && failure.gantryPreflightFailure === true ? failure.message : preflightFallback }
+  }
   if (options && options.executionUnavailable) {
     return { executionUnavailable: true, error: options.error || 'Role execution unavailable' }
   }
@@ -575,6 +646,122 @@ async function requestRole(role, prompt, options) {
     return { executionUnavailable: true, error: retry.error || 'Execution unavailable' }
   }
   return (await validRoleResult(role, retry)) ? retry : null
+}
+
+// Host-owned coordination seam. Its wait must continue status steering without finishing
+// the execution turn. Without a control hook, await the supported invocation directly.
+const hostHandoffs = []
+let invocationSequence = 0
+const reconciledResults = new Set()
+let recoveryInventory = null
+async function resultObservations(includeRetained = false) {
+  if (!A.runId || !A.unitId) return { finished: false, results: [] }
+  const reply = await runWorkflowCommand(
+    `python3 "${scripts}/runlog.py" results ${shellQuote(A.unitId)} ${shellQuote(A.runId)}${A.stateRoot ? ` --state-root ${shellQuote(A.stateRoot)}` : ''} --json${includeRetained ? ' --retained' : ''}`,
+  )
+  return JSON.parse(reply.stdout)
+}
+async function roleRevision(worktree) {
+  const branch = await runCommand('git branch --show-current', { cwd: worktree })
+  const revision = await runCommand('git rev-parse HEAD', { cwd: worktree })
+  return {
+    branch: branch && branch.exitCode === 0 && branch.stdout.trim() || null,
+    revision: revision && revision.exitCode === 0 && revision.stdout.trim() || null,
+  }
+}
+async function requestRole(role, prompt, options) {
+  // Learner has no assigned Issue and keeps its existing lifecycle contract.
+  if (!options.issueRef || (!A.runId && !A.unitId)) return await executeRole(role, prompt, options)
+  const worktree = options.cwd || A.repoRoot
+  const metadata = {
+    role, issue: options.issueRef, runId: A.runId || null, worktree,
+    invocationId: `${A.runId || 'unrecorded'}:${options.issueRef}:${role}:${Date.now()}:${++invocationSequence}`,
+    ...await roleRevision(worktree), modelProgress: 'unknown',
+  }
+  if (A.priorRun && A.recoveredResults && A.recoveredResults.length && recoveryInventory === null) {
+    if (A.recoveredResults.some(record => record.runId !== A.runId || record.issue !== A.priorRun.issue || !['implementer', 'reviewer', 'critic'].includes(record.role))) {
+      return { executionUnavailable: true, error: 'retained_result_mismatch' }
+    }
+    const saved = await resultObservations(true)
+    // Prior consumed Implement/Review contracts already live in the minimized Run log.
+    // Recover those prerequisites instead of relaunching code when transport retains only Critic.
+    recoveryInventory = [...A.recoveredResults, ...(saved.retainedResults || []).filter(record =>
+      !A.recoveredResults.some(supplied => supplied.invocationId === record.invocationId))]
+  }
+  // Resume the latest invocation in the recorded chain, not the first delivery before corrections.
+  const inventory = recoveryInventory || A.recoveredResults || []
+  const observations = inventory.length ? await resultObservations() : null
+  const latest = observations && observations.results.filter(record => record.issue === options.issueRef && record.role === role).at(-1)
+  const retained = latest && inventory.find(record => record.invocationId === latest.invocationId && !reconciledResults.has(record.invocationId))
+  if (latest && !retained && inventory.some(record => record.issue === options.issueRef && record.role === role)) {
+    return { executionUnavailable: true, error: 'retained_result_mismatch' }
+  }
+  if (retained) {
+    const observed = observations
+    const issue = A.issues.find(item => item.ref === options.issueRef)
+    const authority = await runCommand(`python3 "${scripts}/acceptance.py" ${shellQuote(issue.path)} --json`, { cwd: A.repoRoot })
+    const clean = await runCommand('git status --porcelain', { cwd: worktree })
+    const recorded = observed.results.find(record => record.invocationId === retained.invocationId)
+    const identity = ['role', 'issue', 'runId', 'worktree', 'branch', 'revision', 'resultHash']
+    let valid = false
+    // A consumed Review is a prerequisite of the correction, not a claim about its new revision.
+    // Only that prior stage may use an ancestor; Implement and retained Critic must match HEAD.
+    let revisionMatches = retained.revision === metadata.revision
+    if (!revisionMatches && role === 'reviewer' && recorded && recorded.consumed) {
+      const implement = observed.results.filter(record => record.issue === options.issueRef && record.role === 'implementer').at(-1)
+      const reviewIndex = observed.results.findIndex(record => record.invocationId === retained.invocationId)
+      const implementIndex = implement && observed.results.findIndex(record => record.invocationId === implement.invocationId)
+      if (implement && implement.consumed && implement.revision === metadata.revision && reviewIndex < implementIndex && /^[0-9a-f]{40,64}$/.test(retained.revision || '')) {
+        const ancestor = await runCommand(`git merge-base --is-ancestor ${shellQuote(retained.revision)} ${shellQuote(metadata.revision)}`, { cwd: worktree })
+        revisionMatches = ancestor.exitCode === 0
+      }
+    }
+    try {
+      valid = Boolean(A.priorRun && A.priorRun.issue === options.issueRef && A.priorRun.worktree === worktree && !observed.finished &&
+        retained.runId === A.runId && retained.worktree === worktree && retained.branch === metadata.branch &&
+        revisionMatches && recorded && identity.every(key => recorded[key] === retained[key]) &&
+        retained.resultHash === stableHash(retained.result) && authority.exitCode === 0 && JSON.parse(authority.stdout).status === 'ready-for-agent' &&
+        clean.exitCode === 0 && !clean.stdout.trim() && await validRoleResult(role, retained.result))
+    } catch {}
+    if (!valid) return { executionUnavailable: true, error: 'retained_result_mismatch' }
+    reconciledResults.add(retained.invocationId)
+    await appendRunEvent('role.result.consumed', options.issueRef, options.phase, { ...recorded, reconciled: true })
+    return retained.result
+  }
+  const pending = (async () => {
+    const result = await executeRole(role, prompt, options)
+    if (result && !result.executionUnavailable) {
+      Object.assign(metadata, await roleRevision(worktree), { resultHash: stableHash(result) })
+      await appendRunEvent('role.result.ready', options.issueRef, options.phase, metadata)
+      if (A.hostControl && typeof A.hostControl.onResultReady === 'function') {
+        await A.hostControl.onResultReady({ ...metadata, result })
+      }
+    }
+    return result
+  })()
+  let result
+  try {
+    result = A.hostControl && typeof A.hostControl.waitResult === 'function'
+      ? await A.hostControl.waitResult(pending, { ...metadata }) : await pending
+  } catch {
+    result = { handoff: true, reason: 'host_capability_lost' }
+  }
+  if (result && result.handoff === true) {
+    // The Host may retain/rejoin pending work only while its transport remains available.
+    // A closed Host does not imply background continuation or a daemon.
+    pending.catch(() => {})
+    const reason = ['operator_stop', 'host_capability_lost', 'authorized_handoff'].includes(result.reason)
+      ? result.reason : 'host_capability_lost'
+    const handoff = { ...metadata, reason, latestActivity: result.latestActivity === 'transport_pending' ? 'transport_pending' : 'unknown',
+      resumption: 'Validate the existing Run, Issue, assigned worktree and delivered revision; reconcile retained results before relaunch.' }
+    hostHandoffs.push(handoff)
+    await appendRunEvent('host.handoff', options.issueRef, options.phase, handoff)
+    return { executionUnavailable: true, error: reason }
+  }
+  if (result && !result.executionUnavailable) {
+    await appendRunEvent('role.result.consumed', options.issueRef, options.phase, metadata)
+  }
+  return result
 }
 
 function location(impl) {
@@ -840,7 +1027,8 @@ const results = await pipeline(
       const impl = state.impl
       const worktree = (impl && impl.worktree) || state.worktree || issueWorktreePath(issue)
       const branch = (impl && impl.branch) || state.branch || await configuredIssueBranch(issue)
-      const corrections = state.corrections || 0
+      const prior = priorAssignment(issue)
+      const corrections = state.corrections ?? (prior && prior.correctionsSpent) ?? 0
       await appendRunEvent('issue.paused', issue.ref, state.role === 'reviewer' ? 'Review' : state.role === 'implementer' ? 'Implement' : 'Critic', {
         role: state.role || 'critic',
         reason: 'execution_unavailable',
@@ -1037,6 +1225,7 @@ for (const delivery of deliveries) {
   if (delivery.outcome !== 'accepted') continue
   if (A.unitId && A.runId && A.waitGate) {
     const stateRootArg = A.stateRoot ? ` --state-root "${A.stateRoot}"` : ''
+    await appendRunEvent('operator.waiting', delivery.ref, 'Integrate', { decision: 'post_critic_integration', requestedDecision: 'Approve integration of the accepted Issue', worktree: delivery.worktree })
     await runWorkflowCommand(`python3 "${scripts}/wait_gate.py" ${delivery.ref} --unit "${A.unitId}" --run "${A.runId}"${stateRootArg}`)
   }
   if (integrationStopped) {
@@ -1166,6 +1355,8 @@ if (!integrationStopped && A.isLastRound && !hasPaused) {
 return {
   runId: A.runId,
   hostResolution,
+  handoffs: hostHandoffs,
+  modelProgress: 'unknown',
   round: A.round,
   date: A.date,
   results: deliveries,
@@ -1179,3 +1370,43 @@ return {
 The Workflow returns `done` only after serial integration (when isolated), a passing post-integration
 gate and `roadmap.py done`. `no_gates` is not a generic acceptance path: a future bootstrap contract must
 explicitly supply and prove its exceptional checks before it can be modeled here.
+
+### Active Host result ownership
+
+The Host keeps this invocation active until its launched role results have been consumed and the
+existing acceptance/integration path has finished, or an observable handoff boundary has occurred.
+Answer a progress/status request while waiting, then continue the authorized objective. A child still
+running is pending work; process/transport liveness never establishes model progress or completed delivery.
+A conversational Host unable to keep waiting must report that limitation, the pending Issue/role,
+assigned worktree, latest observed activity (otherwise `unknown`) and validated same-Run resumption.
+Do not promise a daemon or continuation after closing the Host.
+
+A supported Host adapter may supply `args.hostControl.waitResult(pendingPromise, metadata)` to keep
+status steering active and explicitly return `{handoff: true, reason, latestActivity}` on
+`operator_stop`, `host_capability_lost` or an `authorized_handoff`. Without it, the canonical invocation
+awaits the role directly. The hook is a transport/conversation boundary, not a scheduler. It must not
+replace a role result or fabricate useful progress. `onResultReady(record)` may retain the attributable
+validated result in the Host's available transport for recovery; raw process streams stay out of Run logs.
+A Host losing that transport cannot promise recovery of an unpersisted result.
+
+`role.result.ready` means the supported invocation returned a validated result to this Host;
+`role.result.consumed` means the workflow took that result forward. Both carry Run/Issue/role,
+invocation ID, assigned worktree, branch and revision when observable, with `modelProgress: unknown`.
+They confer no acceptance authority. `runlog.py results <unit> <run> --json` reports these observations
+without role payloads by default; `--retained` explicitly returns already-recorded Implement/Review
+contracts for validated recovery. Legacy absence remains unavailable evidence, never inferred availability.
+Closed Runs reject late result observations.
+
+An explicitly validated `priorRun` can carry Host-retained `recoveredResults`. Before reuse, the
+workflow reconciles each retained record with its logged availability, Run, Issue, role, worktree,
+current branch, latest invocation identity and Git revision lineage, clean tree, authoritative
+ready-for-agent Issue and Result Contract.
+A mismatch pauses without launching duplicate code work. Matching results can reuse already-consumed
+Implement work at HEAD, the consumed Review prerequisite at an ancestor revision, and the
+unconsumed Critic result strictly at HEAD, while the existing correction query preserves
+spent attempts. Results lost with a closed transport require explicit recovery, never invented replay.
+
+Only a configured `waitGate` produces `operator.waiting` and its requested post-Critic integration
+approval. Absent that gate, accepted work proceeds through existing integration gates and
+`roadmap.py done` without another approval. Planning, changed execution settings, PR and cleanup
+retain their own approval boundaries.
