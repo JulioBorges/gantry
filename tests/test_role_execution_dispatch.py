@@ -257,7 +257,7 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
                     runner=BadOutputRunner(),
                     retry_on_invalid=True,
                 )
-            self.assertIn("schema validation failed for reviewer", str(ctx.exception))
+            self.assertIn("protocol-result-failure", str(ctx.exception))
             # Verify one retry was attempted
             self.assertEqual(2, len(calls))
 
@@ -272,7 +272,8 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             execution.verify_critic_result(critic_perm_error)
         self.assertIn("Critic execution failed visibly", str(ctx.exception))
-        self.assertIn("permission denied", str(ctx.exception))
+        self.assertIn("verification-limitation", str(ctx.exception))
+        self.assertNotIn(critic_perm_error["error"], str(ctx.exception))
 
         # 2. Complete=True without gatesResult is rejected
         critic_summary_only = {
@@ -292,7 +293,7 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
         }
         with self.assertRaises(execution.ProtocolFailureError) as ctx:
             execution.verify_critic_result(critic_failed_gate)
-        self.assertIn("gateResult verdict is 'fail'", str(ctx.exception))
+        self.assertIn("invalid-gate-verdict", str(ctx.exception))
 
         # 4. Valid Critic result passes
         critic_valid = {
@@ -1374,7 +1375,7 @@ class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):
             }
             with self.assertRaises(execution.ProtocolFailureError) as ctx:
                 execution.verify_critic_result(fraudulent_critic_summary)
-            self.assertIn("gateResult verdict is 'fail'", str(ctx.exception))
+            self.assertIn("invalid-gate-verdict", str(ctx.exception))
 
             # 3. Test Adversarial Cross-Harness Critic Verification: Valid delivery accepted
             valid_critic_verdict = {

@@ -127,7 +127,7 @@ def resolve_host(*, root: Path, explicit_host: str | None = None) -> dict[str, A
 def parse_semver(version_str: str) -> tuple[int, int, int]:
     match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", version_str)
     if not match:
-        raise ValueError(f"Cannot parse version string: {version_str!r}")
+        raise ValueError("Cannot parse harness version (version-parse-failure)")
     major = int(match.group(1))
     minor = int(match.group(2))
     patch = int(match.group(3) or 0)
@@ -215,7 +215,14 @@ def validate_harness_version(
                 "error": f"Harness CLI {cli_name} authentication/execution validation failed: return code {proc.returncode}",
             }
         stdout = (proc.stdout or "").strip() or (proc.stderr or "").strip()
-        version_tuple = parse_semver(stdout)
+        try:
+            version_tuple = parse_semver(stdout)
+        except ValueError:
+            return {
+                "valid": False,
+                "version": None,
+                "error": "Harness CLI version could not be parsed (version-parse-failure)",
+            }
         min_ver_str = MIN_SUPPORTED_VERSIONS.get(harness, "0.0.0")
         min_tuple = parse_semver(min_ver_str)
         if version_tuple < min_tuple:
@@ -227,6 +234,12 @@ def validate_harness_version(
             }
         ver_formatted = f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}"
         return {"valid": True, "version": ver_formatted}
+    except subprocess.TimeoutExpired:
+        return {"valid": False, "version": None,
+                "error": "Harness CLI version probe timed out (version-probe-timeout)"}
+    except KeyboardInterrupt:
+        return {"valid": False, "version": None,
+                "error": "Harness CLI version probe cancelled (version-probe-cancelled)"}
     except FileNotFoundError:
         if harness == "codex":
             return {
@@ -239,11 +252,11 @@ def validate_harness_version(
             "version": None,
             "error": f"Harness CLI '{cli_name}' not found on PATH",
         }
-    except Exception as exc:
+    except Exception:
         return {
             "valid": False,
             "version": None,
-            "error": f"Harness CLI {cli_name} version check failed: {exc}",
+            "error": "Harness CLI version probe failed (version-probe-failure)",
         }
 
 
@@ -500,10 +513,7 @@ def check_model_fallback(requested_model: str, output_data: dict[str, Any] | str
         if "fallback" in output_data.lower() and "model" in output_data.lower():
             fb_match = re.search(r"falling back to (\S+)|fallback model:?\s*(\S+)", output_data, re.IGNORECASE)
             if fb_match:
-                reported = fb_match.group(1) or fb_match.group(2)
-                raise ModelFallbackError(
-                    f"Automatic model fallback detected: requested {requested_model!r} but fell back to {reported!r}"
-                )
+                raise ModelFallbackError("Automatic model fallback detected (model-fallback)")
         try:
             parsed = json.loads(output_data)
             if isinstance(parsed, dict):
@@ -514,13 +524,9 @@ def check_model_fallback(requested_model: str, output_data: dict[str, Any] | str
     if isinstance(output_data, dict):
         reported = output_data.get("model") or output_data.get("effective_model") or output_data.get("actual_model")
         if reported and str(reported).strip().lower() != requested_model.strip().lower():
-            raise ModelFallbackError(
-                f"Automatic model fallback detected: requested {requested_model!r} but harness used {reported!r}"
-            )
+            raise ModelFallbackError("Automatic model fallback detected (model-fallback)")
         if output_data.get("fallback_occurred") or output_data.get("model_fallback"):
-            raise ModelFallbackError(
-                f"Automatic model fallback detected for model {requested_model!r}"
-            )
+            raise ModelFallbackError("Automatic model fallback detected (model-fallback)")
 
 
 def parse_and_validate_result(
@@ -538,7 +544,7 @@ def parse_and_validate_result(
     try:
         data = result.extract_json(raw_output)
     except (json.JSONDecodeError, ValueError) as exc:
-        raise ProtocolFailureError(f"Protocol failure: invalid JSON output for role {role}: {exc}") from exc
+        raise ProtocolFailureError(f"Protocol failure: invalid JSON output for role {role} (invalid-result-json)") from None
 
     if not isinstance(data, dict):
         raise ProtocolFailureError(f"Protocol failure: expected JSON object for role {role}, got {type(data).__name__}")
@@ -552,7 +558,7 @@ def parse_and_validate_result(
                 raise ProtocolFailureError(f"Protocol failure: failed to load schema for {schema_role}: {exc}") from exc
         errors = result.validate(data, schema)
         if errors:
-            raise ProtocolFailureError(f"Protocol failure: schema validation failed for {role}: {errors}")
+            raise ProtocolFailureError(f"Protocol failure: schema validation failed for {role} (invalid-result-schema)")
 
     return data
 
@@ -566,22 +572,21 @@ def verify_critic_result(critic_result: dict[str, Any]) -> None:
         raise ProtocolFailureError("Critic result must be a JSON object")
 
     if critic_result.get("permission_error") or critic_result.get("tool_limitation"):
-        err = critic_result.get("error") or "Critic encountered permission or tool limitation"
-        raise RuntimeError(f"Critic execution failed visibly: {err}")
+        raise RuntimeError("Critic execution failed visibly: independent verification unavailable (verification-limitation)")
 
     if critic_result.get("complete") is True:
         gate_result = critic_result.get("gateResult")
         if not gate_result or not isinstance(gate_result, dict):
             raise ProtocolFailureError("Critic claimed complete=true without required gateResult")
         if gate_result.get("verdict") != "pass":
-            raise ProtocolFailureError(f"Critic claimed complete=true but gateResult verdict is {gate_result.get('verdict')!r}")
+            raise ProtocolFailureError("Critic claimed complete=true without a passing gate verdict (invalid-gate-verdict)")
 
         criteria = critic_result.get("criteria")
         if not isinstance(criteria, list) or len(criteria) == 0:
             raise ProtocolFailureError("Critic claimed complete=true with empty criteria list")
         for c in criteria:
             if not isinstance(c, dict) or not c.get("met") or not str(c.get("evidence", "")).strip():
-                raise ProtocolFailureError(f"Critic claimed complete=true but criterion lacks verified evidence: {c}")
+                raise ProtocolFailureError("Critic criterion lacks verified evidence (invalid-criterion-evidence)")
 
 
 def codex_final_result(raw_output: str, requested_model: str) -> str:
@@ -608,7 +613,7 @@ def codex_final_result(raw_output: str, requested_model: str) -> str:
             if event.get("type") == "turn.completed":
                 completed = True
     except (ValueError, TypeError, AttributeError) as exc:
-        raise ProtocolFailureError(f"Protocol failure: malformed Codex JSONL transport: {exc}") from exc
+        raise ProtocolFailureError("Protocol failure: malformed Codex JSONL transport (invalid-result-transport)") from None
     if not completed or not isinstance(final, str) or not final.strip():
         raise ProtocolFailureError("Protocol failure: missing completed Codex final agent message")
     return final
@@ -729,10 +734,19 @@ def dispatch_role(
             if attempt == 1 and retry_on_invalid:
                 invocation_prompt += f"\nYour prior result was invalid. Return the complete {role} result contract."
                 continue
-            raise
-        except (ModelFallbackError, RuntimeError):
+            raise ProtocolFailureError("Protocol failure: invalid role result (protocol-result-failure)") from None
+        except ModelFallbackError:
             record("role.invocation.finished", attempt, status="execution-failure")
-            raise
+            raise ModelFallbackError("Automatic model fallback detected (model-fallback)") from None
+        except ExecutionFailureError:
+            record("role.invocation.finished", attempt, status="execution-failure")
+            raise ExecutionFailureError("Harness role execution failed (role-execution-failure); assigned worktree preserved") from None
+        except RuntimeError:
+            record("role.invocation.finished", attempt, status="execution-failure")
+            raise RuntimeError("Critic execution failed visibly: independent verification unavailable (verification-limitation)") from None
+        except Exception:
+            record("role.invocation.finished", attempt, status="execution-failure")
+            raise ExecutionFailureError("Harness result processing failed (result-processing-failure); assigned worktree preserved") from None
         record("role.invocation.finished", attempt, status="validated")
         return data
     raise ProtocolFailureError("Protocol-result retry exhausted")

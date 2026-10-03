@@ -159,7 +159,16 @@ class WorkflowHostBindingTests(unittest.TestCase):
     def test_recorded_same_host_nonzero_exit_omits_sensitive_process_streams(self):
         self.check_bounded_same_host_dispatch(sensitive_output=True)
 
-    def check_bounded_same_host_dispatch(self, sensitive_output=False):
+    def test_recorded_malformed_version_probe_omits_sensitive_output(self):
+        self.check_bounded_same_host_dispatch(failure_mode='malformed-version')
+
+    def test_recorded_exceptional_version_probe_omits_exception_text(self):
+        self.check_bounded_same_host_dispatch(failure_mode='exceptional-version')
+
+    def test_recorded_model_fallback_omits_envelope_metadata(self):
+        self.check_bounded_same_host_dispatch(failure_mode='fallback')
+
+    def check_bounded_same_host_dispatch(self, sensitive_output=False, failure_mode=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             helper = canonical.CanonicalGantryWorkflowTests()
@@ -178,14 +187,31 @@ class WorkflowHostBindingTests(unittest.TestCase):
             binary = binary_dir / 'codex'
             stdout = 'raw stdout API_TOKEN=synthetic-fixture-secret'
             stderr = 'raw stderr Authorization: Bearer synthetic-fixture-secret'
+            version = stdout if failure_mode == 'malformed-version' else 'codex 0.160.0'
+            if failure_mode == 'fallback':
+                body = "print(" + repr(json.dumps({'type': 'turn.started', 'model': stdout})) + ")\n"
+            elif sensitive_output:
+                body = f"print({stdout!r})\nprint({stderr!r}, file=sys.stderr)\nsys.exit(13)\n"
+            else:
+                body = "print('simulated unavailable model', file=sys.stderr)\nsys.exit(13)\n"
             binary.write_text(f"#!{sys.executable}\n" +
                 "import json, sys\nfrom pathlib import Path\n" +
-                "if '--version' in sys.argv: print('codex 0.160.0'); sys.exit(0)\n" +
+                f"if '--version' in sys.argv: print({version!r}); sys.exit(0)\n" +
                 f"Path({str(received)!r}).write_text(json.dumps(sys.argv[1:]))\n" +
-                (f"print({stdout!r})\nprint({stderr!r}, file=sys.stderr)\nsys.exit(13)\n" if sensitive_output
-                 else "print('simulated unavailable model', file=sys.stderr)\nsys.exit(13)\n"))
+                body)
             binary.chmod(0o755)
-            with patch.dict(os.environ, {'PATH': str(binary_dir) + os.pathsep + os.environ['PATH']}):
+            environment = {'PATH': str(binary_dir) + os.pathsep + os.environ['PATH']}
+            if failure_mode == 'exceptional-version':
+                # Inject at the same subprocess boundary used by the canonical CLI.
+                (binary_dir / 'sitecustomize.py').write_text(
+                    "import subprocess\n_original_run = subprocess.run\n"
+                    "def probe_failure(cmd, *args, **kwargs):\n"
+                    "    if isinstance(cmd, list) and cmd[:2] == ['codex', '--version']:\n"
+                    f"        raise OSError({stderr!r})\n"
+                    "    return _original_run(cmd, *args, **kwargs)\n"
+                    "subprocess.run = probe_failure\n")
+                environment['PYTHONPATH'] = str(binary_dir)
+            with patch.dict(os.environ, environment):
                 run = self.run_workflow("round-workflow.md", args)
             self.assertIsNone(run["error"])
             self.assertEqual("codex", run["result"]["hostResolution"]["effectiveHost"])
@@ -196,27 +222,32 @@ class WorkflowHostBindingTests(unittest.TestCase):
             self.assertFalse(any(call["label"].startswith("implement:") for call in run["calls"]))
             self.assertEqual("paused", run["result"]["results"][0]["outcome"])
             self.assertEqual(before, issue.read_bytes())
-            invoked = json.loads(received.read_text())
-            self.assertEqual('issue-model', invoked[invoked.index('--model') + 1])
-            self.assertIn('model_reasoning_effort="medium"', invoked)
-            self.assertIn('--json', invoked)
-            self.assertNotIn('--effort', invoked)
+            probe_failed = failure_mode in ('malformed-version', 'exceptional-version')
+            if probe_failed:
+                self.assertFalse(received.exists())
+            else:
+                invoked = json.loads(received.read_text())
+                self.assertEqual('issue-model', invoked[invoked.index('--model') + 1])
+                self.assertIn('model_reasoning_effort="medium"', invoked)
+                self.assertIn('--json', invoked)
+                self.assertNotIn('--effort', invoked)
             log = root / 'state/abcdef123456/runs/run-bounded-fixture.jsonl'
             events = [json.loads(line) for line in log.read_text().splitlines()]
             names = [event['event'] for event in events]
             self.assertEqual(1, names.count('subagent.started'))
             self.assertEqual(1, names.count('subagent.stopped'))
-            self.assertEqual(1, names.count('role.invocation.started'))
-            self.assertEqual(1, names.count('role.invocation.finished'))
-            invocation = next(event for event in events if event['event']=='role.invocation.finished')
-            self.assertEqual('adapter#01', invocation['issue'])
-            self.assertEqual('nonzero-exit', invocation['data']['status'])
-            if sensitive_output:
+            self.assertEqual(0 if probe_failed else 1, names.count('role.invocation.started'))
+            self.assertEqual(0 if probe_failed else 1, names.count('role.invocation.finished'))
+            if not probe_failed:
+                invocation = next(event for event in events if event['event']=='role.invocation.finished')
+                self.assertEqual('adapter#01', invocation['issue'])
+                self.assertEqual('execution-failure' if failure_mode == 'fallback' else 'nonzero-exit', invocation['data']['status'])
+            if sensitive_output or failure_mode:
                 recorded = log.read_text()
                 for forbidden in (stdout, stderr, 'synthetic-fixture-secret', 'API_TOKEN', 'Authorization'):
                     self.assertNotIn(forbidden, recorded)
                 paused = next(event for event in events if event['event'] == 'issue.paused')
-                self.assertIn('exit 13', paused['data']['error'])
+                self.assertIn({'malformed-version': 'version-parse-failure', 'exceptional-version': 'version-probe-failure', 'fallback': 'model-fallback'}.get(failure_mode, 'exit 13'), paused['data']['error'])
                 self.assertLess(len(paused['data']['error']), 200)
 
     def test_concurrent_new_runs_record_their_own_sanitized_host_and_capability_tier(self):
