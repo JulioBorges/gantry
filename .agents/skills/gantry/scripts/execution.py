@@ -967,7 +967,7 @@ def main() -> int:
             try:
                 stored = json.loads(cache_path.read_text()) if cache_path else {}
                 for key, value in stored.items():
-                    if isinstance(key, str) and re.fullmatch('[a-f0-9]{64}', key) and isinstance(value, dict) and value.get('valid') is True:
+                    if isinstance(key, str) and re.fullmatch('[a-f0-9]{64}', key) and profile_preflight.valid_evidence(value):
                         evidence[(args.run_id, key)] = value
             except (OSError, ValueError, AttributeError):
                 pass

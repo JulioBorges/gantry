@@ -1,4 +1,5 @@
 import json
+from tests.preflight_fixture import VERIFIED_PREFLIGHT
 import os
 import subprocess
 import sys
@@ -63,7 +64,7 @@ const agent = async (promptMsg, options) => {{
 }};
 const runCommand = async (command, options = {{}}) => {{
   // Readiness is simulated here; selected-profile proof has its own public tests.
-  if (command.includes('/execution.py" preflight ')) return {{exitCode:0,stdout:'{{"valid":true,"source":"simulated-workflow-fixture"}}',stderr:''}};
+  if (command.includes('/execution.py" preflight ')) return {{exitCode:0,stdout:{json.dumps(json.dumps(VERIFIED_PREFLIGHT))},stderr:''}};
   if (command.includes('/execution.py" host ')) {{
     const host = spawnSync(command, {{ shell: true, encoding: 'utf8' }});
     return {{ exitCode: host.status ?? 1, stdout: host.stdout || '', stderr: host.stderr || '' }};

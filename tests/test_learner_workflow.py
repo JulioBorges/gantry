@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from tests.preflight_fixture import VERIFIED_PREFLIGHT
 import subprocess
 import sys
 import tempfile
@@ -33,7 +34,7 @@ const commandCalls = [];
 const calls = [];
 const runCommand = async (command, options = {{}}) => {{
   // Readiness is simulated here; selected-profile proof has its own public tests.
-  if (command.includes('/execution.py" preflight ')) return {{exitCode:0,stdout:'{{"valid":true,"source":"simulated-workflow-fixture"}}',stderr:''}};
+  if (command.includes('/execution.py" preflight ')) return {{exitCode:0,stdout:{json.dumps(json.dumps(VERIFIED_PREFLIGHT))},stderr:''}};
   if (command.includes('/execution.py" host ')) {{
     const host = spawnSync(command, {{ shell: true, encoding: 'utf8' }});
     return {{ exitCode: host.status ?? 1, stdout: host.stdout || '', stderr: host.stderr || '' }};

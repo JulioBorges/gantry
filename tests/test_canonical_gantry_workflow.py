@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+from tests.preflight_fixture import VERIFIED_PREFLIGHT
 import subprocess
 import sys
 import tempfile
@@ -146,7 +147,7 @@ const runCommand = async (command, options = {{}}) => {{
   }}
   if (command.includes('/execution.py" preflight ')) {{
     preflightCalls.push({{command,cwd:options.cwd || args.repoRoot,sequence:sequence++}});
-    const readiness = args.preflightResult || {{valid:true,status:'verified',source:'simulated-workflow-fixture'}};
+    const readiness = args.preflightResult || {json.dumps(VERIFIED_PREFLIGHT)};
     return {{exitCode:readiness.valid ? 0 : 1,stdout:JSON.stringify(readiness),stderr:''}};
   }}
   commandCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});

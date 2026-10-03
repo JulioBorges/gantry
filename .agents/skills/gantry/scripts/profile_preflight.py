@@ -10,6 +10,36 @@ import shutil
 DIMENSIONS = ('compatibility', 'authentication', 'modelEffort', 'transport', 'permissions')
 
 
+VERIFIED_SOURCES = {
+    'compatibility': 'bounded-version-and-parser-probes',
+    'authentication': 'bounded-login-status',
+    'modelEffort': 'bounded-selected-profile-probe',
+    'transport': 'completed-codex-jsonl-probe',
+    'permissions': 'operator-selection',
+}
+MODEL_IDENTITY = 'requested arguments; effective model/effort unobserved'
+REMEDY = 'Select an explicitly approved profile or authorize a bounded read-only probe; no fallback was used.'
+
+
+def valid_evidence(value):
+    """Validate the complete sanitized success contract before trusting evidence."""
+    if (not isinstance(value, dict) or set(value) != {'valid', 'status', 'dimensions', 'remedy', 'reused', 'error'}
+            or value['valid'] is not True or value['status'] != 'verified'
+            or value['error'] is not None or value['remedy'] != REMEDY
+            or not isinstance(value['reused'], bool)):
+        return False
+    dimensions = value['dimensions']
+    if not isinstance(dimensions, dict) or set(dimensions) != set(DIMENSIONS):
+        return False
+    for name, source in VERIFIED_SOURCES.items():
+        expected = {'status': 'verified', 'source': source}
+        if name == 'modelEffort':
+            expected['identity'] = MODEL_IDENTITY
+        if dimensions[name] != expected:
+            return False
+    return True
+
+
 def identity(selection, root, policy):
     """Fingerprint observable local identity without reading credential values.
 
@@ -45,7 +75,7 @@ def identity(selection, root, policy):
 def check(selection, *, root, policy=None, runner=None, authorize_probe=False, cache=None, run_id=None):
     import execution
     dimensions = {name: {'status': 'unknown', 'source': 'not-checked'} for name in DIMENSIONS}
-    remedy = 'Select an explicitly approved profile or authorize a bounded read-only probe; no fallback was used.'
+    remedy = REMEDY
     out = {'valid': False, 'status': 'unknown', 'dimensions': dimensions, 'remedy': remedy, 'reused': False}
     if not isinstance(selection, dict):
         out.update(status='unavailable', error='Execution selection must be an object.')
@@ -58,9 +88,11 @@ def check(selection, *, root, policy=None, runner=None, authorize_probe=False, c
     key = identity(selection, root, policy)
     scope = (run_id, key)
     if run_id and key and cache is not None and scope in cache:
-        got = copy.deepcopy(cache[scope])
-        got['reused'] = True
-        return got
+        if valid_evidence(cache[scope]):
+            got = copy.deepcopy(cache[scope])
+            got['reused'] = True
+            return got
+        del cache[scope]
     version = execution.validate_harness_version(selection['harness'], runner=runner, cwd=root)
     dimensions['compatibility'] = {'status': 'verified' if version['valid'] else 'unavailable', 'source': 'bounded-version-probe'}
     if not version['valid']:
@@ -112,7 +144,7 @@ def check(selection, *, root, policy=None, runner=None, authorize_probe=False, c
     except (Exception, KeyboardInterrupt):
         out['error'] = 'Selected-profile probe timed out, failed or returned invalid evidence; pause and repeat explicitly.'
         return out
-    dimensions['modelEffort'] = {'status': 'verified', 'source': 'bounded-selected-profile-probe', 'identity': 'requested arguments; effective model/effort unobserved'}
+    dimensions['modelEffort'] = {'status': 'verified', 'source': 'bounded-selected-profile-probe', 'identity': MODEL_IDENTITY}
     dimensions['transport'] = {'status': 'verified', 'source': 'completed-codex-jsonl-probe'}
     out.update(valid=True, status='verified', error=None)
     if run_id and key and cache is not None:

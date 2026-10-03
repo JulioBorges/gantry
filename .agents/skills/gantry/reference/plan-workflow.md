@@ -134,6 +134,26 @@ function preflightFailureMessage(readiness) {
   return `Execution preflight failed: ${JSON.stringify({ status: readiness.status, dimensions, error: readiness.error, remedy: readiness.remedy })}`
 }
 
+function validPreflightEvidence(readiness) {
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+  const exactKeys = (value, keys) => object(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
+  if (!exactKeys(readiness, ['valid', 'status', 'dimensions', 'error', 'remedy', 'reused']) ||
+      readiness.valid !== true || readiness.status !== 'verified' || readiness.error !== null ||
+      readiness.remedy !== 'Select an explicitly approved profile or authorize a bounded read-only probe; no fallback was used.' ||
+      typeof readiness.reused !== 'boolean') return false
+  const sources = {
+    compatibility: 'bounded-version-and-parser-probes', authentication: 'bounded-login-status',
+    modelEffort: 'bounded-selected-profile-probe', transport: 'completed-codex-jsonl-probe', permissions: 'operator-selection',
+  }
+  if (!exactKeys(readiness.dimensions, Object.keys(sources))) return false
+  return Object.entries(sources).every(([name, source]) => {
+    const dimension = readiness.dimensions[name]
+    return exactKeys(dimension, name === 'modelEffort' ? ['status', 'source', 'identity'] : ['status', 'source']) &&
+      dimension.status === 'verified' && dimension.source === source &&
+      (name !== 'modelEffort' || dimension.identity === 'requested arguments; effective model/effort unobserved')
+  })
+}
+
 async function requireProfilePreflight(selection, cwd = A.repoRoot) {
   const flags = []
   if (A.authorizePreflightProbe === true) flags.push('--authorize-probe')
@@ -150,8 +170,8 @@ async function requireProfilePreflight(selection, cwd = A.repoRoot) {
   )
   let readiness
   try { readiness = JSON.parse((checked && checked.stdout) || '{}') } catch { readiness = {} }
-  if (!checked || checked.exitCode !== 0 || readiness.valid !== true) {
-    const failure = new Error(preflightFailureMessage(readiness))
+  if (!checked || checked.exitCode !== 0 || !validPreflightEvidence(readiness)) {
+    const failure = new Error(readiness && readiness.valid === false ? preflightFailureMessage(readiness) : preflightFallback)
     failure.gantryPreflightFailure = true
     throw failure
   }
