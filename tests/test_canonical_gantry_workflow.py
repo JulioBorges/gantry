@@ -121,7 +121,7 @@ Preserve the portable workflow contract.
         driver = f"""
 import {{ mkdirSync, writeFileSync }} from 'node:fs';
 import {{ dirname }} from 'node:path';
-import {{ spawnSync }} from 'node:child_process';
+import {{ spawn, spawnSync }} from 'node:child_process';
 process.env.GANTRY_SKIP_WAIT_GATE = '1';
 const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
 const source = {json.dumps(source)};
@@ -130,6 +130,22 @@ const calls = [];
 const commandCalls = [];
 const hostCalls = [];
 const prompts = [];
+const retainedResults = [];
+let approvalObservedUnfinished = false;
+const statusReplies = [];
+args.hostControl = {{
+  onResultReady: record => retainedResults.push(record),
+  waitResult: async (pending, metadata) => {{
+    if (args.statusDuringWait && metadata.role === 'critic') {{
+      statusReplies.push({{ issue: metadata.issue, state: 'running', delivered: false, modelProgress: 'unknown' }});
+    }}
+    if (args.interruptRole === metadata.role) {{
+      return {{ handoff: true, reason: args.interruptReason || 'operator_stop', latestActivity: 'transport_pending' }};
+    }}
+    return await pending;
+  }},
+}};
+
 const prompt = async message => {{ prompts.push(message); return (args.promptAnswers || []).shift() || "no"; }};
 let sequence = 0;
 const defaultIssueWorktree = args.issueWorktree || (
@@ -148,6 +164,16 @@ const runCommand = async (command, options = {{}}) => {{
     return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
   }}
   if (command.includes('/execution.py" dispatch ') && args.dispatchResults && args.dispatchResults.length) return args.dispatchResults.shift();
+  if (command.includes('/wait_gate.py') && args.actualApprovalWait) {{
+    const child = spawn(command + ' --timeout 5 --poll-interval 0.02', {{ cwd: options.cwd || args.repoRoot, shell: true }});
+    const exit = new Promise(resolve => child.on('close', code => resolve({{ exitCode: code, stdout: '', stderr: '' }})));
+    child.stdout.resume(); child.stderr.resume();
+    await new Promise(resolve => setTimeout(resolve, 150));
+    const check = spawnSync(`python3 "${{args.skillDir}}/scripts/acceptance.py" continuation#01 --json`, {{ cwd: args.repoRoot, shell: true, encoding: 'utf8' }});
+    approvalObservedUnfinished = JSON.parse(check.stdout).status === 'ready-for-agent' && child.exitCode === null;
+    spawnSync(command + ' --approve', {{ cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8' }});
+    return await exit;
+  }}
   if (args.commandMode === 'real') {{
     const completed = spawnSync(command, {{
       cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8', input: options.input,
@@ -217,6 +243,17 @@ const agent = async (prompt, options) => {{
   if (options.label.startsWith('review:')) return {{
     blocking: [], nonBlocking: [], summary: 'no findings',
   }};
+  if (options.label.startsWith('critic:') && args.liveCritic) {{
+    const child = spawn('python3', [args.skillDir + '/scripts/execution.py', 'dispatch', '--role', 'critic', '--cwd', options.cwd,
+      '--selection', JSON.stringify(args.liveCritic), '--timeout', String(args.liveTimeout || 90), '--run-id', args.runId, '--unit-id', args.unitId,
+      '--state-root', args.stateRoot, '--issue-ref', 'continuation#01'], {{ cwd: args.repoRoot }});
+    let text = ''; child.stdout.on('data', chunk => text += chunk); child.stderr.resume();
+    child.stdin.end(prompt + '\\nThis bounded fixture has one acceptance criterion and delivery.txt; do not explore outside its repository. Invoke the two required acceptance and gates scripts once, inspect delivery.txt and git status, and immediately return only the complete Critic JSON contract. No source implementation or extra tool research is needed.');
+    const code = await new Promise(resolve => child.on('close', resolve));
+    if (code !== 0) return {{ executionUnavailable: true, error: 'bounded_live_critic_failed' }};
+    return JSON.parse(text);
+  }}
+  if (options.label.startsWith('critic:') && args.roleDelayMs) await new Promise(resolve => setTimeout(resolve, args.roleDelayMs));
   if (options.label.startsWith('critic:') && args.criticRawResults && args.criticRawResults.length) {{
     return args.criticRawResults.shift();
   }}
@@ -248,7 +285,8 @@ try {{
 }} catch (err) {{
   error = err && err.message ? err.message : String(err);
 }}
-process.stdout.write(JSON.stringify({{ result, calls, commandCalls, hostCalls, prompts, error }}));
+if (args.waitForRetainedResult) await new Promise(resolve => setTimeout(resolve, args.roleDelayMs + 500));
+process.stdout.write(JSON.stringify({{ result, calls, commandCalls, hostCalls, prompts, error, retainedResults, statusReplies, approvalObservedUnfinished }}));
 """
         result = subprocess.run(
             ["node", "--input-type=module", "--eval", driver],
@@ -1368,15 +1406,21 @@ Scenario: greet a user
                     ("round.started", None, None),
                     ("phase.started", "lifecycle#01", "Implement"),
                     ("subagent.started", "lifecycle#01", "Implement"),
+                    ("role.result.ready", "lifecycle#01", "Implement"),
+                    ("role.result.consumed", "lifecycle#01", "Implement"),
                     ("subagent.stopped", "lifecycle#01", "Implement"),
                     ("phase.finished", "lifecycle#01", "Implement"),
                     ("phase.started", "lifecycle#01", "Review"),
                     ("subagent.started", "lifecycle#01", "Review"),
+                    ("role.result.ready", "lifecycle#01", "Review"),
+                    ("role.result.consumed", "lifecycle#01", "Review"),
                     ("subagent.stopped", "lifecycle#01", "Review"),
                     ("phase.finished", "lifecycle#01", "Review"),
                     ("review.finding", "lifecycle#01", "Review"),
                     ("phase.started", "lifecycle#01", "Critic"),
                     ("subagent.started", "lifecycle#01", "Critic"),
+                    ("role.result.ready", "lifecycle#01", "Critic"),
+                    ("role.result.consumed", "lifecycle#01", "Critic"),
                     ("subagent.stopped", "lifecycle#01", "Critic"),
                     ("phase.finished", "lifecycle#01", "Critic"),
                     ("issue.done", "lifecycle#01", None),

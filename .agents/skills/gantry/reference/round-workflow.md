@@ -505,7 +505,7 @@ async function validRoleResult(role, result) {
   )
   return Boolean(validation && validation.exitCode === 0)
 }
-async function requestRole(role, prompt, options) {
+async function executeRole(role, prompt, options) {
   const issueRef = options && options.issueRef
   const selection = resolveRoleForIssue(issueRef, role, options)
   if (options && options.executionUnavailable) {
@@ -575,6 +575,92 @@ async function requestRole(role, prompt, options) {
     return { executionUnavailable: true, error: retry.error || 'Execution unavailable' }
   }
   return (await validRoleResult(role, retry)) ? retry : null
+}
+
+// Host-owned coordination seam. Its wait must continue status steering without finishing
+// the execution turn. Without a control hook, await the supported invocation directly.
+const hostHandoffs = []
+let invocationSequence = 0
+const reconciledResults = new Set()
+async function resultObservations() {
+  if (!A.runId || !A.unitId) return { finished: false, results: [] }
+  const reply = await runWorkflowCommand(
+    `python3 "${scripts}/runlog.py" results ${shellQuote(A.unitId)} ${shellQuote(A.runId)}${A.stateRoot ? ` --state-root ${shellQuote(A.stateRoot)}` : ''} --json`,
+  )
+  return JSON.parse(reply.stdout)
+}
+async function roleRevision(worktree) {
+  const branch = await runCommand('git branch --show-current', { cwd: worktree })
+  const revision = await runCommand('git rev-parse HEAD', { cwd: worktree })
+  return {
+    branch: branch && branch.exitCode === 0 && branch.stdout.trim() || null,
+    revision: revision && revision.exitCode === 0 && revision.stdout.trim() || null,
+  }
+}
+async function requestRole(role, prompt, options) {
+  // Learner has no assigned Issue and keeps its existing lifecycle contract.
+  if (!options.issueRef || (!A.runId && !A.unitId)) return await executeRole(role, prompt, options)
+  const worktree = options.cwd || A.repoRoot
+  const metadata = {
+    role, issue: options.issueRef, runId: A.runId || null, worktree,
+    invocationId: `${A.runId || 'unrecorded'}:${options.issueRef}:${role}:${Date.now()}:${++invocationSequence}`,
+    ...await roleRevision(worktree), modelProgress: 'unknown',
+  }
+  const retained = (A.recoveredResults || []).find(record => record.issue === options.issueRef && record.role === role && !reconciledResults.has(record.invocationId))
+  if (retained) {
+    const observed = await resultObservations()
+    const issue = A.issues.find(item => item.ref === options.issueRef)
+    const authority = await runCommand(`python3 "${scripts}/acceptance.py" ${shellQuote(issue.path)} --json`, { cwd: A.repoRoot })
+    const clean = await runCommand('git status --porcelain', { cwd: worktree })
+    const recorded = observed.results.find(record => record.invocationId === retained.invocationId)
+    const identity = ['role', 'issue', 'runId', 'worktree', 'branch', 'revision', 'resultHash']
+    let valid = false
+    try {
+      valid = Boolean(A.priorRun && A.priorRun.issue === options.issueRef && A.priorRun.worktree === worktree && !observed.finished &&
+        retained.runId === A.runId && retained.worktree === worktree && retained.branch === metadata.branch &&
+        retained.revision === metadata.revision && recorded && identity.every(key => recorded[key] === retained[key]) &&
+        retained.resultHash === stableHash(retained.result) && authority.exitCode === 0 && JSON.parse(authority.stdout).status === 'ready-for-agent' &&
+        clean.exitCode === 0 && !clean.stdout.trim() && await validRoleResult(role, retained.result))
+    } catch {}
+    if (!valid) return { executionUnavailable: true, error: 'retained_result_mismatch' }
+    reconciledResults.add(retained.invocationId)
+    await appendRunEvent('role.result.consumed', options.issueRef, options.phase, { ...recorded, reconciled: true })
+    return retained.result
+  }
+  const pending = (async () => {
+    const result = await executeRole(role, prompt, options)
+    if (result && !result.executionUnavailable) {
+      Object.assign(metadata, await roleRevision(worktree), { resultHash: stableHash(result) })
+      await appendRunEvent('role.result.ready', options.issueRef, options.phase, metadata)
+      if (A.hostControl && typeof A.hostControl.onResultReady === 'function') {
+        await A.hostControl.onResultReady({ ...metadata, result })
+      }
+    }
+    return result
+  })()
+  let result
+  try {
+    result = A.hostControl && typeof A.hostControl.waitResult === 'function'
+      ? await A.hostControl.waitResult(pending, { ...metadata }) : await pending
+  } catch {
+    result = { handoff: true, reason: 'host_capability_lost' }
+  }
+  if (result && result.handoff === true) {
+    // The Host may retain/rejoin pending work only while its transport remains available.
+    // A closed Host does not imply background continuation or a daemon.
+    pending.catch(() => {})
+    const reason = ['operator_stop', 'host_capability_lost', 'authorized_handoff'].includes(result.reason)
+      ? result.reason : 'host_capability_lost'
+    const handoff = { ...metadata, reason, latestActivity: result.latestActivity === 'transport_pending' ? 'transport_pending' : 'unknown',
+      resumption: 'Validate the existing Run, Issue, assigned worktree and delivered revision; reconcile retained results before relaunch.' }
+    hostHandoffs.push(handoff)
+    await appendRunEvent('host.handoff', options.issueRef, options.phase, handoff)
+    return { executionUnavailable: true, error: reason }
+  }
+  if (result && !result.executionUnavailable) {
+    await appendRunEvent('role.result.consumed', options.issueRef, options.phase, metadata)
+  }
+  return result
 }
 
 function location(impl) {
@@ -1037,6 +1123,7 @@ for (const delivery of deliveries) {
   if (delivery.outcome !== 'accepted') continue
   if (A.unitId && A.runId && A.waitGate) {
     const stateRootArg = A.stateRoot ? ` --state-root "${A.stateRoot}"` : ''
+    await appendRunEvent('operator.waiting', delivery.ref, 'Integrate', { decision: 'post_critic_integration', requestedDecision: 'Approve integration of the accepted Issue', worktree: delivery.worktree })
     await runWorkflowCommand(`python3 "${scripts}/wait_gate.py" ${delivery.ref} --unit "${A.unitId}" --run "${A.runId}"${stateRootArg}`)
   }
   if (integrationStopped) {
@@ -1166,6 +1253,8 @@ if (!integrationStopped && A.isLastRound && !hasPaused) {
 return {
   runId: A.runId,
   hostResolution,
+  handoffs: hostHandoffs,
+  modelProgress: 'unknown',
   round: A.round,
   date: A.date,
   results: deliveries,
@@ -1179,3 +1268,40 @@ return {
 The Workflow returns `done` only after serial integration (when isolated), a passing post-integration
 gate and `roadmap.py done`. `no_gates` is not a generic acceptance path: a future bootstrap contract must
 explicitly supply and prove its exceptional checks before it can be modeled here.
+
+### Active Host result ownership
+
+The Host keeps this invocation active until its launched role results have been consumed and the
+existing acceptance/integration path has finished, or an observable handoff boundary has occurred.
+Answer a progress/status request while waiting, then continue the authorized objective. A child still
+running is pending work; process/transport liveness never establishes model progress or completed delivery.
+A conversational Host unable to keep waiting must report that limitation, the pending Issue/role,
+assigned worktree, latest observed activity (otherwise `unknown`) and validated same-Run resumption.
+Do not promise a daemon or continuation after closing the Host.
+
+A supported Host adapter may supply `args.hostControl.waitResult(pendingPromise, metadata)` to keep
+status steering active and explicitly return `{handoff: true, reason, latestActivity}` on
+`operator_stop`, `host_capability_lost` or an `authorized_handoff`. Without it, the canonical invocation
+awaits the role directly. The hook is a transport/conversation boundary, not a scheduler. It must not
+replace a role result or fabricate useful progress. `onResultReady(record)` may retain the attributable
+validated result in the Host's available transport for recovery; raw process streams stay out of Run logs.
+A Host losing that transport cannot promise recovery of an unpersisted result.
+
+`role.result.ready` means the supported invocation returned a validated result to this Host;
+`role.result.consumed` means the workflow took that result forward. Both carry Run/Issue/role,
+invocation ID, assigned worktree, branch and revision when observable, with `modelProgress: unknown`.
+They confer no acceptance authority. `runlog.py results <unit> <run> --json` reports these observations
+without role payloads; legacy absence remains unavailable evidence, never inferred availability.
+Closed Runs reject late result observations.
+
+An explicitly validated `priorRun` can carry Host-retained `recoveredResults`. Before reuse, the
+workflow reconciles each retained record with its logged availability, Run, Issue, role, worktree,
+current branch and revision, clean tree, authoritative ready-for-agent Issue and Result Contract.
+A mismatch pauses without launching duplicate code work. Matching results can reuse already-consumed
+Implement/Review work and the unconsumed Critic result, while the existing correction query preserves
+spent attempts. Results lost with a closed transport require explicit recovery, never invented replay.
+
+Only a configured `waitGate` produces `operator.waiting` and its requested post-Critic integration
+approval. Absent that gate, accepted work proceeds through existing integration gates and
+`roadmap.py done` without another approval. Planning, changed execution settings, PR and cleanup
+retain their own approval boundaries.
