@@ -66,6 +66,48 @@ class ResultContinuationTests(unittest.TestCase):
             self.assertEqual([], resumed['calls'], 'No duplicate implementation, review or Critic')
             self.assertEqual(0,resumed['result']['results'][0]['corrections'])
 
+    def test_corrected_delivery_resumes_second_critic_without_repeating_code_work(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)/'repo'
+            h, issue, args = self.fixture(root)
+            args.update(correctionBudget=1, implementerCommitTexts=['initial', 'corrected'],
+                        criticResults=[{'complete':False, 'criteria':[], 'refutations':['correct delivery'],
+                                        'requiredFixes':['commit corrected delivery']}, args['criticResult']],
+                        roleDelayMs=80, interruptRole='critic', interruptCriticAttempt=2,
+                        waitForRetainedResult=True)
+            stopped = h.run_workflow('round-workflow.md', args)
+            self.assertIsNone(stopped['error'])
+            self.assertEqual('paused', stopped['result']['results'][0]['outcome'])
+            self.assertEqual(1, stopped['result']['results'][0]['corrections'])
+            records = stopped['retainedResults']
+            implementations = [r for r in records if r['role']=='implementer']
+            self.assertEqual(2, len(implementations))
+            self.assertNotEqual(implementations[0]['revision'], implementations[1]['revision'])
+            accepted = [r for r in records if r['role']=='critic' and r['result']['complete']]
+            self.assertEqual(1, len(accepted))
+            prior = dict(run=args['runId'], issue='continuation#01', worktree=str(root), branch='feat/run')
+            resume_args = {**args, 'interruptRole':None, 'recoveredResults':accepted, 'priorRun':prior}
+            # Invalid retained HEAD must pause early with the authoritative spent count.
+            stale = [accepted[0], {**implementations[-1], 'revision':implementations[0]['revision']}]
+            failed = h.run_workflow('round-workflow.md', {**resume_args, 'recoveredResults':stale})
+            self.assertIsNone(failed['error'])
+            self.assertEqual('paused', failed['result']['results'][0]['outcome'])
+            self.assertEqual(1, failed['result']['results'][0]['corrections'])
+            self.assertEqual([], failed['calls'])
+            count = h.run_script(root, 'runlog.py', 'corrections', args['unitId'], args['runId'],
+                                 'continuation#01', '--state-root', args['stateRoot'], '--json')
+            self.assertEqual(1, json.loads(count.stdout)['correctionsSpent'])
+            resumed = h.run_workflow('round-workflow.md', resume_args)
+            self.assertIsNone(resumed['error'])
+            self.assertEqual('done', resumed['result']['results'][0]['outcome'])
+            self.assertEqual(1, resumed['result']['results'][0]['corrections'])
+            self.assertEqual([], resumed['calls'])
+            self.assertEqual('corrected', (root/'delivery.txt').read_text())
+            self.assertEqual('done', canonical.parse_issue(issue).status)
+            self.assertEqual('', subprocess.check_output(['git','status','--porcelain'],cwd=root,text=True))
+            events = h.read_run_log_events(Path(args['stateRoot']), args['unitId'], args['runId'])
+            self.assertEqual(1, len([e for e in events if e['event']=='issue.done']))
+
     def test_mismatched_recovered_revision_pauses_without_code_or_completion(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)/'repo'

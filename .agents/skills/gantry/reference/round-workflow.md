@@ -615,21 +615,40 @@ async function requestRole(role, prompt, options) {
     // Prior consumed Implement/Review contracts already live in the minimized Run log.
     // Recover those prerequisites instead of relaunching code when transport retains only Critic.
     recoveryInventory = [...A.recoveredResults, ...(saved.retainedResults || []).filter(record =>
-      !A.recoveredResults.some(supplied => supplied.issue === record.issue && supplied.role === record.role))]
+      !A.recoveredResults.some(supplied => supplied.invocationId === record.invocationId))]
   }
-  const retained = (recoveryInventory || A.recoveredResults || []).find(record => record.issue === options.issueRef && record.role === role && !reconciledResults.has(record.invocationId))
+  // Resume the latest invocation in the recorded chain, not the first delivery before corrections.
+  const inventory = recoveryInventory || A.recoveredResults || []
+  const observations = inventory.length ? await resultObservations() : null
+  const latest = observations && observations.results.filter(record => record.issue === options.issueRef && record.role === role).at(-1)
+  const retained = latest && inventory.find(record => record.invocationId === latest.invocationId && !reconciledResults.has(record.invocationId))
+  if (latest && !retained && inventory.some(record => record.issue === options.issueRef && record.role === role)) {
+    return { executionUnavailable: true, error: 'retained_result_mismatch' }
+  }
   if (retained) {
-    const observed = await resultObservations()
+    const observed = observations
     const issue = A.issues.find(item => item.ref === options.issueRef)
     const authority = await runCommand(`python3 "${scripts}/acceptance.py" ${shellQuote(issue.path)} --json`, { cwd: A.repoRoot })
     const clean = await runCommand('git status --porcelain', { cwd: worktree })
     const recorded = observed.results.find(record => record.invocationId === retained.invocationId)
     const identity = ['role', 'issue', 'runId', 'worktree', 'branch', 'revision', 'resultHash']
     let valid = false
+    // A consumed Review is a prerequisite of the correction, not a claim about its new revision.
+    // Only that prior stage may use an ancestor; Implement and retained Critic must match HEAD.
+    let revisionMatches = retained.revision === metadata.revision
+    if (!revisionMatches && role === 'reviewer' && recorded && recorded.consumed) {
+      const implement = observed.results.filter(record => record.issue === options.issueRef && record.role === 'implementer').at(-1)
+      const reviewIndex = observed.results.findIndex(record => record.invocationId === retained.invocationId)
+      const implementIndex = implement && observed.results.findIndex(record => record.invocationId === implement.invocationId)
+      if (implement && implement.consumed && implement.revision === metadata.revision && reviewIndex < implementIndex && /^[0-9a-f]{40,64}$/.test(retained.revision || '')) {
+        const ancestor = await runCommand(`git merge-base --is-ancestor ${shellQuote(retained.revision)} ${shellQuote(metadata.revision)}`, { cwd: worktree })
+        revisionMatches = ancestor.exitCode === 0
+      }
+    }
     try {
       valid = Boolean(A.priorRun && A.priorRun.issue === options.issueRef && A.priorRun.worktree === worktree && !observed.finished &&
         retained.runId === A.runId && retained.worktree === worktree && retained.branch === metadata.branch &&
-        retained.revision === metadata.revision && recorded && identity.every(key => recorded[key] === retained[key]) &&
+        revisionMatches && recorded && identity.every(key => recorded[key] === retained[key]) &&
         retained.resultHash === stableHash(retained.result) && authority.exitCode === 0 && JSON.parse(authority.stdout).status === 'ready-for-agent' &&
         clean.exitCode === 0 && !clean.stdout.trim() && await validRoleResult(role, retained.result))
     } catch {}
@@ -937,7 +956,8 @@ const results = await pipeline(
       const impl = state.impl
       const worktree = (impl && impl.worktree) || state.worktree || issueWorktreePath(issue)
       const branch = (impl && impl.branch) || state.branch || await configuredIssueBranch(issue)
-      const corrections = state.corrections || 0
+      const prior = priorAssignment(issue)
+      const corrections = state.corrections ?? (prior && prior.correctionsSpent) ?? 0
       await appendRunEvent('issue.paused', issue.ref, state.role === 'reviewer' ? 'Review' : state.role === 'implementer' ? 'Implement' : 'Critic', {
         role: state.role || 'critic',
         reason: 'execution_unavailable',
@@ -1308,9 +1328,11 @@ Closed Runs reject late result observations.
 
 An explicitly validated `priorRun` can carry Host-retained `recoveredResults`. Before reuse, the
 workflow reconciles each retained record with its logged availability, Run, Issue, role, worktree,
-current branch and revision, clean tree, authoritative ready-for-agent Issue and Result Contract.
+current branch, latest invocation identity and Git revision lineage, clean tree, authoritative
+ready-for-agent Issue and Result Contract.
 A mismatch pauses without launching duplicate code work. Matching results can reuse already-consumed
-Implement/Review work and the unconsumed Critic result, while the existing correction query preserves
+Implement work at HEAD, the consumed Review prerequisite at an ancestor revision, and the
+unconsumed Critic result strictly at HEAD, while the existing correction query preserves
 spent attempts. Results lost with a closed transport require explicit recovery, never invented replay.
 
 Only a configured `waitGate` produces `operator.waiting` and its requested post-Critic integration

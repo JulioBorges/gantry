@@ -133,13 +133,15 @@ const prompts = [];
 const retainedResults = [];
 let approvalObservedUnfinished = false;
 const statusReplies = [];
+let criticWaits = 0;
 args.hostControl = {{
   onResultReady: record => retainedResults.push(record),
   waitResult: async (pending, metadata) => {{
     if (args.statusDuringWait && metadata.role === 'critic') {{
       statusReplies.push({{ issue: metadata.issue, state: 'running', delivered: false, modelProgress: 'unknown' }});
     }}
-    if (args.interruptRole === metadata.role) {{
+    if (metadata.role === 'critic') criticWaits += 1;
+    if (args.interruptRole === metadata.role && (!args.interruptCriticAttempt || criticWaits === args.interruptCriticAttempt)) {{
       return {{ handoff: true, reason: args.interruptReason || 'operator_stop', latestActivity: 'transport_pending' }};
     }}
     return await pending;
@@ -226,7 +228,7 @@ const agent = async (prompt, options) => {{
       return args.implementerRawResults.shift();
     }}
     if (args.implementerCommitText) {{
-      writeFileSync(`${{options.cwd}}/delivery.txt`, args.implementerCommitText);
+      writeFileSync(`${{options.cwd}}/delivery.txt`, args.implementerCommitTexts && args.implementerCommitTexts.length ? args.implementerCommitTexts.shift() : args.implementerCommitText);
       const added = spawnSync('git', ['add', 'delivery.txt'], {{ cwd: options.cwd, encoding: 'utf8' }});
       const committed = spawnSync('git', ['commit', '--quiet', '-m', 'delivery'], {{ cwd: options.cwd, encoding: 'utf8' }});
       if (added.status !== 0 || committed.status !== 0) throw new Error(added.stderr || committed.stderr);
