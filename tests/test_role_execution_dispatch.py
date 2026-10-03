@@ -52,20 +52,20 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
             root = Path(temp)
             binary = root / "codex"
             binary.write_text(f"#!{sys.executable}\n" +
-                              "import sys\n" +
+                              "import sys, json\n" +
                               "if '--version' in sys.argv: print('codex 99.0.0')\n" +
                               "elif '--model' not in sys.argv or sys.argv[sys.argv.index('--model') + 1] != 'research-custom': sys.exit(7)\n" +
-                              "elif '--effort' not in sys.argv or sys.argv[sys.argv.index('--effort') + 1] != 'high': sys.exit(8)\n" +
+                              "elif '--effort' in sys.argv or 'model_reasoning_effort=\"high\"' not in sys.argv: sys.exit(8)\n" +
                               "elif 'fail research' in sys.argv: sys.exit(9)\n" +
                               "elif 'fallback research' in sys.argv: print('{\"model\":\"wrong-model\",\"model_fallback\":true}')\n" +
-                              "else: print('Facts and paths\\n- src/example.py')\n")
+                              "else:\n    print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'Facts and paths\\n- src/example.py'}}))\n    print(json.dumps({'type':'turn.completed'}))\n")
             binary.chmod(0o755)
             env = {**os.environ, "PATH": str(root)}
             cmd = [sys.executable, str(EXECUTION_SCRIPT), "dispatch", "--role", "research", "--cwd", str(root),
                    "--selection", json.dumps({"harness": "codex", "model": "research-custom", "effort": "high"})]
             delivered = subprocess.run(cmd, input="survey repository", text=True, capture_output=True, env=env)
             self.assertEqual(0, delivered.returncode, delivered.stderr)
-            self.assertEqual("Facts and paths\n- src/example.py\n", json.loads(delivered.stdout))
+            self.assertEqual("Facts and paths\n- src/example.py", json.loads(delivered.stdout))
             for prompt in ("fail research", "fallback research"):
                 failed = subprocess.run(cmd, input=prompt, text=True, capture_output=True, env=env)
                 self.assertEqual(1, failed.returncode, failed.stderr)
@@ -96,7 +96,7 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
         self.assertEqual(["opencode", "run", "Review code", "--model", "claude-sonnet-5-5"], opencode_cmd)
 
         codex_cmd = execution.build_dispatch_command("codex", "gpt-5.2-codex", "Plan spec")
-        self.assertEqual(["codex", "exec", "Plan spec", "--model", "gpt-5.2-codex"], codex_cmd)
+        self.assertEqual(["codex", "exec", "Plan spec", "--model", "gpt-5.2-codex", "--json", "--ephemeral"], codex_cmd)
 
     def test_dispatch_role_executes_in_canonical_assigned_working_directory(self) -> None:
         """Verify dispatch_role executes in the assigned working directory."""
@@ -200,7 +200,7 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
             )
 
             events = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
-            start_event = next(e for e in events if e.get("event") == "subagent.started")
+            start_event = next(e for e in events if e.get("event") == "role.invocation.started")
             self.assertEqual("antigravity", start_event["data"]["harness"])
             self.assertEqual("gemini-3.1-pro-high", start_event["data"]["model"])
             self.assertEqual("high", start_event["data"]["effort"])
@@ -257,7 +257,7 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
                     runner=BadOutputRunner(),
                     retry_on_invalid=True,
                 )
-            self.assertIn("schema validation failed for reviewer", str(ctx.exception))
+            self.assertIn("protocol-result-failure", str(ctx.exception))
             # Verify one retry was attempted
             self.assertEqual(2, len(calls))
 
@@ -272,7 +272,8 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             execution.verify_critic_result(critic_perm_error)
         self.assertIn("Critic execution failed visibly", str(ctx.exception))
-        self.assertIn("permission denied", str(ctx.exception))
+        self.assertIn("verification-limitation", str(ctx.exception))
+        self.assertNotIn(critic_perm_error["error"], str(ctx.exception))
 
         # 2. Complete=True without gatesResult is rejected
         critic_summary_only = {
@@ -292,7 +293,7 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
         }
         with self.assertRaises(execution.ProtocolFailureError) as ctx:
             execution.verify_critic_result(critic_failed_gate)
-        self.assertIn("gateResult verdict is 'fail'", str(ctx.exception))
+        self.assertIn("invalid-gate-verdict", str(ctx.exception))
 
         # 4. Valid Critic result passes
         critic_valid = {
@@ -1159,10 +1160,10 @@ class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):
     def test_codex_build_dispatch_command_with_and_without_effort(self) -> None:
         """AC2: build_dispatch_command handles codex exec with and without reasoning effort."""
         cmd_standard = execution.build_dispatch_command("codex", "gpt-5.2-codex", "Implement feature")
-        self.assertEqual(["codex", "exec", "Implement feature", "--model", "gpt-5.2-codex"], cmd_standard)
+        self.assertEqual(["codex", "exec", "Implement feature", "--model", "gpt-5.2-codex", "--json", "--ephemeral"], cmd_standard)
 
         cmd_effort = execution.build_dispatch_command("codex", "gpt-5.2-codex", "Implement feature", effort="high")
-        self.assertEqual(["codex", "exec", "Implement feature", "--model", "gpt-5.2-codex", "--effort", "high"], cmd_effort)
+        self.assertEqual(["codex", "exec", "Implement feature", "--model", "gpt-5.2-codex", "--json", "--ephemeral", "--config", 'model_reasoning_effort="high"'], cmd_effort)
 
     def test_bounded_dispatch_timeout_and_error_isolation(self) -> None:
         """AC2: execution runners isolate timeouts and subprocess errors as ExecutionFailureError."""
@@ -1204,7 +1205,22 @@ class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):
                     runner=FailingRunner(),
                 )
             self.assertIn("exit 127", str(ctx.exception))
-            self.assertIn("command terminated abnormally", str(ctx.exception))
+            self.assertNotIn("command terminated abnormally", str(ctx.exception))
+
+        # Exception messages can include a command, prompt, or captured streams.
+        def raising_runner(cmd, **kwargs):
+            if "--version" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, stdout="0.154.0\n", stderr="")
+            raise OSError("API_TOKEN=synthetic-fixture-secret")
+
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaises(execution.ExecutionFailureError) as ctx:
+                execution.dispatch_role(
+                    role="implementer", prompt="implement", cwd=Path(temp),
+                    selection={"harness": "codex", "model": "gpt-5.2-codex"}, runner=raising_runner,
+                )
+            self.assertIn("process-start-failure", str(ctx.exception))
+            self.assertNotIn("synthetic-fixture-secret", str(ctx.exception))
 
         # 3. CLI help accepts --timeout
         cli_check = subprocess.run(
@@ -1215,6 +1231,33 @@ class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):
         )
         self.assertEqual(0, cli_check.returncode)
         self.assertIn("--timeout", cli_check.stdout)
+
+    def test_invocation_metadata_record_failure_omits_child_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            cwd = Path(temp)
+            state = cwd / "state"
+            log = runlog.run_log_path(state, "abcdef123456", "run-fixture")
+            log.parent.mkdir(parents=True)
+            log.write_text("")
+
+            def captured(cmd, **kwargs):
+                if "--version" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout="0.160.0\n", stderr="")
+                self.assertIn("append", cmd)
+                return subprocess.CompletedProcess(
+                    cmd, 1, stdout="raw stdout synthetic-fixture-secret",
+                    stderr="raw stderr API_TOKEN=synthetic-fixture-secret",
+                )
+
+            with patch.object(execution, "run_captured", side_effect=captured):
+                with self.assertRaises(execution.ExecutionFailureError) as ctx:
+                    execution.dispatch_role(
+                        role="implementer", prompt="implement", cwd=cwd,
+                        selection={"harness": "codex", "model": "gpt-5.2-codex"},
+                        unit_id="abcdef123456", run_id="run-fixture", state_root=state,
+                    )
+            self.assertIn("metadata-record-failure, exit 1", str(ctx.exception))
+            self.assertNotIn("synthetic-fixture-secret", str(ctx.exception))
 
     def test_robust_result_contract_parsing_markdown_and_delimiters(self) -> None:
         """AC3: Role results returned from codex exec conform to result.py contracts, with robust parsing for markdown and JSON delimiters."""
@@ -1332,7 +1375,7 @@ class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):
             }
             with self.assertRaises(execution.ProtocolFailureError) as ctx:
                 execution.verify_critic_result(fraudulent_critic_summary)
-            self.assertIn("gateResult verdict is 'fail'", str(ctx.exception))
+            self.assertIn("invalid-gate-verdict", str(ctx.exception))
 
             # 3. Test Adversarial Cross-Harness Critic Verification: Valid delivery accepted
             valid_critic_verdict = {

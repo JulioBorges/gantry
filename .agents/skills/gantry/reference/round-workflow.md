@@ -511,11 +511,18 @@ async function requestRole(role, prompt, options) {
   if (options && options.executionUnavailable) {
     return { executionUnavailable: true, error: options.error || 'Role execution unavailable' }
   }
-  if (selection && selection.harness && selection.harness !== hostHarness) {
+  if (selection && selection.harness && (selection.harness !== hostHarness || A.boundedRoleExecution === true)) {
     const cwd = (options && options.cwd) || A.repoRoot
     const selectionJson = JSON.stringify(selection)
     const agentPrompt = cavemanActive ? `${prompt}\n\n${cavemanInstruction}` : prompt
-    const cmd = `python3 "${scripts}/execution.py" dispatch --role "${role}" --cwd ${shellQuote(cwd)} --selection '${selectionJson.replaceAll("'", "'\\''")}'`
+    const attribution = []
+    if (A.runId && A.unitId) {
+      attribution.push(`--run-id ${shellQuote(A.runId)}`, `--unit-id ${shellQuote(A.unitId)}`)
+      if (A.stateRoot) attribution.push(`--state-root ${shellQuote(A.stateRoot)}`)
+      if (issueRef) attribution.push(`--issue-ref ${shellQuote(issueRef)}`)
+    }
+    if (A.executionTimeout) attribution.push(`--timeout ${Number(A.executionTimeout)}`)
+    const cmd = `python3 "${scripts}/execution.py" dispatch --role "${role}" --cwd ${shellQuote(cwd)} --selection '${selectionJson.replaceAll("'", "'\\''")}' ${attribution.join(' ')}`
     const res = await runCommand(cmd, { cwd: A.repoRoot, input: agentPrompt })
     if (res && res.exitCode === 0) {
       try {
@@ -759,6 +766,7 @@ async function implement(issue, feedback, previous) {
   await appendRunEvent('subagent.started', issue.ref, 'Implement', { role: 'implementer' })
   const result = await requestRole('implementer', implementPrompt(issue, feedback, assigned), options)
   if (result && result.executionUnavailable) {
+    await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', status: 'execution-failure' })
     return { executionUnavailable: true, role: 'implementer', error: result.error, worktree: assigned.worktree, branch: assigned.branch }
   }
   await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', result })
@@ -806,6 +814,7 @@ const results = await pipeline(
       ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'reviewer' ? { executionUnavailable: true } : {}),
     })
     if (review && review.executionUnavailable) {
+      await appendRunEvent('subagent.stopped', issue.ref, 'Review', { role: 'reviewer', status: 'execution-failure' })
       return { executionUnavailable: true, role: 'reviewer', error: review.error, impl }
     }
     await appendRunEvent('subagent.stopped', issue.ref, 'Review', { role: 'reviewer', result: review })
@@ -885,6 +894,7 @@ const results = await pipeline(
         ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'critic' ? { executionUnavailable: true } : {}),
       })
       if (verdict && verdict.executionUnavailable) {
+        await appendRunEvent('subagent.stopped', issue.ref, 'Critic', { role: 'critic', attempt, status: 'execution-failure' })
         await appendRunEvent('issue.paused', issue.ref, 'Critic', {
           role: 'critic',
           reason: 'execution_unavailable',
