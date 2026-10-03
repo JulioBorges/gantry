@@ -234,6 +234,25 @@ const hostCapabilities = hostResolution.capabilities
 
 // Selected-profile readiness is independent of Host identity. Probe authorization
 // must be explicit; failure never changes policy, permissions, models or defaults.
+// Keep only the sanitized CLI diagnosis, never command streams or unrelated fields.
+const preflightFallback = 'Execution preflight refused or unknown; explicit profile recovery required. Select a replacement or authorize a bounded read-only probe explicitly.'
+function preflightFailureMessage(readiness) {
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+  const statuses = ['verified', 'unavailable', 'unknown']
+  if (!object(readiness) || !statuses.includes(readiness.status) ||
+      !object(readiness.dimensions) || typeof readiness.error !== 'string' ||
+      typeof readiness.remedy !== 'string') return preflightFallback
+  const dimensions = {}
+  for (const name of ['compatibility', 'authentication', 'modelEffort', 'transport', 'permissions']) {
+    const dimension = readiness.dimensions[name]
+    if (!object(dimension) || !statuses.includes(dimension.status) || typeof dimension.source !== 'string' ||
+        (dimension.identity !== undefined && typeof dimension.identity !== 'string')) return preflightFallback
+    dimensions[name] = { status: dimension.status, source: dimension.source }
+    if (dimension.identity !== undefined) dimensions[name].identity = dimension.identity
+  }
+  return `Execution preflight failed: ${JSON.stringify({ status: readiness.status, dimensions, error: readiness.error, remedy: readiness.remedy })}`
+}
+
 async function requireProfilePreflight(selection, cwd = A.repoRoot) {
   const flags = []
   if (A.authorizePreflightProbe === true) flags.push('--authorize-probe')
@@ -251,7 +270,9 @@ async function requireProfilePreflight(selection, cwd = A.repoRoot) {
   let readiness
   try { readiness = JSON.parse((checked && checked.stdout) || '{}') } catch { readiness = {} }
   if (!checked || checked.exitCode !== 0 || readiness.valid !== true) {
-    throw new Error('Execution preflight refused or unknown; pause and select a replacement or authorize a bounded read-only probe explicitly.')
+    const failure = new Error(preflightFailureMessage(readiness))
+    failure.gantryPreflightFailure = true
+    throw failure
   }
   return readiness
 }
@@ -535,8 +556,8 @@ async function requestRole(role, prompt, options) {
   const selection = resolveRoleForIssue(issueRef, role, options)
   try {
     await requireProfilePreflight(selection || {}, (options && options.cwd) || A.repoRoot)
-  } catch {
-    return { executionUnavailable: true, error: 'Execution preflight refused or unknown; explicit profile recovery required.' }
+  } catch (failure) {
+    return { executionUnavailable: true, error: failure && failure.gantryPreflightFailure === true ? failure.message : preflightFallback }
   }
   if (options && options.executionUnavailable) {
     return { executionUnavailable: true, error: options.error || 'Role execution unavailable' }

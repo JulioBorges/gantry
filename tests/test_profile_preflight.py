@@ -74,6 +74,78 @@ class ProfilePreflightTests(unittest.TestCase):
                 self.assertIn('preflight',json.dumps(got).lower())
                 self.assertEqual([],got['calls'])
 
+    def test_canonical_failures_preserve_actionable_sanitized_diagnosis(self):
+        import profile_preflight
+        from tests.test_workflow_host_binding import WorkflowHostBindingTests
+        fixture = WorkflowHostBindingTests()
+        cases = (
+            ('authentication', self.selection, True),
+            ('transport', {**self.selection, 'transport': 'unsupported'}, False),
+            ('permissions', {**self.selection, 'sandbox': None}, False),
+            ('modelEffort', self.selection, False),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for dimension, selection, auth_failure in cases:
+                def runner(cmd, **kwargs):
+                    if 'login' in cmd and auth_failure:
+                        return subprocess.CompletedProcess(cmd, 1, 'RAW_AUTH_STREAM', 'RAW_STDERR')
+                    text = 'codex 0.160.0' if '--version' in cmd else 'Logged in'
+                    return subprocess.CompletedProcess(cmd, 0, text, 'RAW_STDERR')
+                diagnosis = profile_preflight.check(selection, root=root, runner=runner)
+                self.assertFalse(diagnosis['valid'])
+                self.assertEqual('unknown' if dimension == 'modelEffort' else 'unavailable',
+                                 diagnosis['dimensions'][dimension]['status'])
+                # Extra transport fields must not enter the operator-facing failure.
+                diagnosis['stdout'] = 'RAW_STDOUT'
+                diagnosis['stderr'] = 'RAW_STDERR'
+                for filename in ('plan-workflow.md', 'round-workflow.md'):
+                    with self.subTest(dimension=dimension, workflow=filename):
+                        args = fixture.entry_args(root, 'codex')
+                        args['preflightResult'] = diagnosis
+                        if filename == 'round-workflow.md':
+                            args['issues'] = [{'ref': 'example#01', 'path': 'example.md', 'spec': 'example'}]
+                        got = fixture.run_workflow(filename, args)
+                        self.assertEqual([], got['calls'])
+                        if filename == 'plan-workflow.md':
+                            message = got['error']
+                        else:
+                            paused = got['result']['results'][0]
+                            self.assertEqual('paused', paused['outcome'])
+                            self.assertTrue(got['result']['nextRoundBlocked'])
+                            message = paused['error']
+                        preserved = json.loads(message.split('Execution preflight failed: ', 1)[1])
+                        self.assertEqual(diagnosis['status'], preserved['status'])
+                        self.assertEqual(diagnosis['dimensions'], preserved['dimensions'])
+                        self.assertEqual(diagnosis['error'], preserved['error'])
+                        self.assertEqual(diagnosis['remedy'], preserved['remedy'])
+                        self.assertNotIn('RAW_', message)
+
+    def test_canonical_malformed_preflight_uses_fixed_safe_fallback(self):
+        from tests.test_workflow_host_binding import WorkflowHostBindingTests
+        fixture = WorkflowHostBindingTests()
+        fallback = ('Execution preflight refused or unknown; explicit profile recovery required. '
+                    'Select a replacement or authorize a bounded read-only probe explicitly.')
+        malformed = (
+            ['RAW_STREAM'],
+            {'valid': False, 'status': 'RAW_STREAM', 'error': 'RAW_ERROR'},
+            {'valid': False, 'status': 'unknown', 'dimensions': [], 'error': 'RAW_ERROR', 'remedy': 'RAW_REMEDY'},
+            {'valid': False, 'status': 'unknown', 'dimensions': {}, 'error': 'RAW_ERROR', 'remedy': 'RAW_REMEDY'},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            for diagnosis in malformed:
+                for filename in ('plan-workflow.md', 'round-workflow.md'):
+                    with self.subTest(diagnosis=diagnosis, workflow=filename):
+                        args = fixture.entry_args(Path(tmp), 'codex')
+                        args['preflightResult'] = diagnosis
+                        if filename == 'round-workflow.md':
+                            args['issues'] = [{'ref': 'example#01', 'path': 'example.md', 'spec': 'example'}]
+                        got = fixture.run_workflow(filename, args)
+                        message = (got['error'] if filename == 'plan-workflow.md'
+                                   else got['result']['results'][0]['error'])
+                        self.assertEqual(fallback, message)
+                        self.assertEqual([], got['calls'])
+
     def test_unsupported_selected_syntax_stops_before_execution_probe(self):
         calls=[]
         def runner(cmd, **kwargs):
