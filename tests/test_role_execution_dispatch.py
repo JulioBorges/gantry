@@ -52,20 +52,20 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
             root = Path(temp)
             binary = root / "codex"
             binary.write_text(f"#!{sys.executable}\n" +
-                              "import sys\n" +
+                              "import sys, json\n" +
                               "if '--version' in sys.argv: print('codex 99.0.0')\n" +
                               "elif '--model' not in sys.argv or sys.argv[sys.argv.index('--model') + 1] != 'research-custom': sys.exit(7)\n" +
-                              "elif '--effort' not in sys.argv or sys.argv[sys.argv.index('--effort') + 1] != 'high': sys.exit(8)\n" +
+                              "elif '--effort' in sys.argv or 'model_reasoning_effort=\"high\"' not in sys.argv: sys.exit(8)\n" +
                               "elif 'fail research' in sys.argv: sys.exit(9)\n" +
                               "elif 'fallback research' in sys.argv: print('{\"model\":\"wrong-model\",\"model_fallback\":true}')\n" +
-                              "else: print('Facts and paths\\n- src/example.py')\n")
+                              "else:\n    print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'Facts and paths\\n- src/example.py'}}))\n    print(json.dumps({'type':'turn.completed'}))\n")
             binary.chmod(0o755)
             env = {**os.environ, "PATH": str(root)}
             cmd = [sys.executable, str(EXECUTION_SCRIPT), "dispatch", "--role", "research", "--cwd", str(root),
                    "--selection", json.dumps({"harness": "codex", "model": "research-custom", "effort": "high"})]
             delivered = subprocess.run(cmd, input="survey repository", text=True, capture_output=True, env=env)
             self.assertEqual(0, delivered.returncode, delivered.stderr)
-            self.assertEqual("Facts and paths\n- src/example.py\n", json.loads(delivered.stdout))
+            self.assertEqual("Facts and paths\n- src/example.py", json.loads(delivered.stdout))
             for prompt in ("fail research", "fallback research"):
                 failed = subprocess.run(cmd, input=prompt, text=True, capture_output=True, env=env)
                 self.assertEqual(1, failed.returncode, failed.stderr)
@@ -96,7 +96,7 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
         self.assertEqual(["opencode", "run", "Review code", "--model", "claude-sonnet-5-5"], opencode_cmd)
 
         codex_cmd = execution.build_dispatch_command("codex", "gpt-5.2-codex", "Plan spec")
-        self.assertEqual(["codex", "exec", "Plan spec", "--model", "gpt-5.2-codex"], codex_cmd)
+        self.assertEqual(["codex", "exec", "Plan spec", "--model", "gpt-5.2-codex", "--json", "--ephemeral"], codex_cmd)
 
     def test_dispatch_role_executes_in_canonical_assigned_working_directory(self) -> None:
         """Verify dispatch_role executes in the assigned working directory."""
@@ -1159,10 +1159,10 @@ class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):
     def test_codex_build_dispatch_command_with_and_without_effort(self) -> None:
         """AC2: build_dispatch_command handles codex exec with and without reasoning effort."""
         cmd_standard = execution.build_dispatch_command("codex", "gpt-5.2-codex", "Implement feature")
-        self.assertEqual(["codex", "exec", "Implement feature", "--model", "gpt-5.2-codex"], cmd_standard)
+        self.assertEqual(["codex", "exec", "Implement feature", "--model", "gpt-5.2-codex", "--json", "--ephemeral"], cmd_standard)
 
         cmd_effort = execution.build_dispatch_command("codex", "gpt-5.2-codex", "Implement feature", effort="high")
-        self.assertEqual(["codex", "exec", "Implement feature", "--model", "gpt-5.2-codex", "--effort", "high"], cmd_effort)
+        self.assertEqual(["codex", "exec", "Implement feature", "--model", "gpt-5.2-codex", "--json", "--ephemeral", "--config", 'model_reasoning_effort="high"'], cmd_effort)
 
     def test_bounded_dispatch_timeout_and_error_isolation(self) -> None:
         """AC2: execution runners isolate timeouts and subprocess errors as ExecutionFailureError."""

@@ -292,3 +292,53 @@ stage `.gantry/config.json`. Setup never changes `.gitignore`, global ignore rul
 Codex and adapters without verified automatic setup wiring receive manual workflow and independent
 Critic guidance. Adapter preview and tests prove setup behavior, not live hook enforcement. Reproduce
 these paths using the [CLI transcript](evidence/host-harness-resolution/setup-repair.md).
+
+## Verified Codex bounded dispatch
+
+Use the public adapter with an explicitly approved selection and permission scope:
+
+```sh
+python3 .agents/skills/gantry/scripts/execution.py dispatch \
+  --role review --cwd /absolute/path/to/assigned-worktree \
+  --selection '{"harness":"codex","model":"gpt-6.1-sol","effort":"medium","sandbox":"read-only"}' \
+  --timeout 90 --json
+```
+
+Supply the prompt on stdin. Within a recorded Run, also pass `--run-id`, `--unit-id`,
+`--issue-ref` and the configured `--state-root`. Invocation metadata goes through
+`runlog.py append` with JSON on stdin. Each attempt identifies requested selection,
+CLI version, permission scope and result-validation status. Model and effort remain
+unobserved unless supplied by trustworthy CLI metadata; agent-written fields never
+establish execution identity. Prompt text, raw process streams and result contents
+are excluded from this adapter's lifecycle metadata.
+
+Codex dispatch uses `exec --model <model> --json --ephemeral` with
+`--config 'model_reasoning_effort="medium"'` for the approved effort. It consumes
+JSONL `item.completed` agent messages only after `turn.completed`, then validates
+against the ordinary Gantry Result Contract. Generic Gantry schemas are instructions
+and post-execution validators; they are not passed as native strict-output schemas.
+Malformed or incomplete transport and invalid contracts allow one protocol-result
+retry. A nonzero exit, failed turn, fallback, cancellation or timeout is an execution
+failure, and leaves the assigned worktree intact. No model or harness substitution
+occurs. The default role bound is 300 seconds; probes are bounded to 15 seconds.
+`subprocess.run` cleans up its direct child on timeout; descendant termination or
+cleanup by an injected runner cannot be asserted by this adapter.
+
+Runner injection requires the `subprocess.run` keyword contract (`cwd`,
+`capture_output`, `text`, `check`, `timeout`, `input`) and a CompletedProcess-like
+return carrying `stdout`, `stderr` and `returncode`. Probe and invocation calls use
+the same boundary. A TypeError is a failure, never a reason to remove capture or bounds.
+Codex inherits CLI permission configuration unless `sandbox` explicitly selects
+`read-only` or `workspace-write`; Gantry adds no bypass flag.
+
+Canonical plan/round workflows retain the independently resolved Host Harness.
+Cross-harness roles use this adapter automatically. For a Host whose native role
+API cannot supply the approved selection, pass `args.boundedRoleExecution = true`
+to route same-host roles through the same public adapter. Issue overrides retain
+precedence over Run selections. Native role APIs retain their existing contract.
+
+The [local compatibility transcript](evidence/run-execution-reliability/codex-dispatch.md)
+records actual Codex 0.160.0 parser and role evidence. The deterministic fixtures
+cover routing and failure handling; they do not establish live model availability.
+`codex models` can open an interactive prompt in this installed CLI, so its failure
+in a noninteractive runner is not evidence of unavailable authentication or models.

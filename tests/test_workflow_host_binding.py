@@ -151,6 +151,30 @@ class WorkflowHostBindingTests(unittest.TestCase):
             self.assertFalse(any(call["label"].startswith("critic:") for call in run["calls"]))
             self.assertTrue(any('result.py" --role "critic" --json' in call["command"] for call in run["commandCalls"]))
 
+    def test_round_bounded_same_host_dispatch_preserves_issue_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            helper = canonical.CanonicalGantryWorkflowTests()
+            helper.init_repo(root)
+            issue = helper.write_issue(root, "adapter#01", "ready-for-agent")
+            args = self.entry_args(root, "codex")
+            args.update(commandMode="real", isolate=False, boundedRoleExecution=True,
+                        issues=[{"ref": "adapter#01", "path": str(issue), "specPath": "spec.md"}],
+                        roles={"implement": {"harness": "codex", "model": "run-model", "effort": "low"}},
+                        issueRoles={"adapter#01": {"implementer": {"harness": "codex", "model": "issue-model", "effort": "medium"}}},
+                        dispatchResults=[{"exitCode": 1, "stdout": "", "stderr": "simulated process-start failure"}])
+            before = issue.read_bytes()
+            run = self.run_workflow("round-workflow.md", args)
+            self.assertIsNone(run["error"])
+            self.assertEqual("codex", run["result"]["hostResolution"]["effectiveHost"])
+            dispatch = next(call["command"] for call in run["commandCalls"] if 'execution.py" dispatch' in call["command"])
+            self.assertIn('"model":"issue-model"', dispatch)
+            self.assertIn('"effort":"medium"', dispatch)
+            self.assertIn('"harness":"codex"', dispatch)
+            self.assertFalse(any(call["label"].startswith("implement:") for call in run["calls"]))
+            self.assertEqual("paused", run["result"]["results"][0]["outcome"])
+            self.assertEqual(before, issue.read_bytes())
+
     def test_concurrent_new_runs_record_their_own_sanitized_host_and_capability_tier(self):
         from concurrent.futures import ThreadPoolExecutor
         with tempfile.TemporaryDirectory() as tmp:
