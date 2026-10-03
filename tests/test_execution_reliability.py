@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / '.agents/skills/gantry/scripts'))
 import execution
@@ -120,3 +121,20 @@ class ExecutionReliabilityTests(unittest.TestCase):
                 return subprocess.CompletedProcess(cmd, 0, '\n'.join(map(json.dumps,events)), '')
             got = execution.dispatch_role('research','research',root,selection={'harness':'codex','model':'gpt-6.1-sol'},runner=runner)
             self.assertIn('repository data',got)
+
+    def test_all_critic_roles_fail_when_independent_verification_is_unavailable(self):
+        contracts = {
+            'critic': {'complete':False,'criteria':[],'gatesVerdict':'fail','gateResult':{'verdict':'fail'},'gateFailures':[],'refutations':[],'requiredFixes':[],'decisionsForOperator':[]},
+            'requirement-critic': {'blocking':[],'findings':[]},
+            'plan-critic': {'acceptable':True,'problems':[],'frontierErrors':[]},
+        }
+        for role, contract in contracts.items():
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as root:
+                def runner(cmd, **kwargs):
+                    if '--version' in cmd:
+                        return subprocess.CompletedProcess(cmd,0,'codex 0.160.0','')
+                    events = [{'type':'item.completed','item':{'type':'agent_message','text':json.dumps(contract)}},{'type':'turn.completed'}]
+                    return subprocess.CompletedProcess(cmd,0,'\n'.join(map(json.dumps,events)),'')
+                with patch.object(execution,'verify_critic_result',side_effect=RuntimeError('independent verification unavailable')):
+                    with self.assertRaisesRegex(RuntimeError,'independent verification unavailable'):
+                        execution.dispatch_role(role,'verify',root,selection={'harness':'codex','model':'gpt-6.1-sol'},runner=runner)

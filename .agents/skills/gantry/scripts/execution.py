@@ -715,7 +715,7 @@ def dispatch_role(
                 check_model_fallback(model, proc.stdout)
                 final = proc.stdout
             data = parse_and_validate_result(role, final)
-            if role == "critic":
+            if role in ("critic", "requirement-critic", "plan-critic"):
                 verify_critic_result(data)
         except ProtocolFailureError:
             record("role.invocation.finished", attempt, status="protocol-failure")
