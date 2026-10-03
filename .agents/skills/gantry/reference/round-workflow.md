@@ -231,6 +231,72 @@ if (hostResolution.resume && hostResolution.resume.decision !== 'unchanged') {
 }
 const hostHarness = hostResolution.effectiveHost
 const hostCapabilities = hostResolution.capabilities
+
+// Selected-profile readiness is independent of Host identity. Probe authorization
+// must be explicit; failure never changes policy, permissions, models or defaults.
+// Keep only the sanitized CLI diagnosis, never command streams or unrelated fields.
+const preflightFallback = 'Execution preflight refused or unknown; explicit profile recovery required. Select a replacement or authorize a bounded read-only probe explicitly.'
+function preflightFailureMessage(readiness) {
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+  const statuses = ['verified', 'unavailable', 'unknown']
+  if (!object(readiness) || !statuses.includes(readiness.status) ||
+      !object(readiness.dimensions) || typeof readiness.error !== 'string' ||
+      typeof readiness.remedy !== 'string') return preflightFallback
+  const dimensions = {}
+  for (const name of ['compatibility', 'authentication', 'modelEffort', 'transport', 'permissions']) {
+    const dimension = readiness.dimensions[name]
+    if (!object(dimension) || !statuses.includes(dimension.status) || typeof dimension.source !== 'string' ||
+        (dimension.identity !== undefined && typeof dimension.identity !== 'string')) return preflightFallback
+    dimensions[name] = { status: dimension.status, source: dimension.source }
+    if (dimension.identity !== undefined) dimensions[name].identity = dimension.identity
+  }
+  return `Execution preflight failed: ${JSON.stringify({ status: readiness.status, dimensions, error: readiness.error, remedy: readiness.remedy })}`
+}
+
+function validPreflightEvidence(readiness) {
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+  const exactKeys = (value, keys) => object(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
+  if (!exactKeys(readiness, ['valid', 'status', 'dimensions', 'error', 'remedy', 'reused']) ||
+      readiness.valid !== true || readiness.status !== 'verified' || readiness.error !== null ||
+      readiness.remedy !== 'Select an explicitly approved profile or authorize a bounded read-only probe; no fallback was used.' ||
+      typeof readiness.reused !== 'boolean') return false
+  const sources = {
+    compatibility: 'bounded-version-and-parser-probes', authentication: 'bounded-login-status',
+    modelEffort: 'bounded-selected-profile-probe', transport: 'completed-codex-jsonl-probe', permissions: 'operator-selection',
+  }
+  if (!exactKeys(readiness.dimensions, Object.keys(sources))) return false
+  return Object.entries(sources).every(([name, source]) => {
+    const dimension = readiness.dimensions[name]
+    return exactKeys(dimension, name === 'modelEffort' ? ['status', 'source', 'identity'] : ['status', 'source']) &&
+      dimension.status === 'verified' && dimension.source === source &&
+      (name !== 'modelEffort' || dimension.identity === 'requested arguments; effective model/effort unobserved')
+  })
+}
+
+async function requireProfilePreflight(selection, cwd = A.repoRoot) {
+  const flags = []
+  if (A.authorizePreflightProbe === true) flags.push('--authorize-probe')
+  if (A.runId && A.unitId) {
+    flags.push(`--run-id ${shellQuote(A.runId)}`, `--unit-id ${shellQuote(A.unitId)}`)
+    if (A.stateRoot) flags.push(`--state-root ${shellQuote(A.stateRoot)}`)
+  }
+  const profileArg = selection
+    ? `--selection ${shellQuote(JSON.stringify(selection))}`
+    : `--run-overrides ${shellQuote(JSON.stringify(A.roles || {}))}`
+  const checked = await runCommand(
+    `python3 "${scripts}/execution.py" preflight --json --cwd ${shellQuote(cwd)} ${profileArg} ${flags.join(' ')}`,
+    { cwd: A.repoRoot },
+  )
+  let readiness
+  try { readiness = JSON.parse((checked && checked.stdout) || '{}') } catch { readiness = {} }
+  if (!checked || checked.exitCode !== 0 || !validPreflightEvidence(readiness)) {
+    const failure = new Error(readiness && readiness.valid === false ? preflightFailureMessage(readiness) : preflightFallback)
+    failure.gantryPreflightFailure = true
+    throw failure
+  }
+  return readiness
+}
+
 if (hostResolution.mismatch && typeof log === 'function') {
   log(`Host Harness ${hostHarness} differs from saved preference ${hostResolution.savedPreference}; policy unchanged.`)
 }
@@ -508,6 +574,11 @@ async function validRoleResult(role, result) {
 async function requestRole(role, prompt, options) {
   const issueRef = options && options.issueRef
   const selection = resolveRoleForIssue(issueRef, role, options)
+  try {
+    await requireProfilePreflight(selection || {}, (options && options.cwd) || A.repoRoot)
+  } catch (failure) {
+    return { executionUnavailable: true, error: failure && failure.gantryPreflightFailure === true ? failure.message : preflightFallback }
+  }
   if (options && options.executionUnavailable) {
     return { executionUnavailable: true, error: options.error || 'Role execution unavailable' }
   }

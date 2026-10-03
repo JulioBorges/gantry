@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+from tests.preflight_fixture import VERIFIED_PREFLIGHT
 import subprocess
 import sys
 import tempfile
@@ -129,6 +130,7 @@ const args = {json.dumps(args)};
 const calls = [];
 const commandCalls = [];
 const hostCalls = [];
+const preflightCalls = [];
 const prompts = [];
 const prompt = async message => {{ prompts.push(message); return (args.promptAnswers || []).shift() || "no"; }};
 let sequence = 0;
@@ -142,6 +144,11 @@ const runCommand = async (command, options = {{}}) => {{
     hostCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});
     const completed = spawnSync(command, {{ cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8' }});
     return {{ exitCode: completed.status ?? 1, stdout: completed.stdout || '', stderr: completed.stderr || '' }};
+  }}
+  if (command.includes('/execution.py" preflight ')) {{
+    preflightCalls.push({{command,cwd:options.cwd || args.repoRoot,sequence:sequence++}});
+    const readiness = args.preflightResult || {json.dumps(VERIFIED_PREFLIGHT)};
+    return {{exitCode:readiness.valid ? 0 : 1,stdout:JSON.stringify(readiness),stderr:''}};
   }}
   commandCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});
   if (command.includes('/spec.py') && args.stubSpecCheck !== false) {{
@@ -248,7 +255,7 @@ try {{
 }} catch (err) {{
   error = err && err.message ? err.message : String(err);
 }}
-process.stdout.write(JSON.stringify({{ result, calls, commandCalls, hostCalls, prompts, error }}));
+process.stdout.write(JSON.stringify({{ result, calls, commandCalls, hostCalls, preflightCalls, prompts, error }}));
 """
         result = subprocess.run(
             ["node", "--input-type=module", "--eval", driver],
@@ -3255,6 +3262,7 @@ Slice: `legacy#07`
             "difflib",
             "discovery",
             "execution",
+            "profile_preflight",
             "hashlib",
             "http",
             "json",
@@ -3278,7 +3286,7 @@ Slice: `legacy#07`
             "urllib",
         }
         self.assertEqual(
-            {"acceptance.py", "budget.py", "caveman.py", "cleanup.py", "common.py", "dashboard.py", "discovery.py", "execution.py", "frontier.py", "gates.py", "guard.py", "learner.py", "plan.py", "result.py", "roadmap.py", "runlog.py", "setup.py", "setup_host.py", "spec.py", "wait_gate.py"},
+            {"acceptance.py", "budget.py", "caveman.py", "cleanup.py", "common.py", "dashboard.py", "discovery.py", "execution.py", "frontier.py", "gates.py", "guard.py", "learner.py", "plan.py", "profile_preflight.py", "result.py", "roadmap.py", "runlog.py", "setup.py", "setup_host.py", "spec.py", "wait_gate.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         git_hooks = SKILL_DIR / "hooks" / "git"
