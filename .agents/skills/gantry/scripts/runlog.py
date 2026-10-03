@@ -23,6 +23,8 @@ EVENTS = {
     "phase.finished",
     "subagent.started",
     "subagent.stopped",
+    "role.invocation.started",
+    "role.invocation.finished",
     "compaction",
     "hook.denied",
     "hook.degraded",
@@ -299,6 +301,18 @@ def validate_event(payload: object) -> dict:
             raise EventError("issue.paused requires data.role and data.reason")
         require_string(data["role"], "data.role")
         require_string(data["reason"], "data.reason")
+    elif event in {"role.invocation.started", "role.invocation.finished"}:
+        required = {"role", "attempt", "cliVersion", "requestedSelection", "observedSelection", "permissionScope"}
+        if not isinstance(data, dict) or not required <= set(data):
+            raise EventError(f"{event} requires attributable invocation metadata")
+        require_string(data["role"], "data.role")
+        require_positive_integer(data["attempt"], "data.attempt")
+        require_string(data["cliVersion"], "data.cliVersion")
+        require_string(data["permissionScope"], "data.permissionScope")
+        if not isinstance(data["requestedSelection"], dict) or not isinstance(data["observedSelection"], dict):
+            raise EventError("invocation selections must be objects")
+        if event == "role.invocation.finished":
+            require_string(data.get("status"), "data.status")
     elif event == "role.selected":
         if "issue" not in payload:
             raise EventError("role.selected requires issue")

@@ -242,7 +242,7 @@ class RoleExecutionPreflightTests(unittest.TestCase):
 
         # Failing auth runner
         class FailingRunner:
-            def __call__(self, cmd: list[str]) -> subprocess.CompletedProcess[str]:
+            def __call__(self, cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
                 return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="auth error")
 
         res2 = execution.preflight_validate(

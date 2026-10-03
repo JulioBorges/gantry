@@ -64,7 +64,7 @@ class ProtocolFailureError(Exception):
 
 
 class ExecutionFailureError(RuntimeError):
-    """Raised when an external harness command fails at runtime (crash, timeout, non-zero exit)."""
+    """Runtime failure with telemetry-safe diagnostics, never raw streams or exception text."""
 
 
 def resolve_host(*, root: Path, explicit_host: str | None = None) -> dict[str, Any]:
@@ -127,14 +127,22 @@ def resolve_host(*, root: Path, explicit_host: str | None = None) -> dict[str, A
 def parse_semver(version_str: str) -> tuple[int, int, int]:
     match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", version_str)
     if not match:
-        raise ValueError(f"Cannot parse version string: {version_str!r}")
+        raise ValueError("Cannot parse harness version (version-parse-failure)")
     major = int(match.group(1))
     minor = int(match.group(2))
     patch = int(match.group(3) or 0)
     return (major, minor, patch)
 
 
-def validate_codex_auth(runner: Callable[..., Any] | None = None) -> dict[str, Any]:
+def run_captured(command: list[str], *, runner=None, cwd=None, timeout=15, input=None):
+    """One subprocess-compatible boundary; never retry with capture/bounds removed."""
+    return (runner or subprocess.run)(
+        command, cwd=str(Path(cwd or Path.cwd()).resolve()),
+        capture_output=True, text=True, check=False, timeout=timeout, input=input,
+    )
+
+
+def validate_codex_auth(runner: Callable[..., Any] | None = None, *, cwd=None) -> dict[str, Any]:
     """Validate Codex authentication via `codex login status`."""
     cli_name = CLI_NAMES.get("codex", "codex")
     if runner is None and not shutil.which(cli_name):
@@ -143,12 +151,8 @@ def validate_codex_auth(runner: Callable[..., Any] | None = None) -> dict[str, A
             "error": f"Codex CLI binary '{cli_name}' not found on PATH. Please install Codex CLI or ensure it is in your PATH.",
         }
 
-    run_cmd = runner or subprocess.run
     try:
-        try:
-            proc = run_cmd([cli_name, "login", "status"], capture_output=True, text=True, check=False)
-        except TypeError:
-            proc = run_cmd([cli_name, "login", "status"])
+        proc = run_captured([cli_name, "login", "status"], runner=runner, cwd=cwd)
     except FileNotFoundError:
         return {
             "valid": False,
@@ -180,6 +184,7 @@ def validate_codex_auth(runner: Callable[..., Any] | None = None) -> dict[str, A
 def validate_harness_version(
     harness: str,
     runner: Callable[..., Any] | None = None,
+    *, cwd=None,
 ) -> dict[str, Any]:
     cli_name = CLI_NAMES.get(harness, harness)
     if runner is None and not shutil.which(cli_name):
@@ -196,13 +201,7 @@ def validate_harness_version(
         }
 
     try:
-        if runner:
-            try:
-                proc = runner([cli_name, "--version"])
-            except TypeError:
-                proc = runner([cli_name, "--version"], capture_output=True, text=True, check=False)
-        else:
-            proc = subprocess.run([cli_name, "--version"], capture_output=True, text=True, check=False)
+        proc = run_captured([cli_name, "--version"], runner=runner, cwd=cwd)
         if proc.returncode != 0:
             if harness == "codex":
                 return {
@@ -216,7 +215,14 @@ def validate_harness_version(
                 "error": f"Harness CLI {cli_name} authentication/execution validation failed: return code {proc.returncode}",
             }
         stdout = (proc.stdout or "").strip() or (proc.stderr or "").strip()
-        version_tuple = parse_semver(stdout)
+        try:
+            version_tuple = parse_semver(stdout)
+        except ValueError:
+            return {
+                "valid": False,
+                "version": None,
+                "error": "Harness CLI version could not be parsed (version-parse-failure)",
+            }
         min_ver_str = MIN_SUPPORTED_VERSIONS.get(harness, "0.0.0")
         min_tuple = parse_semver(min_ver_str)
         if version_tuple < min_tuple:
@@ -228,6 +234,12 @@ def validate_harness_version(
             }
         ver_formatted = f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}"
         return {"valid": True, "version": ver_formatted}
+    except subprocess.TimeoutExpired:
+        return {"valid": False, "version": None,
+                "error": "Harness CLI version probe timed out (version-probe-timeout)"}
+    except KeyboardInterrupt:
+        return {"valid": False, "version": None,
+                "error": "Harness CLI version probe cancelled (version-probe-cancelled)"}
     except FileNotFoundError:
         if harness == "codex":
             return {
@@ -240,11 +252,11 @@ def validate_harness_version(
             "version": None,
             "error": f"Harness CLI '{cli_name}' not found on PATH",
         }
-    except Exception as exc:
+    except Exception:
         return {
             "valid": False,
             "version": None,
-            "error": f"Harness CLI {cli_name} version check failed: {exc}",
+            "error": "Harness CLI version probe failed (version-probe-failure)",
         }
 
 
@@ -448,7 +460,7 @@ def validate_selection(
         }
 
     if check_auth:
-        ver_check = validate_harness_version(harness, runner=runner)
+        ver_check = validate_harness_version(harness, runner=runner, cwd=root)
         if not ver_check["valid"]:
             return {
                 "valid": False,
@@ -456,7 +468,7 @@ def validate_selection(
                 "error": ver_check["error"],
             }
         if harness == "codex":
-            auth_check = validate_codex_auth(runner=runner)
+            auth_check = validate_codex_auth(runner=runner, cwd=root)
             if not auth_check["valid"]:
                 return {
                     "valid": False,
@@ -487,9 +499,9 @@ def build_dispatch_command(
     elif h == "opencode":
         return ["opencode", "run", prompt, "--model", model]
     elif h == "codex":
-        cmd = ["codex", "exec", prompt, "--model", model]
+        cmd = ["codex", "exec", prompt, "--model", model, "--json", "--ephemeral"]
         if effort:
-            cmd.extend(["--effort", effort])
+            cmd.extend(["--config", f'model_reasoning_effort={json.dumps(effort)}'])
         return cmd
     else:
         raise ValueError(f"Unsupported harness: {harness}")
@@ -501,10 +513,7 @@ def check_model_fallback(requested_model: str, output_data: dict[str, Any] | str
         if "fallback" in output_data.lower() and "model" in output_data.lower():
             fb_match = re.search(r"falling back to (\S+)|fallback model:?\s*(\S+)", output_data, re.IGNORECASE)
             if fb_match:
-                reported = fb_match.group(1) or fb_match.group(2)
-                raise ModelFallbackError(
-                    f"Automatic model fallback detected: requested {requested_model!r} but fell back to {reported!r}"
-                )
+                raise ModelFallbackError("Automatic model fallback detected (model-fallback)")
         try:
             parsed = json.loads(output_data)
             if isinstance(parsed, dict):
@@ -515,13 +524,9 @@ def check_model_fallback(requested_model: str, output_data: dict[str, Any] | str
     if isinstance(output_data, dict):
         reported = output_data.get("model") or output_data.get("effective_model") or output_data.get("actual_model")
         if reported and str(reported).strip().lower() != requested_model.strip().lower():
-            raise ModelFallbackError(
-                f"Automatic model fallback detected: requested {requested_model!r} but harness used {reported!r}"
-            )
+            raise ModelFallbackError("Automatic model fallback detected (model-fallback)")
         if output_data.get("fallback_occurred") or output_data.get("model_fallback"):
-            raise ModelFallbackError(
-                f"Automatic model fallback detected for model {requested_model!r}"
-            )
+            raise ModelFallbackError("Automatic model fallback detected (model-fallback)")
 
 
 def parse_and_validate_result(
@@ -539,7 +544,7 @@ def parse_and_validate_result(
     try:
         data = result.extract_json(raw_output)
     except (json.JSONDecodeError, ValueError) as exc:
-        raise ProtocolFailureError(f"Protocol failure: invalid JSON output for role {role}: {exc}") from exc
+        raise ProtocolFailureError(f"Protocol failure: invalid JSON output for role {role} (invalid-result-json)") from None
 
     if not isinstance(data, dict):
         raise ProtocolFailureError(f"Protocol failure: expected JSON object for role {role}, got {type(data).__name__}")
@@ -553,7 +558,7 @@ def parse_and_validate_result(
                 raise ProtocolFailureError(f"Protocol failure: failed to load schema for {schema_role}: {exc}") from exc
         errors = result.validate(data, schema)
         if errors:
-            raise ProtocolFailureError(f"Protocol failure: schema validation failed for {role}: {errors}")
+            raise ProtocolFailureError(f"Protocol failure: schema validation failed for {role} (invalid-result-schema)")
 
     return data
 
@@ -567,22 +572,51 @@ def verify_critic_result(critic_result: dict[str, Any]) -> None:
         raise ProtocolFailureError("Critic result must be a JSON object")
 
     if critic_result.get("permission_error") or critic_result.get("tool_limitation"):
-        err = critic_result.get("error") or "Critic encountered permission or tool limitation"
-        raise RuntimeError(f"Critic execution failed visibly: {err}")
+        raise RuntimeError("Critic execution failed visibly: independent verification unavailable (verification-limitation)")
 
     if critic_result.get("complete") is True:
         gate_result = critic_result.get("gateResult")
         if not gate_result or not isinstance(gate_result, dict):
             raise ProtocolFailureError("Critic claimed complete=true without required gateResult")
         if gate_result.get("verdict") != "pass":
-            raise ProtocolFailureError(f"Critic claimed complete=true but gateResult verdict is {gate_result.get('verdict')!r}")
+            raise ProtocolFailureError("Critic claimed complete=true without a passing gate verdict (invalid-gate-verdict)")
 
         criteria = critic_result.get("criteria")
         if not isinstance(criteria, list) or len(criteria) == 0:
             raise ProtocolFailureError("Critic claimed complete=true with empty criteria list")
         for c in criteria:
             if not isinstance(c, dict) or not c.get("met") or not str(c.get("evidence", "")).strip():
-                raise ProtocolFailureError(f"Critic claimed complete=true but criterion lacks verified evidence: {c}")
+                raise ProtocolFailureError("Critic criterion lacks verified evidence (invalid-criterion-evidence)")
+
+
+def codex_final_result(raw_output: str, requested_model: str) -> str:
+    """Extract completed final agent text from CLI JSONL, never from process/tool output."""
+    final = None
+    completed = False
+    try:
+        for line in raw_output.splitlines():
+            event = json.loads(line)
+            if not isinstance(event, dict):
+                raise ValueError("non-object event")
+            # Only CLI envelope metadata can establish a reported fallback/model.
+            check_model_fallback(requested_model, event)
+            if event.get("type") in ("error", "turn.failed"):
+                raise ExecutionFailureError("Codex reported a failed turn; assigned worktree preserved")
+            if event.get("type") == "turn.started":
+                completed = False
+                final = None
+            if event.get("type") == "item.completed":
+                item = event.get("item", {})
+                if item.get("type") == "agent_message":
+                    final = item.get("text")
+                    completed = False
+            if event.get("type") == "turn.completed":
+                completed = True
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ProtocolFailureError("Protocol failure: malformed Codex JSONL transport (invalid-result-transport)") from None
+    if not completed or not isinstance(final, str) or not final.strip():
+        raise ProtocolFailureError("Protocol failure: missing completed Codex final agent message")
+    return final
 
 
 def dispatch_role(
@@ -598,142 +632,124 @@ def dispatch_role(
     run_id: str | None = None,
     unit_id: str | None = None,
     state_root: str | None = None,
+    issue_ref: str | None = None,
     retry_on_invalid: bool = True,
     timeout: int | float | None = None,
 ) -> dict[str, Any] | str:
-    """Execute a bounded role invocation in the selected native harness."""
+    """Execute a bounded role invocation; requested selection is never observed identity."""
     cwd_path = Path(cwd).resolve()
     if not cwd_path.is_dir():
         raise ValueError(f"Working directory {cwd_path} does not exist")
-
     eff_selection = selection or resolve_single_role(
-        role,
-        policy=policy,
-        run_overrides=run_overrides,
-        issue_overrides=issue_overrides,
-        environment_defaults=environment_defaults,
+        role, policy=policy, run_overrides=run_overrides,
+        issue_overrides=issue_overrides, environment_defaults=environment_defaults,
     )
-    harness = eff_selection.get("harness", "")
-    model = eff_selection.get("model", "")
-    effort = eff_selection.get("effort")
-
-    ver_check = validate_harness_version(harness, runner=runner)
+    harness, model, effort = (eff_selection.get(k) for k in ("harness", "model", "effort"))
+    ver_check = validate_harness_version(harness, runner=runner, cwd=cwd_path)
     if not ver_check["valid"]:
         raise UnsupportedHarnessVersionError(ver_check["error"])
-
     eff_val = validate_selection(eff_selection, role=role, root=cwd_path, check_auth=False)
     if not eff_val["valid"]:
         raise ValueError(eff_val["error"])
+    eff_timeout = timeout if timeout is not None else (policy or {}).get("execution", {}).get("timeout", 300)
+    if eff_timeout is None or not 0 < eff_timeout < float("inf"):
+        raise ValueError("Role timeout must be positive and bounded")
+    sandbox = eff_selection.get("sandbox")
+    if sandbox is not None and (harness != "codex" or sandbox not in ("read-only", "workspace-write")):
+        raise ValueError("Unsupported permission scope; select Codex read-only or workspace-write explicitly")
+    schema_role = ROLE_TO_SCHEMA.get(role, role)
+    invocation_prompt = prompt
+    if harness == "codex" and schema_role:
+        # Generic schemas remain post-execution contracts, not native strict-output schemas.
+        invocation_prompt += "\nReturn only the complete JSON Result Contract matching this schema:\n" + json.dumps(result.load_schema(schema_role))
 
-    eff_timeout = timeout
-    if eff_timeout is None and isinstance(policy, dict):
-        eff_timeout = policy.get("execution", {}).get("timeout")
+    def record(event, attempt, **extra):
+        if not (run_id and unit_id):
+            return
+        log_path = runlog.run_log_path(runlog.state_root(state_root), unit_id, run_id)
+        if not log_path.exists():
+            raise ExecutionFailureError("Cannot attribute invocation: Run log does not exist")
+        metadata = {
+            "role": role, "harness": harness, "model": model, "effort": effort,
+            "cwd": str(cwd_path), "attempt": attempt,
+            "retryKind": "protocol-result" if attempt > 1 else None,
+            "cliVersion": ver_check["version"],
+            "requestedSelection": {"harness": harness, "model": model, "effort": effort},
+            "observedSelection": {"harness": harness, "model": None, "effort": None},
+            "selectionEvidence": "CLI invocation arguments; model and effort unobserved",
+            "permissionScope": sandbox or "inherited CLI configuration",
+            **extra,
+        }
+        payload = {
+            "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "run": run_id, "event": event, "data": metadata,
+            **({"issue": issue_ref} if issue_ref else {}),
+        }
+        append_cmd = [sys.executable, str(Path(__file__).with_name("runlog.py")), "append", unit_id, run_id]
+        if state_root:
+            append_cmd.extend(["--state-root", str(state_root)])
+        appended = run_captured(append_cmd, cwd=cwd_path, input=json.dumps(payload))
+        if appended.returncode:
+            raise ExecutionFailureError(
+                f"Cannot record attributable invocation metadata (metadata-record-failure, exit {appended.returncode})"
+            )
 
-    if run_id and unit_id:
+    for attempt in range(1, 3 if retry_on_invalid else 2):
+        record("role.invocation.started", attempt)
+        cmd = build_dispatch_command(harness, model, invocation_prompt, effort=effort)
+        if sandbox:
+            cmd.extend(["--sandbox", sandbox])
         try:
-            root = runlog.state_root(state_root)
-            log_path = runlog.run_log_path(root, unit_id, run_id)
-            if log_path.exists():
-                event_data = {
-                    "role": role,
-                    "harness": harness,
-                    "model": model,
-                    "cwd": str(cwd_path),
-                }
-                if effort:
-                    event_data["effort"] = effort
-                runlog.append_event(
-                    log_path,
-                    runlog.validate_event({
-                        "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                        "run": run_id,
-                        "event": "subagent.started",
-                        "data": event_data,
-                    }),
-                )
-        except Exception:
-            pass
-
-    cmd = build_dispatch_command(harness, model, prompt, effort=effort)
-    run_fn = runner or subprocess.run
-    run_kwargs: dict[str, Any] = {"cwd": str(cwd_path), "capture_output": True, "text": True, "check": False}
-    if eff_timeout is not None:
-        run_kwargs["timeout"] = eff_timeout
-
-    try:
+            proc = run_captured(cmd, runner=runner, cwd=cwd_path, timeout=eff_timeout)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
+            record("role.invocation.finished", attempt, status="timeout" if isinstance(exc, subprocess.TimeoutExpired) else "cancelled")
+            raise ExecutionFailureError(
+                f"Harness {harness} {f'timed out after {eff_timeout}s' if isinstance(exc, subprocess.TimeoutExpired) else 'cancelled'}; "
+                "assigned worktree preserved. subprocess.run cleans up its direct child on timeout; "
+                "descendant or injected-runner termination cannot be established."
+            ) from exc
+        except Exception as exc:
+            record("role.invocation.finished", attempt, status="process-start-failure")
+            raise ExecutionFailureError(
+                f"Harness {harness} execution failed to start or crashed (process-start-failure); assigned worktree preserved"
+            ) from exc
+        if proc.returncode != 0:
+            record("role.invocation.finished", attempt, status="nonzero-exit", exitCode=proc.returncode)
+            # The workflow persists this description in issue.paused. Process output
+            # can contain prompts or credentials, so only fixed categories/status belong here.
+            raise ExecutionFailureError(
+                f"Harness {harness} execution failed (nonzero-exit, exit {proc.returncode}); assigned worktree preserved"
+            )
         try:
-            proc = run_fn(cmd, **run_kwargs)
-        except TypeError:
-            proc = run_fn(cmd, cwd=str(cwd_path))
-    except subprocess.TimeoutExpired as exc:
-        raise ExecutionFailureError(f"Harness {harness} execution timed out after {eff_timeout}s: {exc}") from exc
-    except Exception as exc:
-        if isinstance(exc, (ExecutionFailureError, UnsupportedHarnessVersionError, ModelFallbackError, ProtocolFailureError)):
-            raise
-        raise ExecutionFailureError(f"Harness {harness} execution failed to start or crashed: {exc}") from exc
-
-    if proc.returncode != 0:
-        err = (getattr(proc, "stderr", "") or "").strip() or (getattr(proc, "stdout", "") or "").strip()
-        raise ExecutionFailureError(f"Harness {harness} execution failed (exit {proc.returncode}): {err}")
-
-    check_model_fallback(model, proc.stdout)
-
-    try:
-        data = parse_and_validate_result(role, proc.stdout)
-        if role in ("critic", "requirement-critic", "plan-critic"):
-            verify_critic_result(data)
-    except ProtocolFailureError as exc:
-        if retry_on_invalid:
-            retry_prompt = f"{prompt}\n\nYour prior result was invalid: {exc}\nReturn the complete {role} result contract."
-            retry_cmd = build_dispatch_command(harness, model, retry_prompt, effort=effort)
-            try:
-                try:
-                    proc2 = run_fn(retry_cmd, **run_kwargs)
-                except TypeError:
-                    proc2 = run_fn(retry_cmd, cwd=str(cwd_path))
-            except subprocess.TimeoutExpired as exc2:
-                raise ExecutionFailureError(f"Harness {harness} retry execution timed out after {eff_timeout}s: {exc2}") from exc2
-            except Exception as exc2:
-                if isinstance(exc2, (ExecutionFailureError, UnsupportedHarnessVersionError, ModelFallbackError, ProtocolFailureError)):
-                    raise
-                raise ExecutionFailureError(f"Harness {harness} retry failed to start or crashed: {exc2}") from exc2
-
-            if proc2.returncode != 0:
-                err2 = (getattr(proc2, "stderr", "") or "").strip() or (getattr(proc2, "stdout", "") or "").strip()
-                raise ExecutionFailureError(f"Harness {harness} retry failed (exit {proc2.returncode}): {err2}")
-            check_model_fallback(model, proc2.stdout)
-            data = parse_and_validate_result(role, proc2.stdout)
+            if harness == "codex":
+                final = codex_final_result(proc.stdout, model)
+            else:
+                check_model_fallback(model, proc.stdout)
+                final = proc.stdout
+            data = parse_and_validate_result(role, final)
             if role in ("critic", "requirement-critic", "plan-critic"):
                 verify_critic_result(data)
-        else:
-            raise
-
-    if run_id and unit_id:
-        try:
-            root = runlog.state_root(state_root)
-            log_path = runlog.run_log_path(root, unit_id, run_id)
-            if log_path.exists():
-                event_data = {
-                    "role": role,
-                    "harness": harness,
-                    "model": model,
-                    "result": data,
-                }
-                if effort:
-                    event_data["effort"] = effort
-                runlog.append_event(
-                    log_path,
-                    runlog.validate_event({
-                        "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                        "run": run_id,
-                        "event": "subagent.stopped",
-                        "data": event_data,
-                    }),
-                )
+        except ProtocolFailureError:
+            record("role.invocation.finished", attempt, status="protocol-failure")
+            if attempt == 1 and retry_on_invalid:
+                invocation_prompt += f"\nYour prior result was invalid. Return the complete {role} result contract."
+                continue
+            raise ProtocolFailureError("Protocol failure: invalid role result (protocol-result-failure)") from None
+        except ModelFallbackError:
+            record("role.invocation.finished", attempt, status="execution-failure")
+            raise ModelFallbackError("Automatic model fallback detected (model-fallback)") from None
+        except ExecutionFailureError:
+            record("role.invocation.finished", attempt, status="execution-failure")
+            raise ExecutionFailureError("Harness role execution failed (role-execution-failure); assigned worktree preserved") from None
+        except RuntimeError:
+            record("role.invocation.finished", attempt, status="execution-failure")
+            raise RuntimeError("Critic execution failed visibly: independent verification unavailable (verification-limitation)") from None
         except Exception:
-            pass
-
-    return data
+            record("role.invocation.finished", attempt, status="execution-failure")
+            raise ExecutionFailureError("Harness result processing failed (result-processing-failure); assigned worktree preserved") from None
+        record("role.invocation.finished", attempt, status="validated")
+        return data
+    raise ProtocolFailureError("Protocol-result retry exhausted")
 
 
 def preflight_validate(
@@ -870,6 +886,7 @@ def main() -> int:
     dispatch_parser.add_argument("--run-id", help="Run ID for logging")
     dispatch_parser.add_argument("--unit-id", help="Unit ID for logging")
     dispatch_parser.add_argument("--state-root", help="State root directory")
+    dispatch_parser.add_argument("--issue-ref", help="Issue reference for invocation attribution")
     dispatch_parser.add_argument("--timeout", type=float, help="execution timeout in seconds")
     dispatch_parser.add_argument("--json", action="store_true", help="output JSON")
 
@@ -982,6 +999,7 @@ def main() -> int:
                 unit_id=getattr(args, "unit_id", None),
                 state_root=getattr(args, "state_root", None),
                 timeout=getattr(args, "timeout", None),
+                issue_ref=getattr(args, "issue_ref", None),
             )
             print(json.dumps(res, indent=2))
             return 0
