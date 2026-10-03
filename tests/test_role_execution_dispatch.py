@@ -1249,7 +1249,12 @@ class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):
                     stderr="raw stderr API_TOKEN=synthetic-fixture-secret",
                 )
 
-            with patch.object(execution, "run_captured", side_effect=captured):
+            # GitHub Actions does not install the Codex CLI. This test replaces
+            # the subprocess boundary below, so satisfy only the executable
+            # presence check as well.
+            with patch("shutil.which", return_value="/usr/bin/codex"), patch.object(
+                execution, "run_captured", side_effect=captured
+            ):
                 with self.assertRaises(execution.ExecutionFailureError) as ctx:
                     execution.dispatch_role(
                         role="implementer", prompt="implement", cwd=cwd,
@@ -1397,4 +1402,3 @@ class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
