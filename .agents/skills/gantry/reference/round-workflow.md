@@ -582,10 +582,11 @@ async function executeRole(role, prompt, options) {
 const hostHandoffs = []
 let invocationSequence = 0
 const reconciledResults = new Set()
-async function resultObservations() {
+let recoveryInventory = null
+async function resultObservations(includeRetained = false) {
   if (!A.runId || !A.unitId) return { finished: false, results: [] }
   const reply = await runWorkflowCommand(
-    `python3 "${scripts}/runlog.py" results ${shellQuote(A.unitId)} ${shellQuote(A.runId)}${A.stateRoot ? ` --state-root ${shellQuote(A.stateRoot)}` : ''} --json`,
+    `python3 "${scripts}/runlog.py" results ${shellQuote(A.unitId)} ${shellQuote(A.runId)}${A.stateRoot ? ` --state-root ${shellQuote(A.stateRoot)}` : ''} --json${includeRetained ? ' --retained' : ''}`,
   )
   return JSON.parse(reply.stdout)
 }
@@ -606,7 +607,17 @@ async function requestRole(role, prompt, options) {
     invocationId: `${A.runId || 'unrecorded'}:${options.issueRef}:${role}:${Date.now()}:${++invocationSequence}`,
     ...await roleRevision(worktree), modelProgress: 'unknown',
   }
-  const retained = (A.recoveredResults || []).find(record => record.issue === options.issueRef && record.role === role && !reconciledResults.has(record.invocationId))
+  if (A.priorRun && A.recoveredResults && A.recoveredResults.length && recoveryInventory === null) {
+    if (A.recoveredResults.some(record => record.runId !== A.runId || record.issue !== A.priorRun.issue || !['implementer', 'reviewer', 'critic'].includes(record.role))) {
+      return { executionUnavailable: true, error: 'retained_result_mismatch' }
+    }
+    const saved = await resultObservations(true)
+    // Prior consumed Implement/Review contracts already live in the minimized Run log.
+    // Recover those prerequisites instead of relaunching code when transport retains only Critic.
+    recoveryInventory = [...A.recoveredResults, ...(saved.retainedResults || []).filter(record =>
+      !A.recoveredResults.some(supplied => supplied.issue === record.issue && supplied.role === record.role))]
+  }
+  const retained = (recoveryInventory || A.recoveredResults || []).find(record => record.issue === options.issueRef && record.role === role && !reconciledResults.has(record.invocationId))
   if (retained) {
     const observed = await resultObservations()
     const issue = A.issues.find(item => item.ref === options.issueRef)
@@ -1291,7 +1302,8 @@ A Host losing that transport cannot promise recovery of an unpersisted result.
 `role.result.consumed` means the workflow took that result forward. Both carry Run/Issue/role,
 invocation ID, assigned worktree, branch and revision when observable, with `modelProgress: unknown`.
 They confer no acceptance authority. `runlog.py results <unit> <run> --json` reports these observations
-without role payloads; legacy absence remains unavailable evidence, never inferred availability.
+without role payloads by default; `--retained` explicitly returns already-recorded Implement/Review
+contracts for validated recovery. Legacy absence remains unavailable evidence, never inferred availability.
 Closed Runs reject late result observations.
 
 An explicitly validated `priorRun` can carry Host-retained `recoveredResults`. Before reuse, the

@@ -59,7 +59,7 @@ class ResultContinuationTests(unittest.TestCase):
             self.assertEqual('ready-for-agent', canonical.parse_issue(issue).status)
             records = stopped['retainedResults']
             self.assertEqual({'implementer','reviewer','critic'}, {r['role'] for r in records})
-            resumed = h.run_workflow('round-workflow.md', {**args, 'interruptRole':None, 'recoveredResults':records,
+            resumed = h.run_workflow('round-workflow.md', {**args, 'interruptRole':None, 'recoveredResults':[record for record in records if record['role']=='critic'],
                 'priorRun':dict(run=args['runId'], issue='continuation#01',worktree=str(root),branch='feat/run')})
             self.assertIsNone(resumed['error'])
             self.assertEqual('done', resumed['result']['results'][0]['outcome'])

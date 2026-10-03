@@ -502,6 +502,7 @@ def main() -> int:
     results_parser.add_argument("run_id")
     results_parser.add_argument("--state-root")
     results_parser.add_argument("--json", action="store_true")
+    results_parser.add_argument("--retained", action="store_true", help="include previously recorded Implement/Review contracts for reconciliation")
     corrections_parser = subparsers.add_parser(
         "corrections", help="derive correctionsSpent for one Issue from one Run's own log"
     )
@@ -576,7 +577,23 @@ def main() -> int:
             consumed = {event["data"]["invocationId"] for event in events if event["event"] == "role.result.consumed"}
             results = [{**event["data"], "issue": event["issue"], "consumed": event["data"]["invocationId"] in consumed}
                        for event in events if event["event"] == "role.result.ready"]
-            print(json.dumps({"runId": args.run_id, "availability": "observed" if results else "unknown", "modelProgress": "unknown", "finished": any(event["event"] in FINISHED_EVENTS for event in events), "results": results}, sort_keys=True))
+            payload = {"runId": args.run_id, "availability": "observed" if results else "unknown", "modelProgress": "unknown",
+                       "finished": any(event["event"] in FINISHED_EVENTS for event in events), "results": results}
+            if args.retained:
+                retained = []
+                for index, event in enumerate(events):
+                    if event["event"] != "role.result.ready" or event["data"]["role"] not in {"implementer", "reviewer"}:
+                        continue
+                    for later in events[index + 1:]:
+                        if later.get("issue") != event["issue"] or later.get("data", {}).get("role") != event["data"]["role"]:
+                            continue
+                        if later["event"] == "role.result.ready":
+                            break
+                        if later["event"] == "subagent.stopped" and isinstance(later["data"].get("result"), dict):
+                            retained.append({**event["data"], "issue": event["issue"], "result": later["data"]["result"]})
+                            break
+                payload["retainedResults"] = retained
+            print(json.dumps(payload, sort_keys=True))
             return 0
         if args.command == "corrections":
             if not ISSUE_RE.fullmatch(args.issue):
