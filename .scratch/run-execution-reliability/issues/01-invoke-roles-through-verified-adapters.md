@@ -1,7 +1,7 @@
 # Invoke selected roles through a verified harness adapter
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `run-execution-reliability#01`
 Spec: `.scratch/run-execution-reliability/spec.md`
 Created: 2026-10-03
@@ -27,14 +27,14 @@ Use focused searches for dispatch contract tests, model discovery, canonical nat
 
 ## Acceptance criteria
 
-- [ ] The public role dispatch path, reached by a canonical workflow fixture, preserves explicit harness/model/effort selection and Issue/Run override precedence; same-host and external routing retain the resolved Host Harness and do not silently replace roles.
-- [ ] A probe and a role invocation through the same subprocess-compatible runner preserve stdout, stderr, return code and cwd. A real version command succeeds through both default and injected runners; failed probes, process-start errors and timeouts produce bounded, actionable failures.
-- [ ] The installed Codex CLI accepts the generated invocation syntax including the selected reasoning effort. A parser-only negative control rejects an intentionally unsupported argument. Existing fake-only tests are corrected so they no longer certify incompatible syntax by reproducing it.
-- [ ] A bounded real supported role invocation in a disposable worktree produces a valid Result Contract through the declared transport, with CLI version and requested/observed selection evidence identified separately. Strict native schemas are used only where supported; generic schemas are not blindly supplied as native strict-output schemas.
-- [ ] Malformed, missing or truncated final results and nonzero execution exits cannot advance acceptance or integration. Any allowed protocol-result retry is distinguishable from a code correction and remains bounded by the existing retry contract.
-- [ ] Cancellation and timeout preserve the assigned worktree and code; the adapter reports what stopped and any process-cleanup limitation rather than claiming termination it cannot establish. Permission scope is preserved without silent expansion or automatic model fallback.
-- [ ] Sanitized invocation/result metadata is attributable to Run, Issue, role and attempt when invoked within a Run. Prompts, raw command output, credentials and source diffs do not enter the Run log.
-- [ ] Existing supported harness regression fixtures retain their contracts. Operator instructions demonstrate the supported dispatch path and distinguish actual CLI/role evidence from simulated failure coverage; green unit tests alone do not establish harness compatibility.
+- [x] The public role dispatch path, reached by a canonical workflow fixture, preserves explicit harness/model/effort selection and Issue/Run override precedence; same-host and external routing retain the resolved Host Harness and do not silently replace roles.
+- [x] A probe and a role invocation through the same subprocess-compatible runner preserve stdout, stderr, return code and cwd. A real version command succeeds through both default and injected runners; failed probes, process-start errors and timeouts produce bounded, actionable failures.
+- [x] The installed Codex CLI accepts the generated invocation syntax including the selected reasoning effort. A parser-only negative control rejects an intentionally unsupported argument. Existing fake-only tests are corrected so they no longer certify incompatible syntax by reproducing it.
+- [x] A bounded real supported role invocation in a disposable worktree produces a valid Result Contract through the declared transport, with CLI version and requested/observed selection evidence identified separately. Strict native schemas are used only where supported; generic schemas are not blindly supplied as native strict-output schemas.
+- [x] Malformed, missing or truncated final results and nonzero execution exits cannot advance acceptance or integration. Any allowed protocol-result retry is distinguishable from a code correction and remains bounded by the existing retry contract.
+- [x] Cancellation and timeout preserve the assigned worktree and code; the adapter reports what stopped and any process-cleanup limitation rather than claiming termination it cannot establish. Permission scope is preserved without silent expansion or automatic model fallback.
+- [x] Sanitized invocation/result metadata is attributable to Run, Issue, role and attempt when invoked within a Run. Prompts, raw command output, credentials and source diffs do not enter the Run log.
+- [x] Existing supported harness regression fixtures retain their contracts. Operator instructions demonstrate the supported dispatch path and distinguish actual CLI/role evidence from simulated failure coverage; green unit tests alone do not establish harness compatibility.
 
 ## Blocked by
 
