@@ -344,3 +344,60 @@ records actual Codex 0.160.0 parser and role evidence. The deterministic fixture
 cover routing and failure handling; they do not establish live model availability.
 `codex models` can open an interactive prompt in this installed CLI, so its failure
 in a noninteractive runner is not evidence of unavailable authentication or models.
+
+## Selected-profile readiness
+
+Canonical planning and round workflows run `execution.py preflight --selection`
+after resolving the effective role (including Issue overrides) and before each
+native or external agent invocation. A successful Host resolution is independent
+of role readiness. Supply resolved `args.roles`; missing selections refuse readiness.
+`args.authorizePreflightProbe=true` is an explicit operator authorization to run
+a bounded non-editing probe, not permission to run a role or expand its access.
+
+The public result reports `compatibility`, `authentication`, `modelEffort`,
+`transport` and `permissions` separately as `verified`, `unavailable` or `unknown`.
+Version and login success do not establish selected-model availability. Static
+capability files and native model catalogs retain their discovery provenance and
+are not accepted as selected-profile execution receipts. Codex currently has a
+safe read-only JSONL probe. Other adapters report unknown and pause until a safe
+adapter proof path is supplied or the operator selects an available replacement.
+
+```sh
+python3 .agents/skills/gantry/scripts/execution.py preflight --selection \
+  '{"harness":"codex","model":"gpt-6.1-sol","effort":"medium","sandbox":"read-only"}' \
+  --authorize-probe --json
+```
+
+Cheap version, authentication and parser checks have a 15-second bound each;
+the selected-profile execution probe has a separate 45-second bound. The latter
+requests a fixed marker, denies editing with `--sandbox read-only` and disables
+approval prompts. It verifies a completed final-message JSONL transport. The
+receipt establishes execution with the **requested arguments**; effective model
+and effort identity remain unobserved unless the CLI supplies independent metadata.
+A timeout, failed authentication, refused execution, fallback or malformed result
+never creates reusable successful evidence. Failures carry fixed diagnostics,
+never raw CLI output or credentials.
+
+Identical profiles reuse verified evidence within the explicit Run only. Pass
+`--run-id` and `--unit-id` (and `--state-root` when applicable). Machine-local
+`<run>.preflight.json` lives beside that Run's log; an absent log permits fresh
+preflight but persists no evidence, and a finished Run refuses reuse. No global
+catalog cache is promoted to readiness. Python callers may share an explicit
+`cache` dictionary with the same `run_id` for equivalent checks.
+
+The cache fingerprint includes CLI path/file identity, adapter code, capability
+metadata, model, effort, transport, sandbox, cwd, effective policy, global and
+ancestor project Codex configuration, and local authentication-file identity.
+Only file metadata is inspected for authentication; credential values are never
+read into a cache key or log. Missing authentication identity or environment
+credential/provider overrides disable reuse. A rewrite, account change,
+permission change, policy change or different Run requires fresh proof.
+
+Ready trace: resolve selected role → bounded cheap probes → authorized read-only
+profile probe → completed expected final marker → verified dimensions → invoke
+that role. Refused trace: resolve selected role → unknown/unavailable dimension
+→ stop before agent invocation → operator authenticates, authorizes a safe probe,
+or selects a replacement → repeat preflight. Both paths preserve the Host,
+repository defaults, policy and delivery. No fallback or automatic repair occurs.
+See [the recorded live receipt](evidence/run-execution-reliability/profile-preflight.md)
+for proof limits and the explicitly simulated workflow traces.
