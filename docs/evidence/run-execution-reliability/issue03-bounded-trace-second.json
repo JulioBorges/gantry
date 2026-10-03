@@ -1,0 +1,193 @@
+{
+  "kind": "bounded-real-role-canonical-host-driver",
+  "date": "2026-10-03T05:30:43.780618+00:00",
+  "hostDriver": "Node canonical workflow adapter; conversational status steering simulated",
+  "roleSelection": {
+    "harness": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "medium"
+  },
+  "timeoutSeconds": 180,
+  "error": null,
+  "outcome": "refuted",
+  "issueStatus": "ready-for-agent",
+  "branch": "feat/run",
+  "clean": true,
+  "statusReplies": [
+    {
+      "issue": "continuation#01",
+      "state": "running",
+      "delivered": false,
+      "modelProgress": "unknown"
+    }
+  ],
+  "events": [
+    {
+      "event": "run.started",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:00.834Z"
+    },
+    {
+      "event": "round.started",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:00.933Z"
+    },
+    {
+      "event": "phase.started",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:00.977Z"
+    },
+    {
+      "event": "subagent.started",
+      "role": "implementer",
+      "status": null,
+      "ts": "2026-10-03T05:30:01.021Z"
+    },
+    {
+      "event": "role.result.ready",
+      "role": "implementer",
+      "status": null,
+      "ts": "2026-10-03T05:30:01.154Z"
+    },
+    {
+      "event": "role.result.consumed",
+      "role": "implementer",
+      "status": null,
+      "ts": "2026-10-03T05:30:01.198Z"
+    },
+    {
+      "event": "subagent.stopped",
+      "role": "implementer",
+      "status": null,
+      "ts": "2026-10-03T05:30:01.243Z"
+    },
+    {
+      "event": "phase.finished",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:01.287Z"
+    },
+    {
+      "event": "phase.started",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:01.331Z"
+    },
+    {
+      "event": "subagent.started",
+      "role": "reviewer",
+      "status": null,
+      "ts": "2026-10-03T05:30:01.376Z"
+    },
+    {
+      "event": "role.result.ready",
+      "role": "reviewer",
+      "status": null,
+      "ts": "2026-10-03T05:30:01.498Z"
+    },
+    {
+      "event": "role.result.consumed",
+      "role": "reviewer",
+      "status": null,
+      "ts": "2026-10-03T05:30:01.551Z"
+    },
+    {
+      "event": "subagent.stopped",
+      "role": "reviewer",
+      "status": null,
+      "ts": "2026-10-03T05:30:01.602Z"
+    },
+    {
+      "event": "phase.finished",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:01.654Z"
+    },
+    {
+      "event": "review.finding",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:01.705Z"
+    },
+    {
+      "event": "phase.started",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:01.756Z"
+    },
+    {
+      "event": "subagent.started",
+      "role": "critic",
+      "status": null,
+      "ts": "2026-10-03T05:30:01.805Z"
+    },
+    {
+      "event": "role.invocation.started",
+      "role": "critic",
+      "status": null,
+      "ts": "2026-10-03T05:30:01Z"
+    },
+    {
+      "event": "role.invocation.finished",
+      "role": "critic",
+      "status": "validated",
+      "ts": "2026-10-03T05:30:43Z"
+    },
+    {
+      "event": "role.result.ready",
+      "role": "critic",
+      "status": null,
+      "ts": "2026-10-03T05:30:43.254Z"
+    },
+    {
+      "event": "role.result.consumed",
+      "role": "critic",
+      "status": null,
+      "ts": "2026-10-03T05:30:43.299Z"
+    },
+    {
+      "event": "subagent.stopped",
+      "role": "critic",
+      "status": null,
+      "ts": "2026-10-03T05:30:43.346Z"
+    },
+    {
+      "event": "phase.finished",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:43.391Z"
+    },
+    {
+      "event": "refutation",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:43.435Z"
+    },
+    {
+      "event": "issue.blocked",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:43.478Z"
+    },
+    {
+      "event": "round.finished",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:43.521Z"
+    },
+    {
+      "event": "run.finished",
+      "role": null,
+      "status": null,
+      "ts": "2026-10-03T05:30:43.566Z"
+    }
+  ],
+  "limitations": [
+    "Only the Critic invocation is real; Implement/Review and conversational status steering are fixtures.",
+    "No daemon or continuation after closing Host is claimed.",
+    "Requested model/effort does not prove server-side identity."
+  ]
+}
