@@ -164,7 +164,7 @@ class WorkflowHostBindingTests(unittest.TestCase):
                         issues=[{"ref": "adapter#01", "path": str(issue), "specPath": "spec.md"}],
                         roles={"implement": {"harness": "codex", "model": "run-model", "effort": "low"}},
                         issueRoles={"adapter#01": {"implementer": {"harness": "codex", "model": "issue-model", "effort": "medium"}}},
-                        executionTimeout=15)
+                        executionTimeout=15, runId="run-bounded-fixture", unitId="abcdef123456", stateRoot=str(root / "state"))
             before = issue.read_bytes()
             binary_dir = root / 'bin'
             binary_dir.mkdir()
@@ -192,6 +192,16 @@ class WorkflowHostBindingTests(unittest.TestCase):
             self.assertIn('model_reasoning_effort="medium"', invoked)
             self.assertIn('--json', invoked)
             self.assertNotIn('--effort', invoked)
+            log = root / 'state/abcdef123456/runs/run-bounded-fixture.jsonl'
+            events = [json.loads(line) for line in log.read_text().splitlines()]
+            names = [event['event'] for event in events]
+            self.assertEqual(1, names.count('subagent.started'))
+            self.assertEqual(1, names.count('subagent.stopped'))
+            self.assertEqual(1, names.count('role.invocation.started'))
+            self.assertEqual(1, names.count('role.invocation.finished'))
+            invocation = next(event for event in events if event['event']=='role.invocation.finished')
+            self.assertEqual('adapter#01', invocation['issue'])
+            self.assertEqual('nonzero-exit', invocation['data']['status'])
 
     def test_concurrent_new_runs_record_their_own_sanitized_host_and_capability_tier(self):
         from concurrent.futures import ThreadPoolExecutor

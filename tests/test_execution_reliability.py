@@ -89,6 +89,7 @@ class ExecutionReliabilityTests(unittest.TestCase):
             execution.dispatch_role('review', 'secret prompt', root, selection={'harness':'codex','model':'gpt-6.1-sol','effort':'medium'}, runner=runner, run_id='run-test',unit_id='abcdef123456',state_root=str(state),issue_ref='adapter#01')
             raw = path.read_text()
             events = [json.loads(line) for line in raw.splitlines()]
+            self.assertEqual(['role.invocation.started','role.invocation.finished'] * 2, [event['event'] for event in events])
             self.assertEqual([1,1,2,2], [event['data']['attempt'] for event in events])
             self.assertTrue(all(event['issue']=='adapter#01' for event in events))
             self.assertEqual('protocol-result', events[-1]['data']['retryKind'])

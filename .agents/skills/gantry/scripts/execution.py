@@ -688,24 +688,24 @@ def dispatch_role(
             raise ExecutionFailureError(f"Cannot record attributable invocation metadata: {appended.stderr.strip()}")
 
     for attempt in range(1, 3 if retry_on_invalid else 2):
-        record("subagent.started", attempt)
+        record("role.invocation.started", attempt)
         cmd = build_dispatch_command(harness, model, invocation_prompt, effort=effort)
         if sandbox:
             cmd.extend(["--sandbox", sandbox])
         try:
             proc = run_captured(cmd, runner=runner, cwd=cwd_path, timeout=eff_timeout)
         except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
-            record("subagent.stopped", attempt, status="timeout" if isinstance(exc, subprocess.TimeoutExpired) else "cancelled")
+            record("role.invocation.finished", attempt, status="timeout" if isinstance(exc, subprocess.TimeoutExpired) else "cancelled")
             raise ExecutionFailureError(
                 f"Harness {harness} {f'timed out after {eff_timeout}s' if isinstance(exc, subprocess.TimeoutExpired) else 'cancelled'}; "
                 "assigned worktree preserved. subprocess.run cleans up its direct child on timeout; "
                 "descendant or injected-runner termination cannot be established."
             ) from exc
         except Exception as exc:
-            record("subagent.stopped", attempt, status="process-start-failure")
+            record("role.invocation.finished", attempt, status="process-start-failure")
             raise ExecutionFailureError(f"Harness {harness} execution failed to start or crashed: {exc}") from exc
         if proc.returncode != 0:
-            record("subagent.stopped", attempt, status="nonzero-exit", exitCode=proc.returncode)
+            record("role.invocation.finished", attempt, status="nonzero-exit", exitCode=proc.returncode)
             err = (proc.stderr or proc.stdout or "").strip()
             raise ExecutionFailureError(f"Harness {harness} execution failed (exit {proc.returncode}): {err}")
         try:
@@ -718,15 +718,15 @@ def dispatch_role(
             if role == "critic":
                 verify_critic_result(data)
         except ProtocolFailureError:
-            record("subagent.stopped", attempt, status="protocol-failure")
+            record("role.invocation.finished", attempt, status="protocol-failure")
             if attempt == 1 and retry_on_invalid:
                 invocation_prompt += f"\nYour prior result was invalid. Return the complete {role} result contract."
                 continue
             raise
         except (ModelFallbackError, RuntimeError):
-            record("subagent.stopped", attempt, status="execution-failure")
+            record("role.invocation.finished", attempt, status="execution-failure")
             raise
-        record("subagent.stopped", attempt, status="validated")
+        record("role.invocation.finished", attempt, status="validated")
         return data
     raise ProtocolFailureError("Protocol-result retry exhausted")
 

@@ -766,6 +766,7 @@ async function implement(issue, feedback, previous) {
   await appendRunEvent('subagent.started', issue.ref, 'Implement', { role: 'implementer' })
   const result = await requestRole('implementer', implementPrompt(issue, feedback, assigned), options)
   if (result && result.executionUnavailable) {
+    await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', status: 'execution-failure' })
     return { executionUnavailable: true, role: 'implementer', error: result.error, worktree: assigned.worktree, branch: assigned.branch }
   }
   await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', result })
@@ -813,6 +814,7 @@ const results = await pipeline(
       ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'reviewer' ? { executionUnavailable: true } : {}),
     })
     if (review && review.executionUnavailable) {
+      await appendRunEvent('subagent.stopped', issue.ref, 'Review', { role: 'reviewer', status: 'execution-failure' })
       return { executionUnavailable: true, role: 'reviewer', error: review.error, impl }
     }
     await appendRunEvent('subagent.stopped', issue.ref, 'Review', { role: 'reviewer', result: review })
@@ -892,6 +894,7 @@ const results = await pipeline(
         ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'critic' ? { executionUnavailable: true } : {}),
       })
       if (verdict && verdict.executionUnavailable) {
+        await appendRunEvent('subagent.stopped', issue.ref, 'Critic', { role: 'critic', attempt, status: 'execution-failure' })
         await appendRunEvent('issue.paused', issue.ref, 'Critic', {
           role: 'critic',
           reason: 'execution_unavailable',

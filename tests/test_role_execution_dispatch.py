@@ -200,7 +200,7 @@ class RoleExecutionDispatchContractTests(unittest.TestCase):
             )
 
             events = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
-            start_event = next(e for e in events if e.get("event") == "subagent.started")
+            start_event = next(e for e in events if e.get("event") == "role.invocation.started")
             self.assertEqual("antigravity", start_event["data"]["harness"])
             self.assertEqual("gemini-3.1-pro-high", start_event["data"]["model"])
             self.assertEqual("high", start_event["data"]["effort"])

@@ -306,7 +306,9 @@ python3 .agents/skills/gantry/scripts/execution.py dispatch \
 
 Supply the prompt on stdin. Within a recorded Run, also pass `--run-id`, `--unit-id`,
 `--issue-ref` and the configured `--state-root`. Invocation metadata goes through
-`runlog.py append` with JSON on stdin. Each attempt identifies requested selection,
+`runlog.py append` with JSON on stdin. `role.invocation.started` / `role.invocation.finished` identify adapter attempts,
+while the workflow alone owns `subagent.started` / `subagent.stopped`.
+Each attempt identifies requested selection,
 CLI version, permission scope and result-validation status. Model and effort remain
 unobserved unless supplied by trustworthy CLI metadata; agent-written fields never
 establish execution identity. Prompt text, raw process streams and result contents
