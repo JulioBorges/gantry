@@ -1,5 +1,6 @@
 """Readiness is proof of the selected profile, not a declaration or login."""
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -56,10 +57,35 @@ class ProfilePreflightTests(unittest.TestCase):
                 self.assertNotIn('credential',repr(cache))
 
     def test_cli_single_selection_requires_approved_permissions(self):
-        proc=subprocess.run([sys.executable,str(Path(execution.__file__)),'preflight','--selection',json.dumps({**self.selection,'sandbox':None}),'--json'],capture_output=True,text=True,timeout=20)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / 'codex'
+            codex.write_text(
+                f'#!{sys.executable}\n'
+                'import sys\n'
+                'if "--version" in sys.argv: print("codex 0.160.0")\n'
+                'elif sys.argv[1:3] == ["login", "status"]: print("Logged in")\n'
+                'else: print("usage: codex")\n'
+            )
+            codex.chmod(0o755)
+            env = {
+                **os.environ,
+                'PATH': str(root) + os.pathsep + os.environ.get('PATH', ''),
+                'CODEX_HOME': str(root),
+                'OPENAI_API_KEY': '',
+                'CODEX_API_KEY': '',
+            }
+            proc = subprocess.run(
+                [sys.executable, str(Path(execution.__file__)), 'preflight', '--selection',
+                 json.dumps({**self.selection, 'sandbox': None}), '--json'],
+                capture_output=True, text=True, timeout=20, env=env,
+            )
         self.assertEqual(1,proc.returncode)
         got=json.loads(proc.stdout)
+        self.assertEqual('verified', got['dimensions']['compatibility']['status'])
+        self.assertEqual('verified', got['dimensions']['authentication']['status'])
         self.assertEqual('unavailable',got['dimensions']['permissions']['status'])
+        self.assertIn('Missing approved sandbox', got['error'])
 
     def test_canonical_entries_refuse_before_native_or_external_agents(self):
         from tests.test_workflow_host_binding import WorkflowHostBindingTests
