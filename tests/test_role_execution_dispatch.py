@@ -1204,7 +1204,22 @@ class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):
                     runner=FailingRunner(),
                 )
             self.assertIn("exit 127", str(ctx.exception))
-            self.assertIn("command terminated abnormally", str(ctx.exception))
+            self.assertNotIn("command terminated abnormally", str(ctx.exception))
+
+        # Exception messages can include a command, prompt, or captured streams.
+        def raising_runner(cmd, **kwargs):
+            if "--version" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, stdout="0.154.0\n", stderr="")
+            raise OSError("API_TOKEN=synthetic-fixture-secret")
+
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaises(execution.ExecutionFailureError) as ctx:
+                execution.dispatch_role(
+                    role="implementer", prompt="implement", cwd=Path(temp),
+                    selection={"harness": "codex", "model": "gpt-5.2-codex"}, runner=raising_runner,
+                )
+            self.assertIn("process-start-failure", str(ctx.exception))
+            self.assertNotIn("synthetic-fixture-secret", str(ctx.exception))
 
         # 3. CLI help accepts --timeout
         cli_check = subprocess.run(
@@ -1215,6 +1230,33 @@ class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):
         )
         self.assertEqual(0, cli_check.returncode)
         self.assertIn("--timeout", cli_check.stdout)
+
+    def test_invocation_metadata_record_failure_omits_child_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            cwd = Path(temp)
+            state = cwd / "state"
+            log = runlog.run_log_path(state, "abcdef123456", "run-fixture")
+            log.parent.mkdir(parents=True)
+            log.write_text("")
+
+            def captured(cmd, **kwargs):
+                if "--version" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout="0.160.0\n", stderr="")
+                self.assertIn("append", cmd)
+                return subprocess.CompletedProcess(
+                    cmd, 1, stdout="raw stdout synthetic-fixture-secret",
+                    stderr="raw stderr API_TOKEN=synthetic-fixture-secret",
+                )
+
+            with patch.object(execution, "run_captured", side_effect=captured):
+                with self.assertRaises(execution.ExecutionFailureError) as ctx:
+                    execution.dispatch_role(
+                        role="implementer", prompt="implement", cwd=cwd,
+                        selection={"harness": "codex", "model": "gpt-5.2-codex"},
+                        unit_id="abcdef123456", run_id="run-fixture", state_root=state,
+                    )
+            self.assertIn("metadata-record-failure, exit 1", str(ctx.exception))
+            self.assertNotIn("synthetic-fixture-secret", str(ctx.exception))
 
     def test_robust_result_contract_parsing_markdown_and_delimiters(self) -> None:
         """AC3: Role results returned from codex exec conform to result.py contracts, with robust parsing for markdown and JSON delimiters."""

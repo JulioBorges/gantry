@@ -154,6 +154,12 @@ class WorkflowHostBindingTests(unittest.TestCase):
             self.assertTrue(any('result.py" --role "critic" --json' in call["command"] for call in run["commandCalls"]))
 
     def test_round_bounded_same_host_dispatch_preserves_issue_override(self):
+        self.check_bounded_same_host_dispatch()
+
+    def test_recorded_same_host_nonzero_exit_omits_sensitive_process_streams(self):
+        self.check_bounded_same_host_dispatch(sensitive_output=True)
+
+    def check_bounded_same_host_dispatch(self, sensitive_output=False):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             helper = canonical.CanonicalGantryWorkflowTests()
@@ -170,11 +176,14 @@ class WorkflowHostBindingTests(unittest.TestCase):
             binary_dir.mkdir()
             received = root / 'received-selection.json'
             binary = binary_dir / 'codex'
+            stdout = 'raw stdout API_TOKEN=synthetic-fixture-secret'
+            stderr = 'raw stderr Authorization: Bearer synthetic-fixture-secret'
             binary.write_text(f"#!{sys.executable}\n" +
                 "import json, sys\nfrom pathlib import Path\n" +
                 "if '--version' in sys.argv: print('codex 0.160.0'); sys.exit(0)\n" +
                 f"Path({str(received)!r}).write_text(json.dumps(sys.argv[1:]))\n" +
-                "print('simulated unavailable model', file=sys.stderr)\nsys.exit(13)\n")
+                (f"print({stdout!r})\nprint({stderr!r}, file=sys.stderr)\nsys.exit(13)\n" if sensitive_output
+                 else "print('simulated unavailable model', file=sys.stderr)\nsys.exit(13)\n"))
             binary.chmod(0o755)
             with patch.dict(os.environ, {'PATH': str(binary_dir) + os.pathsep + os.environ['PATH']}):
                 run = self.run_workflow("round-workflow.md", args)
@@ -202,6 +211,13 @@ class WorkflowHostBindingTests(unittest.TestCase):
             invocation = next(event for event in events if event['event']=='role.invocation.finished')
             self.assertEqual('adapter#01', invocation['issue'])
             self.assertEqual('nonzero-exit', invocation['data']['status'])
+            if sensitive_output:
+                recorded = log.read_text()
+                for forbidden in (stdout, stderr, 'synthetic-fixture-secret', 'API_TOKEN', 'Authorization'):
+                    self.assertNotIn(forbidden, recorded)
+                paused = next(event for event in events if event['event'] == 'issue.paused')
+                self.assertIn('exit 13', paused['data']['error'])
+                self.assertLess(len(paused['data']['error']), 200)
 
     def test_concurrent_new_runs_record_their_own_sanitized_host_and_capability_tier(self):
         from concurrent.futures import ThreadPoolExecutor

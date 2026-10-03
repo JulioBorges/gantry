@@ -64,7 +64,7 @@ class ProtocolFailureError(Exception):
 
 
 class ExecutionFailureError(RuntimeError):
-    """Raised when an external harness command fails at runtime (crash, timeout, non-zero exit)."""
+    """Runtime failure with telemetry-safe diagnostics, never raw streams or exception text."""
 
 
 def resolve_host(*, root: Path, explicit_host: str | None = None) -> dict[str, Any]:
@@ -685,7 +685,9 @@ def dispatch_role(
             append_cmd.extend(["--state-root", str(state_root)])
         appended = run_captured(append_cmd, cwd=cwd_path, input=json.dumps(payload))
         if appended.returncode:
-            raise ExecutionFailureError(f"Cannot record attributable invocation metadata: {appended.stderr.strip()}")
+            raise ExecutionFailureError(
+                f"Cannot record attributable invocation metadata (metadata-record-failure, exit {appended.returncode})"
+            )
 
     for attempt in range(1, 3 if retry_on_invalid else 2):
         record("role.invocation.started", attempt)
@@ -703,11 +705,16 @@ def dispatch_role(
             ) from exc
         except Exception as exc:
             record("role.invocation.finished", attempt, status="process-start-failure")
-            raise ExecutionFailureError(f"Harness {harness} execution failed to start or crashed: {exc}") from exc
+            raise ExecutionFailureError(
+                f"Harness {harness} execution failed to start or crashed (process-start-failure); assigned worktree preserved"
+            ) from exc
         if proc.returncode != 0:
             record("role.invocation.finished", attempt, status="nonzero-exit", exitCode=proc.returncode)
-            err = (proc.stderr or proc.stdout or "").strip()
-            raise ExecutionFailureError(f"Harness {harness} execution failed (exit {proc.returncode}): {err}")
+            # The workflow persists this description in issue.paused. Process output
+            # can contain prompts or credentials, so only fixed categories/status belong here.
+            raise ExecutionFailureError(
+                f"Harness {harness} execution failed (nonzero-exit, exit {proc.returncode}); assigned worktree preserved"
+            )
         try:
             if harness == "codex":
                 final = codex_final_result(proc.stdout, model)
