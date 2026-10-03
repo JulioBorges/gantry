@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **53 / 57** |
-| Specs completed | **9 / 10** |
+| Issues completed | **53 / 58** |
+| Specs completed | **9 / 11** |
 | Execution waves | **34** |
 
 ## Specs
@@ -72,6 +72,7 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 16 | `gantry-plan` | **done** | 01 | 14 | `.agents/skills/gantry-plan/`, `.agents/skills/gantry/`, `scripts/runlog.py`, `tests/` | Socratic gate planning skill (grill-me style), tracer-bullet vertical slicing (to-issues style), Plan column kanban telemetry, and gantry delegation |
 | 17 | `host-harness-resolution` | **approved** | 12, 16 | — | execution resolution, setup writer, host adapters, plan/round workflows, Run Log, fixture tests and documentation | current Host Harness diagnosis and Run binding, preserved independent role selections, approved host-only setup repair, and host-aware resumption |
 | 18 | `run-execution-reliability` | **approved** | 14, 17 | — | harness adapters, execution preflight, Host continuation, verification recovery, Run Log, read-only reporting and Dashboard | verified role dispatch; result consumption before Host handoff; explicit verification pauses; truthful lifecycle states and timing |
+| 19 | `operator-harness-profile` | **planned** | 17 | 17 | setup writer, policy resolver, execution host resolution, `AGENTS.md` generation, `~/.gantry/profiles/` | each operator's harness and role overlay live in a machine profile; tracked policy stays shared |
 
 ### Spec waves (structural)
 
@@ -82,7 +83,7 @@ Computed from *Blocked by* only, the same way issue waves are computed from `## 
 | A | 01 | everything else builds on the migration |
 | B | 02, 03, 04, 05, 06, 07, 08, 09, 11, 12, 13, 14, 15, 16 | unblocked the moment 01 is done; the order among them is preference, not dependency |
 | C | 10, 17 | 10 needs the installer from 06 (and a machine); 17 builds on role execution (12) and standalone planning (16) |
-| D | 18 | reliable execution and timing build on the Dashboard (14) and resolved Host routing/resumption (17) |
+| D | 18, 19 | reliable execution and timing (18) build on the Dashboard (14) and resolved Host routing (17); the operator harness profile (19) builds on that Host routing |
 
 ### Intended order (one spec at a time)
 
@@ -118,6 +119,7 @@ and 05, so they are written after a few real run logs exist, not before.
 Waves 0–26 remain complete (48 delivered Issues). Spec 17 (`host-harness-resolution`) and its four-Issue breakdown were approved on 2026-09-30.
 The executable frontier starts with `host-harness-resolution#01` in Wave 27; Wave 28 contains Issues 02 and 03, and Wave 29 contains Issue 04.
 These four Issues are `ready-for-agent`; their implementation remains pending. Spec 02 (`opencode-tier`) remains a separate future planning candidate.
+Spec 19 (`operator-harness-profile`) is planned. Its issue stays `draft` until the operator approves the slicing, so it is not an executable frontier item.
 
 ## Progress by spec
 
@@ -135,6 +137,7 @@ These four Issues are `ready-for-agent`; their implementation remains pending. S
 | 16 | `gantry-plan` | 4/4 | 20–22 |
 | 17 | `host-harness-resolution` | 4/4 | 27–29 |
 | 18 | `run-execution-reliability` | 1/5 | 30–33 |
+| 19 | `operator-harness-profile` | 0/1 | 31 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -337,12 +340,13 @@ of the others, and an issue never waits on anything in its own wave or a later o
 
 - [x] **`run-execution-reliability#01`** — Invoke selected roles through a verified harness adapter _(no blockers)_
 
-### Wave 31 — 0/2 done
+### Wave 31 — 0/3 done
 
 - [ ] **`run-execution-reliability#02`** — Preflight effective execution with honest reusable evidence
   <br>↳ blocked by: run-execution-reliability#01
 - [ ] **`run-execution-reliability#03`** — Consume pending role results before ending the Host execution turn
   <br>↳ blocked by: run-execution-reliability#01
+- [ ] **`operator-harness-profile#01`** — Keep each operator's harness in a machine profile _(no blockers)_
 
 ### Wave 32 — 0/1 done
 
