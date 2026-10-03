@@ -158,24 +158,20 @@ def validate_codex_auth(runner: Callable[..., Any] | None = None, *, cwd=None) -
             "valid": False,
             "error": f"Codex CLI binary '{cli_name}' not found on PATH. Please install Codex CLI or ensure it is in your PATH.",
         }
-    except Exception as exc:
+    except (Exception, KeyboardInterrupt):
         return {
             "valid": False,
-            "error": f"Codex CLI authentication check failed: {exc}. Run 'codex login' to authenticate.",
+            "error": "Codex authentication probe failed; run codex login explicitly.",
         }
 
     if proc.returncode != 0:
-        err = (getattr(proc, "stderr", "") or "").strip() or (getattr(proc, "stdout", "") or "").strip()
-        return {
-            "valid": False,
-            "error": f"Codex CLI is unauthenticated ({err or f'exit code {proc.returncode}'}). Run 'codex login' to authenticate.",
-        }
+        return {"valid": False, "error": "Codex CLI is unauthenticated; run codex login explicitly."}
 
     stdout = (getattr(proc, "stdout", "") or "").strip().lower()
     if "not logged in" in stdout or "unauthenticated" in stdout or "no credentials" in stdout:
         return {
             "valid": False,
-            "error": f"Codex CLI is unauthenticated ({proc.stdout.strip()}). Run 'codex login' to authenticate.",
+            "error": "Codex CLI is unauthenticated; run codex login explicitly.",
         }
 
     return {"valid": True}
@@ -753,36 +749,20 @@ def dispatch_role(
 
 
 def preflight_validate(
-    policy: dict | None = None,
-    run_overrides: dict | None = None,
-    issue_overrides: dict | None = None,
-    environment_defaults: dict | None = None,
-    root: Path | None = None,
-    check_auth: bool = True,
-    runner: Callable[..., Any] | None = None,
+    policy=None, run_overrides=None, issue_overrides=None, environment_defaults=None,
+    root=None, check_auth=True, runner=None, *, authorize_probe=False, cache=None, run_id=None,
 ) -> dict[str, Any]:
-    """Preflight check: resolve effective selections and validate all roles."""
-    roles = resolve_roles(
-        policy=policy,
-        run_overrides=run_overrides,
-        issue_overrides=issue_overrides,
-        environment_defaults=environment_defaults,
-    )
-    errors = []
-    for r, sel in roles.items():
-        val = validate_selection(sel, role=r, root=root, check_auth=check_auth, runner=runner)
-        if not val["valid"]:
-            errors.append(val["error"])
-
-    guidance = assess_model_strength(roles)
-    valid = len(errors) == 0
-
-    return {
-        "valid": valid,
-        "roles": roles,
-        "errors": errors,
-        "guidance": guidance,
-    }
+    """Resolve selections, then prove each dimension before dependent execution."""
+    import profile_preflight
+    roles = resolve_roles(policy, run_overrides, issue_overrides, environment_defaults)
+    checks = {}
+    evidence = cache if cache is not None else {}
+    for role, selection in roles.items():
+        checks[role] = profile_preflight.check(selection, root=root or Path.cwd(), policy=policy,
+            runner=runner, authorize_probe=authorize_probe, cache=evidence, run_id=run_id)
+    return {"valid": all(c["valid"] for c in checks.values()), "roles": roles, "checks": checks,
+            "errors": [c.get("error") or c["remedy"] for c in checks.values() if not c["valid"]],
+            "guidance": assess_model_strength(roles)}
 
 
 def validate_role_replacement(
@@ -875,6 +855,11 @@ def main() -> int:
     preflight_parser.add_argument("--issue-overrides", help="JSON string of issue-level overrides")
     preflight_parser.add_argument("--cwd", default=".", help="repository root path")
     preflight_parser.add_argument("--json", action="store_true", help="output JSON")
+    preflight_parser.add_argument("--selection", help="single effective profile JSON")
+    preflight_parser.add_argument("--authorize-probe", action="store_true", help="operator-authorized bounded non-editing probe")
+    preflight_parser.add_argument("--run-id", help="Run-scoped evidence reuse")
+    preflight_parser.add_argument("--unit-id", help="Run execution unit")
+    preflight_parser.add_argument("--state-root", help="machine-local Run state")
 
     dispatch_parser = subparsers.add_parser("dispatch", help="dispatch bounded role invocation")
     dispatch_parser.add_argument("--role", required=True, help="role to execute")
@@ -967,17 +952,44 @@ def main() -> int:
         return 0
 
     elif args.command == "preflight":
-        res = preflight_validate(policy=policy, run_overrides=run_ov, issue_overrides=issue_ov, root=root)
+        import profile_preflight
+        evidence = {}
+        cache_path = None
+        if args.run_id and args.unit_id:
+            if not runlog.RUN_ID_RE.fullmatch(args.run_id) or not runlog.UNIT_ID_RE.fullmatch(args.unit_id):
+                parser.error("invalid Run or unit identity")
+            log_path = runlog.run_log_path(runlog.state_root(args.state_root), args.unit_id, args.run_id)
+            events = runlog.read_valid_events(log_path)
+            if events and any(e["event"] in runlog.FINISHED_EVENTS for e in events):
+                print(json.dumps({"valid": False, "error": "Existing unfinished Run required for evidence reuse"}))
+                return 1
+            cache_path = log_path.with_suffix('.preflight.json') if events else None
+            try:
+                stored = json.loads(cache_path.read_text()) if cache_path else {}
+                for key, value in stored.items():
+                    if isinstance(key, str) and re.fullmatch('[a-f0-9]{64}', key) and isinstance(value, dict) and value.get('valid') is True:
+                        evidence[(args.run_id, key)] = value
+            except (OSError, ValueError, AttributeError):
+                pass
+        if args.selection:
+            res = profile_preflight.check(json.loads(args.selection), root=root, policy=policy,
+                authorize_probe=args.authorize_probe, runner=None, cache=evidence, run_id=args.run_id)
+        else:
+            res = preflight_validate(policy=policy, run_overrides=run_ov, issue_overrides=issue_ov, root=root,
+                authorize_probe=args.authorize_probe, cache=evidence, run_id=args.run_id)
+        if cache_path:
+            cache_path.write_text(json.dumps({key: val for (run, key), val in evidence.items() if run == args.run_id}))
+
         if args.json:
             print(json.dumps(res, indent=2))
         else:
             if res["valid"]:
                 print("Preflight validation passed.")
-                for g in res["guidance"]:
+                for g in res.get("guidance", []):
                     print(f"  {g}")
             else:
                 print("Preflight validation FAILED:")
-                for err in res["errors"]:
+                for err in res.get("errors", [res.get("error", "Unknown selected profile")]):
                     print(f"  - {err}", file=sys.stderr)
         return 0 if res["valid"] else 1
 

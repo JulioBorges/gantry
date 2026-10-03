@@ -231,6 +231,31 @@ if (hostResolution.resume && hostResolution.resume.decision !== 'unchanged') {
 }
 const hostHarness = hostResolution.effectiveHost
 const hostCapabilities = hostResolution.capabilities
+
+// Selected-profile readiness is independent of Host identity. Probe authorization
+// must be explicit; failure never changes policy, permissions, models or defaults.
+async function requireProfilePreflight(selection, cwd = A.repoRoot) {
+  const flags = []
+  if (A.authorizePreflightProbe === true) flags.push('--authorize-probe')
+  if (A.runId && A.unitId) {
+    flags.push(`--run-id ${shellQuote(A.runId)}`, `--unit-id ${shellQuote(A.unitId)}`)
+    if (A.stateRoot) flags.push(`--state-root ${shellQuote(A.stateRoot)}`)
+  }
+  const profileArg = selection
+    ? `--selection ${shellQuote(JSON.stringify(selection))}`
+    : `--run-overrides ${shellQuote(JSON.stringify(A.roles || {}))}`
+  const checked = await runCommand(
+    `python3 "${scripts}/execution.py" preflight --json --cwd ${shellQuote(cwd)} ${profileArg} ${flags.join(' ')}`,
+    { cwd: A.repoRoot },
+  )
+  let readiness
+  try { readiness = JSON.parse((checked && checked.stdout) || '{}') } catch { readiness = {} }
+  if (!checked || checked.exitCode !== 0 || readiness.valid !== true) {
+    throw new Error('Execution preflight refused or unknown; pause and select a replacement or authorize a bounded read-only probe explicitly.')
+  }
+  return readiness
+}
+
 if (hostResolution.mismatch && typeof log === 'function') {
   log(`Host Harness ${hostHarness} differs from saved preference ${hostResolution.savedPreference}; policy unchanged.`)
 }
@@ -508,6 +533,11 @@ async function validRoleResult(role, result) {
 async function requestRole(role, prompt, options) {
   const issueRef = options && options.issueRef
   const selection = resolveRoleForIssue(issueRef, role, options)
+  try {
+    await requireProfilePreflight(selection || {}, (options && options.cwd) || A.repoRoot)
+  } catch {
+    return { executionUnavailable: true, error: 'Execution preflight refused or unknown; explicit profile recovery required.' }
+  }
   if (options && options.executionUnavailable) {
     return { executionUnavailable: true, error: options.error || 'Role execution unavailable' }
   }

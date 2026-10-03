@@ -532,6 +532,8 @@ const defaultIssueWorktree = args.issueWorktree || (
     : args.repoRoot
 );
 const runCommand = async (command, options = {{}}) => {{
+  // Readiness is simulated here; selected-profile proof has its own public tests.
+  if (command.includes('/execution.py" preflight ')) return {{exitCode:0,stdout:'{{"valid":true,"source":"simulated-workflow-fixture"}}',stderr:''}};
   if (command.includes('/execution.py" host ')) {{
     const host = spawnSync(command, {{ shell: true, encoding: 'utf8' }});
     return {{ exitCode: host.status ?? 1, stdout: host.stdout || '', stderr: host.stderr || '' }};
@@ -1120,7 +1122,8 @@ class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):
                 return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
         res = execution.preflight_validate(policy=policy, check_auth=True, runner=AuthenticatedRunner())
-        self.assertTrue(res["valid"], f"Expected preflight to succeed: {res.get('errors')}")
+        self.assertFalse(res["valid"], "Login alone cannot prove selected model availability")
+        self.assertEqual("verified", res["checks"]["implement"]["dimensions"]["authentication"]["status"])
 
         # 2. Unauthenticated codex returns error with 'codex login'
         class UnauthenticatedRunner:
@@ -1153,7 +1156,8 @@ class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):
         ]:
             policy = {"execution": {"roles": {"plan": {"harness": harness, "model": model}}}}
             res = execution.preflight_validate(policy=policy, check_auth=False)
-            self.assertTrue(res["valid"], f"Preflight failed for {harness}: {res.get('errors')}")
+            self.assertFalse(res["valid"], "Unverified adapters pause instead of fabricating availability")
+            self.assertEqual(harness, res["roles"]["plan"]["harness"])
 
 
 class CodexHostOrchestrationAndDispatchTests(unittest.TestCase):

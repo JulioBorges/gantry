@@ -294,6 +294,8 @@ const researchFormat = {json.dumps(research_format)};
 const calls = [];
 const commandCalls = [];
 const runCommand = async (command, options = {{}}) => {{
+  // Readiness is simulated here; selected-profile proof has its own public tests.
+  if (command.includes('/execution.py" preflight ')) return {{exitCode:0,stdout:'{{"valid":true,"source":"simulated-workflow-fixture"}}',stderr:''}};
   if (command.includes('/execution.py" host ')) {{
     const host = spawnSync(command, {{ shell: true, encoding: 'utf8' }});
     return {{ exitCode: host.status ?? 1, stdout: host.stdout || '', stderr: host.stderr || '' }};
@@ -493,6 +495,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
             "difflib",
             "discovery",
             "execution",
+            "profile_preflight",
             "hashlib",
             "http",
             "json",
