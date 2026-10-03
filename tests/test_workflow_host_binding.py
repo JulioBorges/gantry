@@ -1,10 +1,12 @@
 """Host binding at the approved canonical workflow and public CLI seams."""
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tests import test_canonical_gantry_workflow as canonical
 
@@ -162,9 +164,20 @@ class WorkflowHostBindingTests(unittest.TestCase):
                         issues=[{"ref": "adapter#01", "path": str(issue), "specPath": "spec.md"}],
                         roles={"implement": {"harness": "codex", "model": "run-model", "effort": "low"}},
                         issueRoles={"adapter#01": {"implementer": {"harness": "codex", "model": "issue-model", "effort": "medium"}}},
-                        dispatchResults=[{"exitCode": 1, "stdout": "", "stderr": "simulated process-start failure"}])
+                        executionTimeout=15)
             before = issue.read_bytes()
-            run = self.run_workflow("round-workflow.md", args)
+            binary_dir = root / 'bin'
+            binary_dir.mkdir()
+            received = root / 'received-selection.json'
+            binary = binary_dir / 'codex'
+            binary.write_text(f"#!{sys.executable}\n" +
+                "import json, sys\nfrom pathlib import Path\n" +
+                "if '--version' in sys.argv: print('codex 0.160.0'); sys.exit(0)\n" +
+                f"Path({str(received)!r}).write_text(json.dumps(sys.argv[1:]))\n" +
+                "print('simulated unavailable model', file=sys.stderr)\nsys.exit(13)\n")
+            binary.chmod(0o755)
+            with patch.dict(os.environ, {'PATH': str(binary_dir) + os.pathsep + os.environ['PATH']}):
+                run = self.run_workflow("round-workflow.md", args)
             self.assertIsNone(run["error"])
             self.assertEqual("codex", run["result"]["hostResolution"]["effectiveHost"])
             dispatch = next(call["command"] for call in run["commandCalls"] if 'execution.py" dispatch' in call["command"])
@@ -174,6 +187,11 @@ class WorkflowHostBindingTests(unittest.TestCase):
             self.assertFalse(any(call["label"].startswith("implement:") for call in run["calls"]))
             self.assertEqual("paused", run["result"]["results"][0]["outcome"])
             self.assertEqual(before, issue.read_bytes())
+            invoked = json.loads(received.read_text())
+            self.assertEqual('issue-model', invoked[invoked.index('--model') + 1])
+            self.assertIn('model_reasoning_effort="medium"', invoked)
+            self.assertIn('--json', invoked)
+            self.assertNotIn('--effort', invoked)
 
     def test_concurrent_new_runs_record_their_own_sanitized_host_and_capability_tier(self):
         from concurrent.futures import ThreadPoolExecutor
