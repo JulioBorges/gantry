@@ -9,6 +9,7 @@ import os
 import shutil
 import datetime
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -787,6 +788,166 @@ def validate_role_replacement(
     }
 
 
+def parse_issue_prerequisites(text: str) -> list[str]:
+    """Extract declared prerequisite names from an Issue file."""
+    match = re.search(r"^Prerequisites?:\s*(.+)$", text, re.MULTILINE | re.IGNORECASE)
+    if not match:
+        return []
+    raw = match.group(1).strip()
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def resolve_issue_prerequisites(issue_ref: str, root: Path, policy: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Resolve all declared verification prerequisites for an issue."""
+    prereqs: dict[str, dict[str, Any]] = {}
+    policy_prereqs = policy.get("prerequisites", {})
+
+    # Check repository checks for attached prerequisites
+    for check in policy.get("checks", []):
+        if isinstance(check, dict):
+            cp = check.get("prerequisite")
+            if isinstance(cp, dict) and cp.get("name"):
+                prereqs[cp["name"]] = cp
+            elif isinstance(cp, str) and cp in policy_prereqs:
+                prereqs[cp] = policy_prereqs[cp]
+
+    # Find the Issue file to extract explicit prerequisites
+    scratch = root / ".scratch"
+    import common
+    issues = common.load_issues(scratch) if scratch.is_dir() else {}
+    target_issue = issues.get(issue_ref)
+
+    if target_issue:
+        text = target_issue.path.read_text(encoding="utf-8")
+        declared_names = parse_issue_prerequisites(text)
+        for name in declared_names:
+            if name in policy_prereqs:
+                prereqs[name] = policy_prereqs[name]
+            elif name not in prereqs:
+                # Undeclared prerequisite probe cannot be invented
+                prereqs[name] = {
+                    "name": name,
+                    "command": None,
+                    "remedy": f"Declare '{name}' in repository policy under prerequisites or checks with an approved probe command and remedy.",
+                    "error": f"Prerequisite '{name}' is not declared in repository policy; no command is invented.",
+                }
+
+    return prereqs
+
+
+def probe_prerequisite(
+    name: str,
+    decl: dict[str, Any],
+    root: Path,
+    runner: Callable[..., Any] | None = None,
+    timeout: int = 15,
+) -> dict[str, Any]:
+    """Execute a single declared verification prerequisite probe."""
+    if not isinstance(decl, dict):
+        return {
+            "name": name,
+            "status": "unavailable",
+            "remedy": f"Configure approved probe declaration for '{name}'.",
+            "error": "Prerequisite declaration must be an object",
+        }
+
+    remedy = decl.get("remedy") or f"Ensure prerequisite '{name}' is available."
+    command = decl.get("command")
+
+    if not command:
+        return {
+            "name": name,
+            "status": "unavailable",
+            "remedy": remedy,
+            "error": decl.get("error") or "Missing approved probe command: select or declare an approved command explicitly.",
+        }
+
+    if isinstance(command, str):
+        cmd_list = shlex.split(command)
+    elif isinstance(command, list):
+        cmd_list = [str(c) for c in command]
+    else:
+        return {
+            "name": name,
+            "status": "unavailable",
+            "remedy": remedy,
+            "error": "Probe command must be a string or list of strings.",
+        }
+
+    try:
+        run_func = runner or subprocess.run
+        proc = run_func(
+            cmd_list,
+            cwd=str(root.resolve()),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+        if proc.returncode == 0:
+            return {
+                "name": name,
+                "status": "verified",
+                "remedy": remedy,
+            }
+        return {
+            "name": name,
+            "status": "unavailable",
+            "remedy": remedy,
+            "error": f"Prerequisite probe '{name}' returned exit code {proc.returncode}",
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "name": name,
+            "status": "unknown",
+            "remedy": remedy,
+            "error": f"Prerequisite probe '{name}' timed out after {timeout} seconds",
+        }
+    except Exception as exc:
+        return {
+            "name": name,
+            "status": "unavailable",
+            "remedy": remedy,
+            "error": f"Prerequisite probe '{name}' failed: {exc}",
+        }
+
+
+def check_issue_prerequisites(
+    issue_ref: str,
+    root: Path,
+    policy: dict[str, Any] | None = None,
+    runner: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Check all declared prerequisites for an issue through bounded probes."""
+    eff_policy = policy if policy is not None else resolve_policy(root)
+    prereqs = resolve_issue_prerequisites(issue_ref, root, eff_policy)
+
+    if not prereqs:
+        return {
+            "valid": True,
+            "issue": issue_ref,
+            "prerequisites": {},
+            "unavailable": [],
+            "remedy": None,
+        }
+
+    results: dict[str, dict[str, Any]] = {}
+    for name, decl in prereqs.items():
+        results[name] = probe_prerequisite(name, decl, root, runner=runner)
+
+    unavailable = [p for p in results.values() if p.get("status") != "verified"]
+    valid = len(unavailable) == 0
+    remedies = [p["remedy"] for p in unavailable if p.get("remedy")]
+
+    return {
+        "valid": valid,
+        "issue": issue_ref,
+        "prerequisites": results,
+        "unavailable": unavailable,
+        "remedy": "; ".join(remedies) if remedies else None,
+    }
+
+
 def check_unresolved_failures(
     unit_id: str,
     run_id: str,
@@ -817,6 +978,8 @@ def check_unresolved_failures(
                 "worktree": data.get("worktree"),
                 "reason": data.get("reason", "execution_unavailable"),
                 "error": data.get("error", "execution unavailable"),
+                "prerequisite": data.get("prerequisite"),
+                "remedy": data.get("remedy"),
             }
         elif ev_type == "role.changed" and issue:
             role = data.get("role", "critic")
@@ -887,6 +1050,11 @@ def main() -> int:
     validate_rep_parser.add_argument("--selection", required=True, help="selection JSON")
     validate_rep_parser.add_argument("--cwd", default=".", help="repository root path")
     validate_rep_parser.add_argument("--json", action="store_true", help="output JSON")
+
+    prereq_parser = subparsers.add_parser("check-prerequisites", help="check declared verification prerequisites for an issue")
+    prereq_parser.add_argument("--issue", required=True, help="issue ref (e.g. sample#01)")
+    prereq_parser.add_argument("--cwd", default=".", help="repository root path")
+    prereq_parser.add_argument("--json", action="store_true", help="output JSON")
 
     args = parser.parse_args()
     root = Path(args.cwd).resolve() if getattr(args, "cwd", None) else Path(".").resolve()
@@ -1048,6 +1216,17 @@ def main() -> int:
             print(json.dumps(res, indent=2))
         else:
             print("Valid" if res["valid"] else f"Invalid: {res.get('error')}")
+        return 0 if res["valid"] else 1
+
+    elif args.command == "check-prerequisites":
+        res = check_issue_prerequisites(args.issue, root)
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            if res["valid"]:
+                print(f"All prerequisites for {args.issue} verified.")
+            else:
+                print(f"Prerequisite failure for {args.issue}: {res.get('remedy')}", file=sys.stderr)
         return 0 if res["valid"] else 1
 
     else:

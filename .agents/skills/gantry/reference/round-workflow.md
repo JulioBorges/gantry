@@ -356,9 +356,14 @@ function projectCriticResult(verdict) {
     refutations: verdict.refutations,
     requiredFixes: verdict.requiredFixes,
     decisionsForOperator: verdict.decisionsForOperator,
+    ...(verdict.verificationBlockers && Array.isArray(verdict.verificationBlockers) ? { verificationBlockers: verdict.verificationBlockers } : {}),
   }
   if (verdict.gateResult && typeof verdict.gateResult === 'object') {
-    projected.gateResult = { verdict: verdict.gateResult.verdict, requirements: verdict.gateResult.requirements }
+    projected.gateResult = {
+      verdict: verdict.gateResult.verdict,
+      requirements: verdict.gateResult.requirements,
+      ...(verdict.gateResult.verificationBlockers ? { verificationBlockers: verdict.gateResult.verificationBlockers } : {}),
+    }
   }
   return projected
 }
@@ -511,51 +516,67 @@ if (unresolvedFailures.length === 0 && runLogEnabled && !isFirstRound) {
 if (unresolvedFailures.length > 0) {
   const remainingUnresolved = []
   for (const failure of unresolvedFailures) {
-    const replacement = resolveRoleForIssue(failure.issue, failure.role, null)
-    const hasReplacement = Boolean(
-      replacement &&
-      ((A.issueRoles && A.issueRoles[failure.issue] && A.issueRoles[failure.issue][failure.role]) ||
-       (A.issueRoleReplacements && A.issueRoleReplacements[failure.issue] && A.issueRoleReplacements[failure.issue][failure.role]))
-    )
-    if (hasReplacement) {
-      const repJson = JSON.stringify(replacement)
-      const valCmd = `python3 "${scripts}/execution.py" validate-replacement --issue "${failure.issue}" --role "${failure.role}" --selection '${repJson.replaceAll("'", "'\\''")}' --cwd ${shellQuote(A.repoRoot)} --json`
-      const valRes = await runCommand(valCmd, { cwd: A.repoRoot })
-      let valid = false
-      if (valRes && valRes.exitCode === 0) {
+    if (failure.reason === 'verification_unavailable') {
+      const prereqCheckCmd = `python3 "${scripts}/execution.py" check-prerequisites --issue "${failure.issue}" --cwd ${shellQuote(A.repoRoot)} --json`
+      const prereqRes = await runCommand(prereqCheckCmd, { cwd: A.repoRoot })
+      let verified = false
+      if (prereqRes && prereqRes.exitCode === 0) {
         try {
-          const parsed = JSON.parse(valRes.stdout)
-          valid = parsed.valid === true
+          const parsed = JSON.parse(prereqRes.stdout)
+          verified = parsed.valid === true
         } catch (e) {}
       }
-      if (!valid) {
-        return {
-          round: A.round,
-          blocked: true,
-          nextRoundBlocked: true,
-          reason: 'invalid_role_replacement',
-          error: `Invalid replacement selection for ${failure.issue} role ${failure.role}`,
-          results: [],
-        }
+      if (!verified) {
+        remainingUnresolved.push(failure)
       }
-      await appendRunEvent('role.changed', failure.issue, undefined, {
-        role: failure.role,
-        issue: failure.issue,
-        previous: failure.selection || { harness: 'unknown' },
-        requested: replacement,
-        effective: replacement,
-        evidence: { source: 'explicit_recovery' },
-      })
     } else {
-      remainingUnresolved.push(failure)
+      const replacement = resolveRoleForIssue(failure.issue, failure.role, null)
+      const hasReplacement = Boolean(
+        replacement &&
+        ((A.issueRoles && A.issueRoles[failure.issue] && A.issueRoles[failure.issue][failure.role]) ||
+         (A.issueRoleReplacements && A.issueRoleReplacements[failure.issue] && A.issueRoleReplacements[failure.issue][failure.role]))
+      )
+      if (hasReplacement) {
+        const repJson = JSON.stringify(replacement)
+        const valCmd = `python3 "${scripts}/execution.py" validate-replacement --issue "${failure.issue}" --role "${failure.role}" --selection '${repJson.replaceAll("'", "'\\''")}' --cwd ${shellQuote(A.repoRoot)} --json`
+        const valRes = await runCommand(valCmd, { cwd: A.repoRoot })
+        let valid = false
+        if (valRes && valRes.exitCode === 0) {
+          try {
+            const parsed = JSON.parse(valRes.stdout)
+            valid = parsed.valid === true
+          } catch (e) {}
+        }
+        if (!valid) {
+          return {
+            round: A.round,
+            blocked: true,
+            nextRoundBlocked: true,
+            reason: 'invalid_role_replacement',
+            error: `Invalid replacement selection for ${failure.issue} role ${failure.role}`,
+            results: [],
+          }
+        }
+        await appendRunEvent('role.changed', failure.issue, undefined, {
+          role: failure.role,
+          issue: failure.issue,
+          previous: failure.selection || { harness: 'unknown' },
+          requested: replacement,
+          effective: replacement,
+          evidence: { source: 'explicit_recovery' },
+        })
+      } else {
+        remainingUnresolved.push(failure)
+      }
     }
   }
   if (remainingUnresolved.length > 0) {
+    const hasVerification = remainingUnresolved.some(f => f.reason === 'verification_unavailable')
     return {
       round: A.round,
       blocked: true,
       nextRoundBlocked: true,
-      reason: 'unresolved_execution_failure',
+      reason: hasVerification ? 'unresolved_verification_failure' : 'unresolved_execution_failure',
       unresolvedFailures: remainingUnresolved,
       results: [],
     }
@@ -985,12 +1006,71 @@ if (typeof prompt === 'function' && !A.skipDashboardPrompt) {
   }
 }
 
+function hasConfiguredPrerequisites() {
+  return Boolean(
+    A.policy && (
+      (A.policy.prerequisites && Object.keys(A.policy.prerequisites).length > 0) ||
+      (Array.isArray(A.policy.checks) && A.policy.checks.length > 0)
+    )
+  )
+}
+
 const results = await pipeline(
   A.issues,
-  issue => implement(issue, null, null),
+  async issue => {
+    if (hasConfiguredPrerequisites()) {
+      const prereqCmd = `python3 "${scripts}/execution.py" check-prerequisites --issue "${issue.ref}" --cwd ${shellQuote(A.repoRoot)} --json`
+      const prereqRes = await runCommand(prereqCmd, { cwd: A.repoRoot })
+      let prereqValid = true
+      let prereqPayload = null
+      if (prereqRes && prereqRes.stdout && prereqRes.stdout.trim()) {
+        try {
+          prereqPayload = JSON.parse(prereqRes.stdout)
+          if (prereqPayload && prereqPayload.valid === false) {
+            prereqValid = false
+          }
+        } catch (e) {}
+      }
+      if (!prereqValid && prereqPayload && prereqPayload.unavailable && prereqPayload.unavailable.length > 0) {
+        const unavail = prereqPayload.unavailable[0]
+        const worktree = issueWorktreePath(issue)
+        const branch = await configuredIssueBranch(issue)
+        await appendRunEvent('issue.paused', issue.ref, 'Critic', {
+          role: 'critic',
+          reason: 'verification_unavailable',
+          worktree,
+          prerequisite: unavail.name,
+          remedy: unavail.remedy,
+          error: unavail.remedy,
+        })
+        return {
+          ref: issue.ref,
+          issuePath: issue.path,
+          outcome: 'paused',
+          status: 'paused',
+          reason: 'verification_unavailable',
+          verificationUnavailable: true,
+          prerequisite: unavail.name,
+          remedy: unavail.remedy,
+          role: 'critic',
+          error: unavail.remedy,
+          worktree,
+          branch,
+          commits: [],
+          corrections: 0,
+          reviewFix: false,
+          review: null,
+          verdict: null,
+          decisions: [],
+          blockers: prereqPayload.unavailable,
+        }
+      }
+    }
+    return implement(issue, null, null)
+  },
   async (impl, issue) => {
     if (!impl) return null
-    if (impl.executionUnavailable) return impl
+    if (impl.executionUnavailable || impl.verificationUnavailable) return impl
     const selection = resolveRoleForIssue(issue.ref, 'reviewer', null)
     await logRoleSelected(issue.ref, 'reviewer', selection)
     await appendRunEvent('phase.started', issue.ref, 'Review', { worktree: location(impl) })
@@ -1018,11 +1098,14 @@ const results = await pipeline(
     if (!reviewed) {
       return { impl: null, implementerFailed: true, failedImpl: impl, review, reviewFix: true }
     }
-    if (reviewed.executionUnavailable) return reviewed
+    if (reviewed.executionUnavailable || reviewed.verificationUnavailable) return reviewed
     return { impl: reviewed, review, reviewFix: Boolean(review && review.blocking.length) }
   },
   async (state, issue) => {
     if (!state) return { ref: issue.ref, outcome: 'implementer_failed' }
+    if (state.verificationUnavailable) {
+      return state
+    }
     if (state.executionUnavailable) {
       const impl = state.impl
       const worktree = (impl && impl.worktree) || state.worktree || issueWorktreePath(issue)
@@ -1121,9 +1204,60 @@ const results = await pipeline(
       }
       accepted = await criticAccepted(verdict, issue)
       if (!accepted) {
-        await appendRunEvent('refutation', issue.ref, 'Critic', {
-          attempt, refutations: verdict.refutations || [],
-        })
+        let blockers = (verdict.gateResult && Array.isArray(verdict.gateResult.verificationBlockers))
+          ? verdict.gateResult.verificationBlockers
+          : (Array.isArray(verdict.verificationBlockers) ? verdict.verificationBlockers : [])
+        if (blockers.length === 0 && hasConfiguredPrerequisites()) {
+          const prereqCmd = `python3 "${scripts}/execution.py" check-prerequisites --issue "${issue.ref}" --cwd ${shellQuote(A.repoRoot)} --json`
+          const prereqRes = await runCommand(prereqCmd, { cwd: A.repoRoot })
+          if (prereqRes && prereqRes.stdout && prereqRes.stdout.trim()) {
+            try {
+              const parsed = JSON.parse(prereqRes.stdout)
+              if (parsed && parsed.valid === false && parsed.unavailable) {
+                blockers = parsed.unavailable
+              }
+            } catch (e) {}
+          }
+        }
+        const hasVerificationBlockers = blockers.length > 0
+        const hasRefutations = Array.isArray(verdict.refutations) && verdict.refutations.length > 0
+        if (hasRefutations) {
+          await appendRunEvent('refutation', issue.ref, 'Critic', {
+            attempt, refutations: verdict.refutations || [],
+          })
+        }
+        if (hasVerificationBlockers && !hasRefutations) {
+          const blocker = blockers[0]
+          await appendRunEvent('issue.paused', issue.ref, 'Critic', {
+            role: 'critic',
+            reason: 'verification_unavailable',
+            worktree: location(impl),
+            prerequisite: blocker.prerequisite || blocker.name || 'verification',
+            remedy: blocker.remedy || 'Unavailable verification prerequisite',
+            error: blocker.remedy || blocker.error || 'Verification prerequisite unavailable',
+          })
+          return {
+            ref: issue.ref,
+            issuePath: issue.path,
+            outcome: 'paused',
+            status: 'paused',
+            reason: 'verification_unavailable',
+            verificationUnavailable: true,
+            prerequisite: blocker.prerequisite || blocker.name,
+            remedy: blocker.remedy,
+            role: 'critic',
+            error: blocker.remedy || 'Verification prerequisite unavailable',
+            worktree: impl.worktree,
+            branch: impl.branch,
+            commits: impl.commits,
+            corrections,
+            reviewFix: state.reviewFix,
+            review: state.review,
+            verdict,
+            decisions: [...(impl.decisions || []), ...(verdict.decisionsForOperator || [])],
+            blockers,
+          }
+        }
       }
       if (accepted || corrections >= budget) break
       const corrected = await implement(issue, { kind: 'critic', items: verdict.requiredFixes }, impl)
