@@ -1,7 +1,7 @@
 # Show attributable Run waiting states and nonoverlapping timing
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `run-execution-reliability#05`
 Spec: `.scratch/run-execution-reliability/spec.md`
 Created: 2026-10-03
@@ -26,14 +26,14 @@ Read targeted Dashboard HTTP/history tests, stylesheet and browser test scenario
 
 ## Acceptance criteria
 
-- [ ] The read-only Run data, final report and visible Dashboard agree on executing, verification-paused, decision-required, result-pending-integration, done and unknown/stale states. Every known wait has an explicit cause; Critic completion alone never creates an operator decision.
-- [ ] A paused interval is recorded/reduced separately from phase-work intervals, while total wall time remains visible. Replaying the historical pause/resume shape no longer charges the entire pause to Critic execution. Labels explicitly describe which measured or observed intervals each duration includes.
-- [ ] Result-ready and result-consumed observations from Issue 03 identify pending Host handling without claiming a known cause for missing observations. Unknown legacy result timing remains unknown rather than being backfilled from later completion.
-- [ ] Parallel Issue intervals do not sum into an inflated Run duration. Retry, correction, interrupted and resumed intervals retain attribution without double counting; malformed ordering, duplicate starts, missing finishes and post-finish records yield visible incomplete evidence rather than invented precision.
-- [ ] Known suspension can be reflected only when the declared harness/adapter supplies actual provenance. No macOS-specific collector or machine-setting change is required; an event gap alone stays unknown/stale. A heartbeat is not labelled as model reasoning or useful progress.
-- [ ] Legacy logs remain readable without modifying their bytes, and completed counters are unchanged by the observational migration. Structured timing/state metadata contains no prompts, raw command output, diffs or secrets.
-- [ ] Playwright exercises real Dashboard rendering on desktop and mobile fixtures, keyboard navigation, accessible state/timing labels and transition behavior. The paused, real-approval, accepted-result-pending and incomplete-history cases produce no browser errors or regressions in existing authorized controls.
-- [ ] Public documentation and final-report examples explain wall time, observed phase intervals, known waits and unknown coverage. Existing deterministic acceptance, configured human gates, serial integration, Issue status authority and read-only observation endpoints retain their semantics.
+- [x] The read-only Run data, final report and visible Dashboard agree on executing, verification-paused, decision-required, result-pending-integration, done and unknown/stale states. Every known wait has an explicit cause; Critic completion alone never creates an operator decision.
+- [x] A paused interval is recorded/reduced separately from phase-work intervals, while total wall time remains visible. Replaying the historical pause/resume shape no longer charges the entire pause to Critic execution. Labels explicitly describe which measured or observed intervals each duration includes.
+- [x] Result-ready and result-consumed observations from Issue 03 identify pending Host handling without claiming a known cause for missing observations. Unknown legacy result timing remains unknown rather than being backfilled from later completion.
+- [x] Parallel Issue intervals do not sum into an inflated Run duration. Retry, correction, interrupted and resumed intervals retain attribution without double counting; malformed ordering, duplicate starts, missing finishes and post-finish records yield visible incomplete evidence rather than invented precision.
+- [x] Known suspension can be reflected only when the declared harness/adapter supplies actual provenance. No macOS-specific collector or machine-setting change is required; an event gap alone stays unknown/stale. A heartbeat is not labelled as model reasoning or useful progress.
+- [x] Legacy logs remain readable without modifying their bytes, and completed counters are unchanged by the observational migration. Structured timing/state metadata contains no prompts, raw command output, diffs or secrets.
+- [x] Playwright exercises real Dashboard rendering on desktop and mobile fixtures, keyboard navigation, accessible state/timing labels and transition behavior. The paused, real-approval, accepted-result-pending and incomplete-history cases produce no browser errors or regressions in existing authorized controls.
+- [x] Public documentation and final-report examples explain wall time, observed phase intervals, known waits and unknown coverage. Existing deterministic acceptance, configured human gates, serial integration, Issue status authority and read-only observation endpoints retain their semantics.
 
 ## Blocked by
 
