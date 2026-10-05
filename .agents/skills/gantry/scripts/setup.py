@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 
 from execution import SUPPORTED_HARNESSES
+from common import profile_path, read_profile, write_profile, validate_profile
+from runlog import unit_id
 from setup_host import (adapter_proposal, confirm, host_only, ignored_policy,
                         migration_proposal, read_object, validate_policy)
 
@@ -22,7 +24,7 @@ def merge_dicts(base: dict, update: dict) -> dict:
     return base
 
 
-def update_agents(repo_root: Path, host: str | None) -> None:
+def update_agents(repo_root: Path, host: str | None = None) -> None:
     agents_path = repo_root / "AGENTS.md"
     content = agents_path.read_text(encoding="utf-8") if agents_path.exists() else ""
     begin_marker = "<!-- gantry:begin -->"
@@ -70,6 +72,98 @@ def codex_defaults() -> dict:
     }}}
 
 
+def personal_switch(root: Path, host: str | None, roles: dict | None, apply: bool) -> int:
+    try:
+        uid = unit_id(root)
+    except Exception as exc:
+        print(f"Setup error: could not resolve execution unit ID: {exc}", file=sys.stderr)
+        return 2
+
+    if host is not None and host not in SUPPORTED_HARNESSES:
+        print(f"Setup error: Unsupported explicit host '{host}'; choose antigravity, claude-code, codex or opencode.", file=sys.stderr)
+        return 2
+
+    p_path = profile_path(root)
+    existing = read_profile(root)
+    proposed = copy.deepcopy(existing)
+    if host is not None:
+        proposed["hostHarness"] = host
+    if roles is not None:
+        proposed.setdefault("roles", {}).update(roles)
+
+    try:
+        validate_profile(proposed)
+    except ValueError as exc:
+        print(f"Setup error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"Execution unit: {uid}")
+    print(f"Profile path: {p_path}")
+    print("Proposed profile:")
+    print(json.dumps(proposed, indent=2))
+    print("Tracked policy (.gantry/config.json), adapter files, and AGENTS.md will remain unchanged.")
+
+    if proposed == existing:
+        print("Profile already matches proposed switch. No files changed.")
+        return 0
+
+    if not apply:
+        print("Preview only. To apply, repeat with --apply and explicitly approve this switch.")
+        return 0
+
+    answer = confirm("Apply this personal switch? [y/N] ")
+    if answer not in ("y", "yes"):
+        print("Aborted. No files changed.")
+        return 1
+
+    write_profile(root, proposed)
+    print(f"Applied approved personal switch to {p_path}.")
+    return 0
+
+
+def migrate_legacy(root: Path, apply: bool) -> int:
+    policy_path = root / ".gantry/config.json"
+    if not policy_path.exists():
+        print("No .gantry/config.json found.")
+        return 0
+    policy = read_object(policy_path.read_text(encoding="utf-8"))
+    legacy_host = policy.get("execution", {}).get("hostHarness")
+    if not legacy_host:
+        print("No legacy tracked execution.hostHarness found in .gantry/config.json.")
+        return 0
+
+    p_path = profile_path(root)
+    prof = read_profile(root)
+    proposed_profile = copy.deepcopy(prof)
+    if "hostHarness" not in proposed_profile:
+        proposed_profile["hostHarness"] = legacy_host
+
+    proposed_policy = copy.deepcopy(policy)
+    del proposed_policy["execution"]["hostHarness"]
+    if not proposed_policy["execution"]:
+        del proposed_policy["execution"]
+
+    print(f"Legacy tracked host: {legacy_host}")
+    print(f"Proposed profile ({p_path}):")
+    print(json.dumps(proposed_profile, indent=2))
+    print("Proposed .gantry/config.json (removing execution.hostHarness):")
+    print(json.dumps(proposed_policy, indent=2))
+
+    if not apply:
+        print("Preview only. To apply, repeat with --apply and explicitly approve this migration.")
+        return 0
+
+    answer = confirm("Apply this legacy migration? [y/N] ")
+    if answer not in ("y", "yes"):
+        print("Aborted. No files changed.")
+        return 1
+
+    write_profile(root, proposed_profile)
+    policy_path.write_text(json.dumps(proposed_policy, indent=2) + "\n", encoding="utf-8")
+    print("Applied approved legacy migration.")
+    return 0
+
+
 def normal_setup(root: Path, args: argparse.Namespace) -> int:
     path = root / '.gantry/config.json'
     existing = read_object(path.read_text(encoding='utf-8')) if path.exists() else None
@@ -97,7 +191,6 @@ def normal_setup(root: Path, args: argparse.Namespace) -> int:
     validate_policy(config)
     if args.harness:
         config.setdefault('execution', {})['hostHarness'] = args.harness
-    # Only this proposal's intentional host selection controls adapter changes.
     host = config.get('execution', {}).get('hostHarness')
     if host is not None and host not in SUPPORTED_HARNESSES:
         raise ValueError('Unsupported explicit host')
@@ -154,13 +247,41 @@ def main() -> int:
     parser.add_argument('--harness', choices=sorted(SUPPORTED_HARNESSES), help='Intentional normal setup host selection')
     parser.add_argument('--verify-auth', action='store_true', help='Verify Codex discovery during normal setup')
     parser.add_argument('--host-only', action='store_true', help='Preview host-only policy and selected adapter repair without role presets')
-    parser.add_argument('--host', help='Operator-confirmed identity for host-only repair')
-    parser.add_argument('--apply', action='store_true', help='Ask approval to apply the displayed host-only proposal')
+    parser.add_argument('--personal', action='store_true', help='Personal harness and role overlay switch in machine profile')
+    parser.add_argument('--migrate-legacy', action='store_true', help='Migrate legacy tracked execution.hostHarness to operator profile')
+    parser.add_argument('--host', help='Operator-confirmed identity for host-only repair or personal switch')
+    parser.add_argument('--roles', help='JSON string for role overrides in personal profile')
+    parser.add_argument('--roles-file', help='Path to JSON file for role overrides in personal profile')
+    parser.add_argument('--apply', action='store_true', help='Ask approval to apply the displayed proposal')
     args = parser.parse_args()
-    if args.host_only and (args.config or args.config_file or args.harness or args.verify_auth):
+
+    if args.personal:
+        if args.host_only or args.migrate_legacy or args.config or args.config_file or args.harness or args.verify_auth:
+            parser.error('--personal accepts only --host, --roles, --roles-file, and --apply')
+        roles = None
+        if args.roles_file:
+            roles = json.loads(Path(args.roles_file).read_text(encoding='utf-8'))
+        elif args.roles:
+            roles = json.loads(args.roles)
+        try:
+            return personal_switch(Path.cwd(), args.host, roles, args.apply)
+        except (ValueError, OSError, UnicodeError) as error:
+            print(f'Setup error: {error}. Application stopped.', file=sys.stderr)
+            return 2
+
+    if args.migrate_legacy:
+        if args.host_only or args.personal or args.config or args.config_file or args.harness or args.verify_auth or args.host or args.roles or args.roles_file:
+            parser.error('--migrate-legacy accepts only --apply')
+        try:
+            return migrate_legacy(Path.cwd(), args.apply)
+        except (ValueError, OSError, UnicodeError) as error:
+            print(f'Setup error: {error}. Application stopped.', file=sys.stderr)
+            return 2
+
+    if args.host_only and (args.config or args.config_file or args.harness or args.verify_auth or args.roles or args.roles_file):
         parser.error('--host-only accepts only --host and --apply; role/config updates require normal setup')
-    if not args.host_only and (args.host or args.apply):
-        parser.error('--host and --apply require --host-only')
+    if not args.host_only and not args.personal and (args.host or args.apply):
+        parser.error('--host and --apply require --host-only or --personal')
     try:
         return host_only(Path.cwd(), args.host, args.apply) if args.host_only else normal_setup(Path.cwd(), args)
     except (ValueError, OSError, UnicodeError) as error:

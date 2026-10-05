@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **57 / 58** |
-| Specs completed | **10 / 11** |
+| Issues completed | **58 / 58** |
+| Specs completed | **11 / 11** |
 | Execution waves | **34** |
 
 ## Specs
@@ -137,7 +137,7 @@ Spec 19 (`operator-harness-profile`) is planned. Its issue stays `draft` until t
 | 16 | `gantry-plan` | 4/4 | 20–22 |
 | 17 | `host-harness-resolution` | 4/4 | 27–29 |
 | 18 | `run-execution-reliability` | 5/5 | 30–33 |
-| 19 | `operator-harness-profile` | 0/1 | 31 |
+| 19 | `operator-harness-profile` | 1/1 | 31 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -340,13 +340,13 @@ of the others, and an issue never waits on anything in its own wave or a later o
 
 - [x] **`run-execution-reliability#01`** — Invoke selected roles through a verified harness adapter _(no blockers)_
 
-### Wave 31 — 2/3 done
+### Wave 31 — 3/3 done
 
 - [x] **`run-execution-reliability#02`** — Preflight effective execution with honest reusable evidence
   <br>↳ blocked by: run-execution-reliability#01
 - [x] **`run-execution-reliability#03`** — Consume pending role results before ending the Host execution turn
   <br>↳ blocked by: run-execution-reliability#01
-- [ ] **`operator-harness-profile#01`** — Keep each operator's harness in a machine profile _(no blockers)_
+- [x] **`operator-harness-profile#01`** — Keep each operator's harness in a machine profile _(no blockers)_
 
 ### Wave 32 — 1/1 done
 
