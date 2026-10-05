@@ -1,7 +1,7 @@
 # Preflight effective execution with honest reusable evidence
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `run-execution-reliability#02`
 Spec: `.scratch/run-execution-reliability/spec.md`
 Created: 2026-10-03
@@ -27,14 +27,14 @@ Inspect only the affected setup selection, capability, canonical preflight and d
 
 ## Acceptance criteria
 
-- [ ] The public preflight result separates the checked dimensions and distinguishes verified, unavailable and unknown execution capability. A nonempty model ID, successful version probe or login check alone cannot mark a selected model/effort profile executable.
-- [ ] Canonical planning and execution entry consume that result before dependent role invocation. Unsupported syntax, unavailable model/effort, invalid transport or missing approved access stops the affected selection with a remedy while preserving policy, worktree and role defaults.
-- [ ] Where discovery cannot establish availability, the supported path uses an operator-authorized bounded non-editing execution probe or reports unknown and pauses. A real selected-profile receipt is identified separately from simulated negative cases; no unverified account capability is fabricated.
-- [ ] Repeated roles sharing an identical effective profile reuse applicable checks within that Run; test observations demonstrate that unchanged reusable probes are not reissued for every role or attempt. No cross-Run cache is implicitly trusted.
-- [ ] Changing CLI/adapter identity, model, effort, result transport, approved permissions, relevant cwd/policy context or available authentication identity invalidates affected evidence. Unverifiable identity is not treated as a cache hit; no credential value is persisted in a key or log.
-- [ ] Cheap read-only probes and actual role execution probes have separate bounded behavior. A timeout, invalid probe result or failed authentication cannot accidentally become successful reusable evidence.
-- [ ] Existing Issue override, Run override, repository default and confirmed environment-default precedence remains intact. Native and external roles use their own validated selection; an external role never changes the Host Harness.
-- [ ] Public documentation and workflow fixture traces show both a ready path and a refused path, including when the operator must select a replacement. No policy change, permission expansion or model fallback occurs as an automatic preflight repair.
+- [x] The public preflight result separates the checked dimensions and distinguishes verified, unavailable and unknown execution capability. A nonempty model ID, successful version probe or login check alone cannot mark a selected model/effort profile executable.
+- [x] Canonical planning and execution entry consume that result before dependent role invocation. Unsupported syntax, unavailable model/effort, invalid transport or missing approved access stops the affected selection with a remedy while preserving policy, worktree and role defaults.
+- [x] Where discovery cannot establish availability, the supported path uses an operator-authorized bounded non-editing execution probe or reports unknown and pauses. A real selected-profile receipt is identified separately from simulated negative cases; no unverified account capability is fabricated.
+- [x] Repeated roles sharing an identical effective profile reuse applicable checks within that Run; test observations demonstrate that unchanged reusable probes are not reissued for every role or attempt. No cross-Run cache is implicitly trusted.
+- [x] Changing CLI/adapter identity, model, effort, result transport, approved permissions, relevant cwd/policy context or available authentication identity invalidates affected evidence. Unverifiable identity is not treated as a cache hit; no credential value is persisted in a key or log.
+- [x] Cheap read-only probes and actual role execution probes have separate bounded behavior. A timeout, invalid probe result or failed authentication cannot accidentally become successful reusable evidence.
+- [x] Existing Issue override, Run override, repository default and confirmed environment-default precedence remains intact. Native and external roles use their own validated selection; an external role never changes the Host Harness.
+- [x] Public documentation and workflow fixture traces show both a ready path and a refused path, including when the operator must select a replacement. No policy change, permission expansion or model fallback occurs as an automatic preflight repair.
 
 ## Blocked by
 

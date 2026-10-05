@@ -1,7 +1,7 @@
 # Consume pending role results before ending the Host execution turn
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `run-execution-reliability#03`
 Spec: `.scratch/run-execution-reliability/spec.md`
 Created: 2026-10-03
@@ -26,14 +26,14 @@ Locate the relevant Host coordination rules, canonical delayed-result fixtures, 
 
 ## Acceptance criteria
 
-- [ ] A canonical supported Host fixture launches a deliberately delayed role and consumes its result without another operator message. A status request during the wait is answered while the authorized workflow remains active; a still-running child is not reported as completed delivery.
-- [ ] An accepted Critic result proceeds through the existing clean-tree and post-integration gates and authoritative completion writer before the execution report concludes. The fixture proves the completed Issue and branch state rather than merely checking a prompt string.
-- [ ] Refuted, malformed or execution-unavailable role results follow their existing correction, protocol-failure or explicit-recovery path and never pass through the successful completion path. A red integration gate still stops integration.
-- [ ] An actually configured post-Critic human gate is preserved and reported with its requested decision. With no such pending gate, Critic completion does not create a new operator-approval requirement. Planning, changed execution settings, PR and cleanup approvals remain separate.
-- [ ] An explicit stop/cancellation or a Host capability loss produces an honest handoff identifying the pending result/work, latest available activity and supported resumption path. No daemon or continuation after the Host closes is promised.
-- [ ] Validated resumption reconciles available results with the existing Run, Issue, delivered revision and assigned worktree before advancing. It neither launches duplicate code work for a matching usable result nor accepts stale/mismatched results, and preserves spent correction counts.
-- [ ] The supported invocation path records attributable result availability and consumption when observable. Liveness means only the observed process/transport state; an unobservable model-progress interval remains unknown. Logs retain existing data-minimization restrictions.
-- [ ] Evidence includes delayed completion, status steering, actual approval wait and interruption/resumption through the canonical seam. A bounded real Host/role trace establishes the claimed live continuation path; simulated workflow coverage is labelled separately, and unsupported conversational guarantees are not advertised.
+- [x] A canonical supported Host fixture launches a deliberately delayed role and consumes its result without another operator message. A status request during the wait is answered while the authorized workflow remains active; a still-running child is not reported as completed delivery.
+- [x] An accepted Critic result proceeds through the existing clean-tree and post-integration gates and authoritative completion writer before the execution report concludes. The fixture proves the completed Issue and branch state rather than merely checking a prompt string.
+- [x] Refuted, malformed or execution-unavailable role results follow their existing correction, protocol-failure or explicit-recovery path and never pass through the successful completion path. A red integration gate still stops integration.
+- [x] An actually configured post-Critic human gate is preserved and reported with its requested decision. With no such pending gate, Critic completion does not create a new operator-approval requirement. Planning, changed execution settings, PR and cleanup approvals remain separate.
+- [x] An explicit stop/cancellation or a Host capability loss produces an honest handoff identifying the pending result/work, latest available activity and supported resumption path. No daemon or continuation after the Host closes is promised.
+- [x] Validated resumption reconciles available results with the existing Run, Issue, delivered revision and assigned worktree before advancing. It neither launches duplicate code work for a matching usable result nor accepts stale/mismatched results, and preserves spent correction counts.
+- [x] The supported invocation path records attributable result availability and consumption when observable. Liveness means only the observed process/transport state; an unobservable model-progress interval remains unknown. Logs retain existing data-minimization restrictions.
+- [x] Evidence includes delayed completion, status steering, actual approval wait and interruption/resumption through the canonical seam. A bounded real Host/role trace establishes the claimed live continuation path; simulated workflow coverage is labelled separately, and unsupported conversational guarantees are not advertised.
 
 ## Blocked by
 
