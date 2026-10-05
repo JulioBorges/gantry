@@ -39,14 +39,29 @@
     if (issue.unitId) card.dataset.unitId = issue.unitId;
     if (issue.project) card.dataset.project = issue.project;
 
+    // Accessibility & Keyboard navigation
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-label", "Detalhes de execução da issue " + issue.issue);
+    card.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openExecutionModal(issue);
+      }
+    });
+
     const title = document.createElement("div");
     title.className = "card-title";
     const titleText = document.createElement("span");
     titleText.textContent = issue.issue;
     title.appendChild(titleText);
 
-    if (issue.operatorWaiting) {
+    if (issue.operatorWaiting || issue.lifecycleState === "decision-required") {
       title.appendChild(badge("AWAITING OPERATOR", "waiting"));
+    } else if (issue.lifecycleState === "verification-paused") {
+      title.appendChild(badge("PAUSED (VERIFICATION)", "paused"));
+    } else if (issue.lifecycleState === "result-pending-integration") {
+      title.appendChild(badge("RESULT PENDING INTEGRATION", "pending"));
     } else if (issue.liveActivity) {
       const isThinking = issue.liveActivity.toLowerCase().indexOf("thinking") !== -1;
       title.appendChild(badge(issue.liveActivity, isThinking ? "waiting" : "live"));
@@ -72,6 +87,12 @@
       badgesContainer.appendChild(
         badge("corrections: " + issue.correctionBudget.used + "/" + issue.correctionBudget.ceiling, "budget")
       );
+    }
+    if (typeof issue.pausedSeconds === "number" && issue.pausedSeconds > 0) {
+      badgesContainer.appendChild(badge("paused: " + formatDuration(issue.pausedSeconds), "paused"));
+    }
+    if (issue.timingEvidence === "incomplete") {
+      badgesContainer.appendChild(badge("timing: incomplete", "incomplete-timing"));
     }
     if (issue.column === "Done") {
       const cycleSecs = typeof issue.totalCycleSeconds === "number" ? issue.totalCycleSeconds : (issue.elapsedPhaseSeconds || 0);
@@ -656,6 +677,14 @@
         }
       }
     });
+    const pausedEl = document.getElementById("dur-paused");
+    if (pausedEl) {
+      if (typeof issue.pausedSeconds === "number") {
+        pausedEl.textContent = formatDuration(issue.pausedSeconds);
+      } else {
+        pausedEl.textContent = "-";
+      }
+    }
     const totalEl = document.getElementById("dur-total");
     if (totalEl) {
       if (typeof issue.totalCycleSeconds === "number") {
@@ -681,9 +710,17 @@
     phaseBadge.className = "badge tier";
 
     const activityBadge = document.getElementById("modal-activity-badge");
-    if (issue.operatorWaiting) {
+    if (issue.operatorWaiting || issue.lifecycleState === "decision-required") {
       activityBadge.textContent = "AWAITING OPERATOR";
       activityBadge.className = "badge waiting";
+      activityBadge.style.display = "inline-flex";
+    } else if (issue.lifecycleState === "verification-paused") {
+      activityBadge.textContent = "VERIFICATION PAUSED";
+      activityBadge.className = "badge paused";
+      activityBadge.style.display = "inline-flex";
+    } else if (issue.lifecycleState === "result-pending-integration") {
+      activityBadge.textContent = "RESULT PENDING INTEGRATION";
+      activityBadge.className = "badge pending";
       activityBadge.style.display = "inline-flex";
     } else if (issue.liveActivity) {
       activityBadge.textContent = issue.liveActivity;
@@ -697,6 +734,19 @@
     document.getElementById("modal-meta-unit").textContent = "UNIT: " + (issue.unitId || "-");
     document.getElementById("modal-meta-run").textContent = "RUN: " + (issue.run || "-");
     document.getElementById("modal-meta-branch").textContent = "BRANCH: " + (issue.branch || "-");
+
+    // Pause alert strip
+    const pauseAlert = document.getElementById("modal-pause-alert");
+    const pauseAlertText = document.getElementById("modal-pause-alert-text");
+    if (pauseAlert && pauseAlertText) {
+      if (issue.lifecycleState === "verification-paused") {
+        pauseAlert.classList.remove("hidden");
+        const remedy = issue.pauseRemedy ? " Remédio: " + issue.pauseRemedy : "";
+        pauseAlertText.textContent = "Execução pausada (" + (issue.pauseReason || "verificação") + ")." + remedy;
+      } else {
+        pauseAlert.classList.add("hidden");
+      }
+    }
 
     // Gate alert strip
     const gateAlert = document.getElementById("modal-gate-alert");
@@ -791,6 +841,12 @@
         }
       });
     }
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        closeExecutionModal();
+      }
+    });
 
     function openShutdownModal() {
       const modal = document.getElementById("shutdown-modal");

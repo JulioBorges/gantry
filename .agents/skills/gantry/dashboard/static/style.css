@@ -415,6 +415,11 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
+.card:focus-visible {
+  outline: 2px solid var(--amber-glow);
+  outline-offset: 2px;
+}
+
 .card-title {
   display: flex;
   align-items: center;
@@ -473,6 +478,26 @@ body {
   background-color: var(--amber-dim);
   animation: pulse-glow 1.5s infinite;
   font-weight: 700;
+}
+
+.badge.paused {
+  border-color: #38bdf8;
+  color: #38bdf8;
+  background-color: rgba(56, 189, 248, 0.15);
+  font-weight: 700;
+}
+
+.badge.pending {
+  border-color: #fbbf24;
+  color: #fbbf24;
+  background-color: rgba(251, 191, 36, 0.15);
+  font-weight: 700;
+}
+
+.badge.incomplete-timing {
+  border-color: var(--red-alert);
+  color: var(--red-alert);
+  background-color: var(--red-dim);
 }
 
 .badge.compaction {
@@ -865,6 +890,12 @@ body {
   background-color: var(--green-dim);
   border-bottom-color: var(--green-ok);
   color: var(--green-ok);
+}
+
+.gate-alert.paused {
+  background-color: rgba(56, 189, 248, 0.12);
+  border-bottom-color: #38bdf8;
+  color: #38bdf8;
 }
 
 .gate-alert-content {
