@@ -1,7 +1,7 @@
 # Pause on unavailable verification prerequisites and resume preserved work
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `run-execution-reliability#04`
 Spec: `.scratch/run-execution-reliability/spec.md`
 Created: 2026-10-03
@@ -27,14 +27,14 @@ Inspect readiness/frontier boundaries, approved check configuration, setup polic
 
 ## Acceptance criteria
 
-- [ ] An operator-approved prerequisite declaration is consumed through the public readiness path and associated with the affected Issue and acceptance need. Missing, malformed or inconclusive capability evidence yields unavailable/unknown with a remedy; no probe command is invented from arbitrary repository text.
-- [ ] A canonical Run with an unavailable declared prerequisite pauses before dependent role work is scheduled, records an attributable verification blocker, and leaves authoritative Issue completion criteria unticked. Independent eligible work retains the existing scheduling and recovery rules.
-- [ ] When verification capability disappears after implementation, the returned failure is classified separately from a substantive code refutation. The assigned worktree, branch, delivered revision and last valid evidence remain preserved.
-- [ ] A pure external verification pause consumes no code correction attempt and cannot become an unbounded retry loop. Mixed findings retain genuine required code fixes; each actual correction is counted once under the existing budget, without resetting or retrospectively refunding spent attempts.
-- [ ] Resumption requires the existing authorized recovery path and fresh verification of the blocked capability. A repeated continue request with unchanged unavailable evidence does not rerun dependent acceptance or mark the Issue done.
-- [ ] A changed capability can resume the same Run and worktree with the preserved role selection and budget. Before acceptance, the independent Critic still verifies the delivered revision and every required gate; a prerequisite probe never substitutes for that proof.
-- [ ] Disposable canonical fixtures cover unavailable and restored Docker-like capability, a missing external entitlement, inconclusive evidence, and a mixed code/external finding. They demonstrate absence of dependent invocations during the unchanged pause and normal completion after verified restoration.
-- [ ] Operator guidance states the exact required remedy and distinguishes verification readiness from dependency readiness. No automatic infrastructure repair, privilege expansion, entitlement purchase, provider write, scope change or Issue split occurs; any necessary Plan Amendment remains an operator decision.
+- [x] An operator-approved prerequisite declaration is consumed through the public readiness path and associated with the affected Issue and acceptance need. Missing, malformed or inconclusive capability evidence yields unavailable/unknown with a remedy; no probe command is invented from arbitrary repository text.
+- [x] A canonical Run with an unavailable declared prerequisite pauses before dependent role work is scheduled, records an attributable verification blocker, and leaves authoritative Issue completion criteria unticked. Independent eligible work retains the existing scheduling and recovery rules.
+- [x] When verification capability disappears after implementation, the returned failure is classified separately from a substantive code refutation. The assigned worktree, branch, delivered revision and last valid evidence remain preserved.
+- [x] A pure external verification pause consumes no code correction attempt and cannot become an unbounded retry loop. Mixed findings retain genuine required code fixes; each actual correction is counted once under the existing budget, without resetting or retrospectively refunding spent attempts.
+- [x] Resumption requires the existing authorized recovery path and fresh verification of the blocked capability. A repeated continue request with unchanged unavailable evidence does not rerun dependent acceptance or mark the Issue done.
+- [x] A changed capability can resume the same Run and worktree with the preserved role selection and budget. Before acceptance, the independent Critic still verifies the delivered revision and every required gate; a prerequisite probe never substitutes for that proof.
+- [x] Disposable canonical fixtures cover unavailable and restored Docker-like capability, a missing external entitlement, inconclusive evidence, and a mixed code/external finding. They demonstrate absence of dependent invocations during the unchanged pause and normal completion after verified restoration.
+- [x] Operator guidance states the exact required remedy and distinguishes verification readiness from dependency readiness. No automatic infrastructure repair, privilege expansion, entitlement purchase, provider write, scope change or Issue split occurs; any necessary Plan Amendment remains an operator decision.
 
 ## Blocked by
 
