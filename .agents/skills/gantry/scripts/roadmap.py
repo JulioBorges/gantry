@@ -79,6 +79,8 @@ def delivery_levels(text: str, issues: dict[str, Issue]) -> dict[str, int]:
                     if ref in frozen:
                         raise ValueError(f"completed Issue {ref} appears in multiple waves")
                     frozen[ref] = wave
+            else:
+                break
     floor = max(frozen.values(), default=-1) + 1
     levels = dict(frozen)
 
