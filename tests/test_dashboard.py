@@ -779,5 +779,163 @@ class DashboardCliTests(unittest.TestCase):
             self.assertEqual(0, res_check_ok.returncode)
 
 
+class AttributableTimingAndWaitingStateTests(unittest.TestCase):
+    def test_critic_finish_alone_does_not_create_operator_decision(self) -> None:
+        """Critic completion alone never creates an operator decision or approval state."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log = root / "unit-critic000001" / "runs" / "run-crit.jsonl"
+            t_start = iso(100)
+            t_crit_start = iso(80)
+            t_crit_end = iso(40)
+
+            write_event(log, started_event("run-crit", 900, t_start, "/repo/crit"))
+            write_event(log, {"ts": t_crit_start, "run": "run-crit", "event": "phase.started", "issue": "sample#01", "phase": "Critic", "data": {}})
+            write_event(log, {"ts": t_crit_end, "run": "run-crit", "event": "phase.finished", "issue": "sample#01", "phase": "Critic", "data": {}})
+
+            runs = dashboard.collect_runs(root, now=time.time())
+            issue = runs[0]["issues"][0]
+            self.assertFalse(issue["operatorWaiting"], "Critic completion alone must not set operatorWaiting")
+            self.assertEqual("result-pending-integration", issue["lifecycleState"])
+
+            # Now explicit operator.waiting sets decision-required
+            t_op_wait = iso(35)
+            write_event(log, {"ts": t_op_wait, "run": "run-crit", "event": "operator.waiting", "issue": "sample#01", "data": {"decision": "post_critic_integration"}})
+
+            runs2 = dashboard.collect_runs(root, now=time.time())
+            issue2 = runs2[0]["issues"][0]
+            self.assertTrue(issue2["operatorWaiting"])
+            self.assertEqual("decision-required", issue2["lifecycleState"])
+
+    def test_paused_interval_recorded_separately_from_active_phase_work(self) -> None:
+        """Pausing during a phase freezes phase work duration and tracks paused interval."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log = root / "unit-pause000001" / "runs" / "run-pause.jsonl"
+            t_start = iso(200)
+            t_crit_start = iso(180)
+            t_pause = iso(140)   # 40s of active critic
+            t_resume = iso(40)   # 100s of pause
+            t_crit_end = iso(20) # 20s of active critic after resume -> total 60s
+            t_done = iso(10)
+
+            write_event(log, started_event("run-pause", 900, t_start, "/repo/pause"))
+            write_event(log, {"ts": t_crit_start, "run": "run-pause", "event": "phase.started", "issue": "sample#01", "phase": "Critic", "data": {}})
+            write_event(log, {"ts": t_pause, "run": "run-pause", "event": "issue.paused", "issue": "sample#01", "data": {"role": "critic", "reason": "verification_unavailable", "remedy": "Start Docker"}})
+
+            # Check in-pause state
+            now_during_pause = dashboard._parse_ts(iso(80))
+            runs_paused = dashboard.collect_runs(root, now=now_during_pause)
+            issue_p = runs_paused[0]["issues"][0]
+            self.assertEqual("verification-paused", issue_p["lifecycleState"])
+            self.assertEqual("verification_unavailable", issue_p["pauseReason"])
+            self.assertEqual("Start Docker", issue_p["pauseRemedy"])
+            self.assertEqual(40, issue_p["phaseDurations"]["Critic"])
+            self.assertGreaterEqual(issue_p["pausedSeconds"], 59)
+
+            # Resume and complete
+            write_event(log, {"ts": t_resume, "run": "run-pause", "event": "phase.started", "issue": "sample#01", "phase": "Critic", "data": {}})
+            write_event(log, {"ts": t_crit_end, "run": "run-pause", "event": "phase.finished", "issue": "sample#01", "phase": "Critic", "data": {}})
+            write_event(log, {"ts": t_done, "run": "run-pause", "event": "issue.done", "issue": "sample#01", "data": {"strategy": "branch-merge"}})
+
+            runs_done = dashboard.collect_runs(root, now=time.time())
+            issue_d = runs_done[0]["issues"][0]
+            self.assertEqual(60, issue_d["phaseDurations"]["Critic"], "Critic must only be charged 60s active work, not pause time")
+            self.assertEqual(100, issue_d["pausedSeconds"])
+            self.assertEqual(170, issue_d["totalCycleSeconds"]) # 180 - 10 = 170s wall time
+            self.assertEqual(1, len(issue_d["pausedIntervals"]))
+            self.assertEqual(100, issue_d["pausedIntervals"][0]["seconds"])
+
+    def test_result_ready_and_consumed_track_pending_host_handling(self) -> None:
+        """Result-ready and consumed track pending host handling without backfilling legacy logs."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log = root / "unit-result000001" / "runs" / "run-res.jsonl"
+            t_start = iso(100)
+            t_crit_start = iso(90)
+            t_crit_finish = iso(70)
+            t_ready = iso(70)
+            t_consumed = iso(40) # 30s pending
+            t_done = iso(10)
+
+            write_event(log, started_event("run-res", 900, t_start, "/repo/res"))
+            write_event(log, {"ts": t_crit_start, "run": "run-res", "event": "phase.started", "issue": "sample#01", "phase": "Critic", "data": {}})
+            write_event(log, {"ts": t_crit_finish, "run": "run-res", "event": "phase.finished", "issue": "sample#01", "phase": "Critic", "data": {}})
+            write_event(log, {"ts": t_ready, "run": "run-res", "event": "role.result.ready", "issue": "sample#01", "data": {"role": "critic", "invocationId": "inv-1", "worktree": "/wt/1", "branch": "feat/1", "revision": "rev1", "modelProgress": "unknown", "resultHash": "h1"}})
+
+            # During pending host handling
+            runs_pending = dashboard.collect_runs(root, now=dashboard._parse_ts(iso(50)))
+            issue_pend = runs_pending[0]["issues"][0]
+            self.assertEqual("result-pending-integration", issue_pend["lifecycleState"])
+            self.assertEqual(20, issue_pend["pendingHostSeconds"])
+
+            # Consumed
+            write_event(log, {"ts": t_consumed, "run": "run-res", "event": "role.result.consumed", "issue": "sample#01", "data": {"role": "critic", "invocationId": "inv-1", "worktree": "/wt/1", "branch": "feat/1", "revision": "rev1", "modelProgress": "unknown", "resultHash": "h1"}})
+            write_event(log, {"ts": t_done, "run": "run-res", "event": "issue.done", "issue": "sample#01", "data": {"strategy": "branch-merge"}})
+
+            runs_done = dashboard.collect_runs(root, now=time.time())
+            issue_d = runs_done[0]["issues"][0]
+            self.assertEqual(30, issue_d["pendingHostSeconds"])
+
+    def test_parallel_issues_do_not_inflate_run_duration(self) -> None:
+        """Parallel issues running simultaneously do not sum into an inflated run wall clock duration."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log = root / "unit-parallel0001" / "runs" / "run-par.jsonl"
+            t_start = iso(100)
+            t_phase_start = iso(90)
+            t_done = iso(30) # run span is 70s
+
+            write_event(log, started_event("run-par", 900, t_start, "/repo/par"))
+            write_event(log, {"ts": t_phase_start, "run": "run-par", "event": "phase.started", "issue": "sample#01", "phase": "Implement", "data": {}})
+            write_event(log, {"ts": t_phase_start, "run": "run-par", "event": "phase.started", "issue": "sample#02", "phase": "Implement", "data": {}})
+            write_event(log, {"ts": t_done, "run": "run-par", "event": "issue.done", "issue": "sample#01", "data": {}})
+            write_event(log, {"ts": t_done, "run": "run-par", "event": "issue.done", "issue": "sample#02", "data": {}})
+            write_event(log, {"ts": t_done, "run": "run-par", "event": "run.finished", "data": {"status": "success"}})
+
+            runs = dashboard.collect_runs(root, now=time.time())
+            run = runs[0]
+            self.assertEqual(60, run["issues"][0]["totalCycleSeconds"])
+            self.assertEqual(60, run["issues"][1]["totalCycleSeconds"])
+            self.assertEqual(70, run["wallClockSeconds"])
+            self.assertEqual("done", run["lifecycleState"])
+
+    def test_malformed_records_produce_incomplete_evidence_flag(self) -> None:
+        """Duplicate starts, missing finishes, and post-finish records flag timingEvidence as incomplete."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log = root / "unit-incomp000001" / "runs" / "run-incomp.jsonl"
+            t_start = iso(100)
+            t_impl1 = iso(90)
+            t_impl_dup = iso(80)
+            t_rev = iso(60)
+            t_done = iso(40)
+            t_post = iso(20)
+
+            write_event(log, started_event("run-incomp", 900, t_start, "/repo/incomp"))
+            write_event(log, {"ts": t_impl1, "run": "run-incomp", "event": "phase.started", "issue": "sample#01", "phase": "Implement", "data": {}})
+            write_event(log, {"ts": t_impl_dup, "run": "run-incomp", "event": "phase.started", "issue": "sample#01", "phase": "Implement", "data": {}})
+            write_event(log, {"ts": t_rev, "run": "run-incomp", "event": "phase.started", "issue": "sample#01", "phase": "Review", "data": {}})
+            write_event(log, {"ts": t_done, "run": "run-incomp", "event": "issue.done", "issue": "sample#01", "data": {}})
+            write_event(log, {"ts": t_post, "run": "run-incomp", "event": "phase.started", "issue": "sample#01", "phase": "Integrate", "data": {}})
+
+            runs = dashboard.collect_runs(root, now=time.time())
+            issue = runs[0]["issues"][0]
+            self.assertEqual("incomplete", issue["timingEvidence"])
+
+    def test_heartbeat_is_not_labelled_as_model_reasoning_or_progress(self) -> None:
+        """Steps containing only heartbeats return None from derive_live_activity."""
+        heartbeat_steps = [
+            {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "heartbeat"}]},
+            {"type": "PLANNER_RESPONSE", "thinking": "heartbeat check"},
+        ]
+        self.assertIsNone(dashboard.derive_live_activity(heartbeat_steps))
+
+        normal_steps = [
+            {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "run_command"}]},
+        ]
+        self.assertEqual("Tool: run_command", dashboard.derive_live_activity(normal_steps))
+
+
 if __name__ == "__main__":
     unittest.main()

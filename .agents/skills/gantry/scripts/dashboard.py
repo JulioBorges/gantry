@@ -72,6 +72,19 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
     repo_root = data.get("repositoryRoot", "")
     project_name = Path(repo_root).name if repo_root else unit_id
 
+    run_started_ts = _parse_ts(started["ts"])
+    run_finished_ts = None
+    for event in events:
+        if event.get("event") in ("run.finished", "run.cancelled"):
+            run_finished_ts = _parse_ts(event["ts"])
+            break
+    if run_finished_ts is not None:
+        run_wall_clock = max(0, int(run_finished_ts - run_started_ts))
+    else:
+        run_wall_clock = max(0, int(now - run_started_ts))
+
+    is_run_stale = (now - last_activity_ts) >= stale_after
+
     issues: dict[str, dict] = {}
     compaction_at = None
     for event in events[1:]:
@@ -95,6 +108,7 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
                 "firstPhaseStartedAt": None,
                 "completedAt": None,
                 "totalCycleSeconds": None,
+                "wallClockSeconds": None,
                 "phaseDurations": {
                     "Plan": 0,
                     "Implement": 0,
@@ -102,9 +116,23 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
                     "Critic": 0,
                     "Integrate": 0,
                 },
+                "pausedSeconds": 0,
+                "pausedIntervals": [],
+                "pendingHostSeconds": 0,
+                "operatorWaitSeconds": 0,
                 "_currentPhase": None,
                 "_currentPhaseStartedAt": None,
+                "_pausedStartedAt": None,
+                "_pauseReason": None,
+                "_pendingResultStartedAt": None,
+                "_operatorWaitStartedAt": None,
+                "_lastEventTs": None,
                 "operatorWaiting": False,
+                "lifecycleState": "ready",
+                "timingEvidence": "complete",
+                "pauseReason": None,
+                "pauseRemedy": None,
+                "waitingReason": None,
                 "project": project_name,
                 "unitId": unit_id,
                 "run": started["run"],
@@ -113,24 +141,67 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
         )
         edata = event.get("data") or {}
         ts = event["ts"]
+        ts_num = _parse_ts(ts)
+
+        if state["_lastEventTs"] is not None and ts_num < state["_lastEventTs"]:
+            state["timingEvidence"] = "incomplete"
+        state["_lastEventTs"] = ts_num
+
+        if state["completedAt"] is not None and name != "issue.done":
+            state["timingEvidence"] = "incomplete"
+            state["hasPostFinishRecords"] = True
+
         if name == "phase.started":
             phase = event["phase"]
             if state["firstPhaseStartedAt"] is None:
                 state["firstPhaseStartedAt"] = ts
 
+            if state["_pausedStartedAt"] is not None:
+                pdur = max(0, int(ts_num - _parse_ts(state["_pausedStartedAt"])))
+                state["pausedSeconds"] += pdur
+                state["pausedIntervals"].append({
+                    "startedAt": state["_pausedStartedAt"],
+                    "resumedAt": ts,
+                    "seconds": pdur,
+                    "reason": state["_pauseReason"],
+                })
+                state["_pausedStartedAt"] = None
+                state["pauseReason"] = None
+                state["pauseRemedy"] = None
+
+            if state["_pendingResultStartedAt"] is not None:
+                hdur = max(0, int(ts_num - _parse_ts(state["_pendingResultStartedAt"])))
+                state["pendingHostSeconds"] += hdur
+                state["_pendingResultStartedAt"] = None
+
+            if state["_operatorWaitStartedAt"] is not None:
+                owdur = max(0, int(ts_num - _parse_ts(state["_operatorWaitStartedAt"])))
+                state["operatorWaitSeconds"] += owdur
+                state["_operatorWaitStartedAt"] = None
+
             if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
                 prev_phase = state["_currentPhase"]
-                prev_dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
-                state["phaseDurations"][prev_phase] = state["phaseDurations"].get(prev_phase, 0) + prev_dur
+                if prev_phase == phase:
+                    state["timingEvidence"] = "incomplete"
+                else:
+                    state["timingEvidence"] = "incomplete"
+                    prev_dur = max(0, int(ts_num - _parse_ts(state["_currentPhaseStartedAt"])))
+                    state["phaseDurations"][prev_phase] = state["phaseDurations"].get(prev_phase, 0) + prev_dur
 
             state["_currentPhase"] = phase
             state["_currentPhaseStartedAt"] = ts
             state["column"] = phase
             state["phaseStartedAt"] = ts
+            state["lifecycleState"] = "executing"
+
             if phase == "Integrate":
                 state["operatorWaiting"] = False
             elif "operatorWaiting" in edata:
                 state["operatorWaiting"] = bool(edata.get("operatorWaiting", False))
+                if state["operatorWaiting"]:
+                    state["lifecycleState"] = "decision-required"
+                    state["_operatorWaitStartedAt"] = ts
+
             if "branch" in edata:
                 state["branch"] = edata["branch"]
             if "worktree" in edata:
@@ -139,44 +210,115 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
                 state["models"] = dict(edata["models"])
             if "correctionBudget" in edata:
                 state["correctionBudget"] = edata["correctionBudget"]
+
         elif name == "phase.finished":
             finished_phase = event.get("phase")
             if state["_currentPhase"] == finished_phase and state["_currentPhaseStartedAt"] is not None:
-                dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
+                dur = max(0, int(ts_num - _parse_ts(state["_currentPhaseStartedAt"])))
                 state["phaseDurations"][finished_phase] = state["phaseDurations"].get(finished_phase, 0) + dur
                 state["_currentPhase"] = None
                 state["_currentPhaseStartedAt"] = None
+            elif state["_currentPhase"] is not None and state["_currentPhase"] != finished_phase:
+                state["timingEvidence"] = "incomplete"
+
             if finished_phase == "Critic":
-                state["operatorWaiting"] = True
-        elif name == "refutation":
+                if not state["operatorWaiting"]:
+                    state["lifecycleState"] = "result-pending-integration"
+                if state["_pendingResultStartedAt"] is None:
+                    state["_pendingResultStartedAt"] = ts
+
+        elif name == "issue.paused":
+            if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
+                dur = max(0, int(ts_num - _parse_ts(state["_currentPhaseStartedAt"])))
+                state["phaseDurations"][state["_currentPhase"]] = state["phaseDurations"].get(state["_currentPhase"], 0) + dur
+                state["_currentPhase"] = None
+                state["_currentPhaseStartedAt"] = None
+            state["_pausedStartedAt"] = ts
+            state["_pauseReason"] = edata.get("reason", "verification_unavailable")
+            state["pauseReason"] = edata.get("reason", "verification_unavailable")
+            state["pauseRemedy"] = edata.get("remedy")
+            state["lifecycleState"] = "verification-paused"
             state["operatorWaiting"] = False
+
+        elif name == "role.result.ready":
+            role = edata.get("role")
+            if role in ("critic", "implementer", "reviewer"):
+                if not state["operatorWaiting"]:
+                    state["lifecycleState"] = "result-pending-integration"
+                if state["_pendingResultStartedAt"] is None:
+                    state["_pendingResultStartedAt"] = ts
+
+        elif name == "role.result.consumed":
+            if state["_pendingResultStartedAt"] is not None:
+                hdur = max(0, int(ts_num - _parse_ts(state["_pendingResultStartedAt"])))
+                state["pendingHostSeconds"] += hdur
+                state["_pendingResultStartedAt"] = None
+            if not state["operatorWaiting"] and state["column"] != "Done":
+                state["lifecycleState"] = "executing"
+
+        elif name == "operator.waiting":
+            state["operatorWaiting"] = True
+            state["waitingReason"] = edata.get("decision", "post_critic_integration")
+            state["lifecycleState"] = "decision-required"
+            if state["_operatorWaitStartedAt"] is None:
+                state["_operatorWaitStartedAt"] = ts
+
         elif name == "operator.approved":
             state["operatorWaiting"] = False
             state["operatorApproved"] = True
+            if state["_operatorWaitStartedAt"] is not None:
+                owdur = max(0, int(ts_num - _parse_ts(state["_operatorWaitStartedAt"])))
+                state["operatorWaitSeconds"] += owdur
+                state["_operatorWaitStartedAt"] = None
+            if state["column"] != "Done":
+                state["lifecycleState"] = "executing"
+
+        elif name == "refutation":
+            state["operatorWaiting"] = False
+            if state["_pendingResultStartedAt"] is not None:
+                hdur = max(0, int(ts_num - _parse_ts(state["_pendingResultStartedAt"])))
+                state["pendingHostSeconds"] += hdur
+                state["_pendingResultStartedAt"] = None
+            state["lifecycleState"] = "executing"
+
         elif name == "subagent.started":
             role = edata.get("role")
             if role:
                 state["models"][role] = edata.get("model")
+
         elif name == "issue.done":
             state["column"] = "Done"
             state["operatorWaiting"] = False
             state["completedAt"] = ts
+            state["lifecycleState"] = "done"
             if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
-                dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
+                dur = max(0, int(ts_num - _parse_ts(state["_currentPhaseStartedAt"])))
                 state["phaseDurations"][state["_currentPhase"]] = state["phaseDurations"].get(state["_currentPhase"], 0) + dur
                 state["_currentPhase"] = None
                 state["_currentPhaseStartedAt"] = None
+            if state["_pendingResultStartedAt"] is not None:
+                hdur = max(0, int(ts_num - _parse_ts(state["_pendingResultStartedAt"])))
+                state["pendingHostSeconds"] += hdur
+                state["_pendingResultStartedAt"] = None
+            if state["_pausedStartedAt"] is not None:
+                pdur = max(0, int(ts_num - _parse_ts(state["_pausedStartedAt"])))
+                state["pausedSeconds"] += pdur
+                state["_pausedStartedAt"] = None
+            if state["_operatorWaitStartedAt"] is not None:
+                owdur = max(0, int(ts_num - _parse_ts(state["_operatorWaitStartedAt"])))
+                state["operatorWaitSeconds"] += owdur
+                state["_operatorWaitStartedAt"] = None
+
         elif name == "issue.blocked":
             state["column"] = "Blocked"
             state["operatorWaiting"] = False
             state["completedAt"] = ts
+            state["lifecycleState"] = "blocked"
             if state["_currentPhase"] is not None and state["_currentPhaseStartedAt"] is not None:
-                dur = max(0, int(_parse_ts(ts) - _parse_ts(state["_currentPhaseStartedAt"])))
+                dur = max(0, int(ts_num - _parse_ts(state["_currentPhaseStartedAt"])))
                 state["phaseDurations"][state["_currentPhase"]] = state["phaseDurations"].get(state["_currentPhase"], 0) + dur
                 state["_currentPhase"] = None
                 state["_currentPhaseStartedAt"] = None
-        elif name == "issue.paused":
-            state["operatorWaiting"] = False
 
     for state in issues.values():
         is_done = state["column"] == "Done" or state["completedAt"] is not None
@@ -184,7 +326,8 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
             if state["completedAt"] is not None and state["firstPhaseStartedAt"] is not None:
                 state["totalCycleSeconds"] = max(0, int(_parse_ts(state["completedAt"]) - _parse_ts(state["firstPhaseStartedAt"])))
             else:
-                state["totalCycleSeconds"] = sum(state["phaseDurations"].values())
+                state["totalCycleSeconds"] = sum(state["phaseDurations"].values()) + state["pausedSeconds"]
+            state["wallClockSeconds"] = state["totalCycleSeconds"]
 
             if state["phaseStartedAt"] is not None and state["completedAt"] is not None:
                 state["elapsedPhaseSeconds"] = max(0, int(_parse_ts(state["completedAt"]) - _parse_ts(state["phaseStartedAt"])))
@@ -195,6 +338,18 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
                 active_elapsed = max(0, int(now - _parse_ts(state["_currentPhaseStartedAt"])))
                 state["phaseDurations"][state["_currentPhase"]] = state["phaseDurations"].get(state["_currentPhase"], 0) + active_elapsed
 
+            if state["_pausedStartedAt"] is not None:
+                active_pause = max(0, int(now - _parse_ts(state["_pausedStartedAt"])))
+                state["pausedSeconds"] = state.get("pausedSeconds", 0) + active_pause
+
+            if state["_pendingResultStartedAt"] is not None:
+                active_pending = max(0, int(now - _parse_ts(state["_pendingResultStartedAt"])))
+                state["pendingHostSeconds"] = state.get("pendingHostSeconds", 0) + active_pending
+
+            if state["_operatorWaitStartedAt"] is not None:
+                active_wait = max(0, int(now - _parse_ts(state["_operatorWaitStartedAt"])))
+                state["operatorWaitSeconds"] = state.get("operatorWaitSeconds", 0) + active_wait
+
             if state["phaseStartedAt"] is not None:
                 state["elapsedPhaseSeconds"] = max(0, int(now - _parse_ts(state["phaseStartedAt"])))
             else:
@@ -204,9 +359,33 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
                 state["totalCycleSeconds"] = max(0, int(now - _parse_ts(state["firstPhaseStartedAt"])))
             else:
                 state["totalCycleSeconds"] = None
+            state["wallClockSeconds"] = state["totalCycleSeconds"]
+
+            if is_run_stale and state["lifecycleState"] != "done":
+                state["lifecycleState"] = "unknown/stale"
 
         state.pop("_currentPhase", None)
         state.pop("_currentPhaseStartedAt", None)
+        state.pop("_pausedStartedAt", None)
+        state.pop("_pauseReason", None)
+        state.pop("_pendingResultStartedAt", None)
+        state.pop("_operatorWaitStartedAt", None)
+        state.pop("_lastEventTs", None)
+
+    if any(e.get("event") in ("run.finished", "run.cancelled") for e in events) or (issues and all(iss["lifecycleState"] in ("done", "blocked") for iss in issues.values())):
+        run_lifecycle = "done"
+    elif is_run_stale:
+        run_lifecycle = "unknown/stale"
+    elif any(iss["lifecycleState"] == "decision-required" for iss in issues.values()):
+        run_lifecycle = "decision-required"
+    elif any(iss["lifecycleState"] == "verification-paused" for iss in issues.values()):
+        run_lifecycle = "verification-paused"
+    elif any(iss["lifecycleState"] == "result-pending-integration" for iss in issues.values()):
+        run_lifecycle = "result-pending-integration"
+    elif any(iss["lifecycleState"] == "executing" for iss in issues.values()):
+        run_lifecycle = "executing"
+    else:
+        run_lifecycle = "ready"
 
     return {
         "unitId": unit_id,
@@ -215,8 +394,10 @@ def build_run(unit_id: str, events: list[dict], now: float) -> dict:
         "tier": data["tier"],
         "staleAfterSeconds": stale_after,
         "lastActivityAt": activity_events[-1]["ts"] if activity_events else started["ts"],
-        "stale": (now - last_activity_ts) >= stale_after,
+        "stale": is_run_stale,
         "compactionAt": compaction_at,
+        "wallClockSeconds": run_wall_clock,
+        "lifecycleState": run_lifecycle,
         "issues": sorted(issues.values(), key=lambda item: item["issue"]),
     }
 
@@ -322,9 +503,13 @@ def derive_live_activity(steps: list[dict], operator_waiting: bool = False) -> s
         tool_calls = step.get("tool_calls")
         if tool_calls and isinstance(tool_calls, list) and len(tool_calls) > 0:
             tool_name = tool_calls[-1].get("name", "tool")
+            if tool_name and tool_name.lower() in ("heartbeat", "ping", "keepalive"):
+                continue
             return f"Tool: {tool_name}"
         thinking = step.get("thinking")
         if thinking and isinstance(thinking, str) and thinking.strip():
+            if "heartbeat" in thinking.lower():
+                continue
             return "Thinking..."
         if step.get("type") == "PLANNER_RESPONSE":
             return "Thinking..."
