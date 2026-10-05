@@ -46,6 +46,7 @@
   - Harness support tiers and acceptance criteria
 - **[docs/adr/](./adr/)** - Architecture Decision Records (ADR-0004 explains the pivot from engine to skill pack)
 - **[Role Execution & Cross-Harness Guide](./role-execution.md)** - Operator guide for multi-harness execution, discovery, and recovery
+- **[Attributable Timing & Observability](./timing-and-observability.md)** - Truthful timing, nonoverlapping intervals, and waiting state observability
 - **[Using Gantry](./usage.md)** - Recommended skill workflow and advanced Python CLI reference
 
 ### Vocabulary

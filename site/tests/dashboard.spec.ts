@@ -435,5 +435,167 @@ test.describe('Dashboard Theme & Design Visual Regression Check', () => {
     // Visual screenshot verification
     await page.screenshot({ path: 'site/test-results/server-stopped.png' });
   });
+
+  test('should render paused, real-approval, accepted-result-pending and incomplete-history cases without browser errors', async ({ page }) => {
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        consoleErrors.push(msg.text());
+      }
+    });
+
+    await page.route('**/api/state', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          columns: ['Ready', 'Plan', 'Implement', 'Review', 'Critic', 'Integrate', 'Done', 'Blocked'],
+          projects: [{ unitId: 'unit-truth-01', name: 'TruthProject', repositoryRoot: '/repo/truth' }],
+          runs: [
+            {
+              unitId: 'unit-truth-01',
+              run: 'run-truth-01',
+              repositoryRoot: '/repo/truth',
+              tier: 'supported',
+              staleAfterSeconds: 900,
+              lastActivityAt: '2026-10-05T12:00:00Z',
+              stale: false,
+              wallClockSeconds: 150,
+              lifecycleState: 'executing',
+              issues: [
+                {
+                  issue: 'sample#01',
+                  column: 'Critic',
+                  branch: 'gantry/sample-01',
+                  worktree: '/wt/1',
+                  lifecycleState: 'verification-paused',
+                  pauseReason: 'verification_unavailable',
+                  pauseRemedy: 'Start Docker daemon',
+                  pausedSeconds: 120,
+                  totalCycleSeconds: 160,
+                  elapsedPhaseSeconds: 40,
+                  phaseDurations: { Plan: 0, Implement: 0, Review: 0, Critic: 40, Integrate: 0 },
+                  operatorWaiting: false,
+                  project: 'TruthProject',
+                  unitId: 'unit-truth-01',
+                  run: 'run-truth-01',
+                },
+                {
+                  issue: 'sample#02',
+                  column: 'Critic',
+                  branch: 'gantry/sample-02',
+                  worktree: '/wt/2',
+                  lifecycleState: 'decision-required',
+                  operatorWaiting: true,
+                  pausedSeconds: 0,
+                  totalCycleSeconds: 80,
+                  elapsedPhaseSeconds: 80,
+                  phaseDurations: { Plan: 0, Implement: 0, Review: 0, Critic: 80, Integrate: 0 },
+                  project: 'TruthProject',
+                  unitId: 'unit-truth-01',
+                  run: 'run-truth-01',
+                },
+                {
+                  issue: 'sample#03',
+                  column: 'Critic',
+                  branch: 'gantry/sample-03',
+                  worktree: '/wt/3',
+                  lifecycleState: 'result-pending-integration',
+                  operatorWaiting: false,
+                  pendingHostSeconds: 45,
+                  totalCycleSeconds: 90,
+                  elapsedPhaseSeconds: 90,
+                  phaseDurations: { Plan: 0, Implement: 0, Review: 0, Critic: 90, Integrate: 0 },
+                  project: 'TruthProject',
+                  unitId: 'unit-truth-01',
+                  run: 'run-truth-01',
+                },
+                {
+                  issue: 'sample#04',
+                  column: 'Implement',
+                  branch: 'gantry/sample-04',
+                  worktree: '/wt/4',
+                  lifecycleState: 'executing',
+                  timingEvidence: 'incomplete',
+                  operatorWaiting: false,
+                  pausedSeconds: 0,
+                  totalCycleSeconds: 50,
+                  elapsedPhaseSeconds: 50,
+                  phaseDurations: { Plan: 0, Implement: 50, Review: 0, Critic: 0, Integrate: 0 },
+                  project: 'TruthProject',
+                  unitId: 'unit-truth-01',
+                  run: 'run-truth-01',
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    });
+
+    try {
+      const response = await page.goto('http://127.0.0.1:4600/', { timeout: 3000 });
+      if (!response || !response.ok()) {
+        test.skip(true, 'Local dashboard server is not active on port 4600');
+        return;
+      }
+    } catch {
+      test.skip(true, 'Local dashboard server is not active on port 4600');
+      return;
+    }
+
+    await page.waitForSelector('.card');
+
+    // 1. Verify Verification Paused card
+    const pausedCard = page.locator('.card', { hasText: 'sample#01' });
+    await expect(pausedCard).toBeVisible();
+    await expect(pausedCard.locator('.badge.paused').first()).toHaveText('PAUSED (VERIFICATION)');
+    await expect(pausedCard.locator('.badge', { hasText: 'paused: 2m 0s' })).toBeVisible();
+
+    // 2. Verify Decision Required card has Aprovar Gate button
+    const approvalCard = page.locator('.card', { hasText: 'sample#02' });
+    await expect(approvalCard).toBeVisible();
+    await expect(approvalCard.locator('.badge.waiting')).toHaveText('AWAITING OPERATOR');
+    await expect(approvalCard.locator('.btn-approve-gate')).toBeVisible();
+
+    // 3. Verify Accepted Result Pending card does NOT have Aprovar Gate button
+    const pendingCard = page.locator('.card', { hasText: 'sample#03' });
+    await expect(pendingCard).toBeVisible();
+    await expect(pendingCard.locator('.badge.pending')).toHaveText('RESULT PENDING INTEGRATION');
+    await expect(pendingCard.locator('.btn-approve-gate')).toHaveCount(0);
+
+    // 4. Verify Incomplete timing card
+    const incompCard = page.locator('.card', { hasText: 'sample#04' });
+    await expect(incompCard).toBeVisible();
+    await expect(incompCard.locator('.badge.incomplete-timing')).toHaveText(/timing: incomplete/i);
+
+    // 5. Test modal details for paused issue
+    await pausedCard.click();
+    const modal = page.locator('#execution-modal');
+    await expect(modal).toBeVisible();
+    await expect(page.locator('#dur-paused')).toHaveText('2m 0s');
+    await expect(page.locator('#modal-pause-alert')).toBeVisible();
+    await expect(page.locator('#modal-pause-alert-text')).toContainText('Start Docker daemon');
+
+    // 6. Test Keyboard Navigation: Escape key closes modal
+    await page.keyboard.press('Escape');
+    await expect(modal).toHaveClass(/hidden/);
+
+    // 7. Test Keyboard Navigation: Enter key on focused card opens modal
+    await approvalCard.focus();
+    await page.keyboard.press('Enter');
+    await expect(modal).toBeVisible();
+    await expect(page.locator('#modal-gate-alert')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(modal).toHaveClass(/hidden/);
+
+    // 8. Test Mobile fixture viewport
+    await page.setViewportSize({ width: 375, height: 667 });
+    await expect(page.locator('.swimlane')).toBeVisible();
+    await expect(page.locator('.column')).toHaveCount(8);
+
+    // 9. Zero console errors
+    expect(consoleErrors).toEqual([]);
+  });
 });
 
