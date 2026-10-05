@@ -72,12 +72,19 @@
         <span id="modal-meta-branch" class="meta-item">BRANCH: -</span>
       </div>
       <div id="modal-phase-durations" class="modal-durations-strip">
-        <div class="duration-item"><span class="duration-label">Plan:</span><span id="dur-plan" class="duration-value">-</span></div>
-        <div class="duration-item"><span class="duration-label">Implement:</span><span id="dur-implement" class="duration-value">-</span></div>
-        <div class="duration-item"><span class="duration-label">Review:</span><span id="dur-review" class="duration-value">-</span></div>
-        <div class="duration-item"><span class="duration-label">Critic:</span><span id="dur-critic" class="duration-value">-</span></div>
-        <div class="duration-item"><span class="duration-label">Integrate:</span><span id="dur-integrate" class="duration-value">-</span></div>
-        <div class="duration-item total-item"><span class="duration-label">Total:</span><span id="dur-total" class="duration-value">-</span></div>
+        <div class="duration-item" title="Active Plan phase duration"><span class="duration-label" aria-label="Active Plan phase duration">Plan:</span><span id="dur-plan" class="duration-value">-</span></div>
+        <div class="duration-item" title="Active Implement phase duration"><span class="duration-label" aria-label="Active Implement phase duration">Implement:</span><span id="dur-implement" class="duration-value">-</span></div>
+        <div class="duration-item" title="Active Review phase duration"><span class="duration-label" aria-label="Active Review phase duration">Review:</span><span id="dur-review" class="duration-value">-</span></div>
+        <div class="duration-item" title="Active Critic phase duration"><span class="duration-label" aria-label="Active Critic phase duration">Critic:</span><span id="dur-critic" class="duration-value">-</span></div>
+        <div class="duration-item" title="Active Integrate phase duration"><span class="duration-label" aria-label="Active Integrate phase duration">Integrate:</span><span id="dur-integrate" class="duration-value">-</span></div>
+        <div class="duration-item" title="Recorded paused interval"><span class="duration-label" aria-label="Recorded paused interval">Paused:</span><span id="dur-paused" class="duration-value">-</span></div>
+        <div class="duration-item total-item" title="Total elapsed wall time"><span class="duration-label" aria-label="Total elapsed wall time">Total:</span><span id="dur-total" class="duration-value">-</span></div>
+      </div>
+      <div id="modal-pause-alert" class="gate-alert paused hidden">
+        <div class="gate-alert-content">
+          <span class="gate-alert-icon">⏸️</span>
+          <span id="modal-pause-alert-text">Execução pausada aguardando pré-requisito de verificação.</span>
+        </div>
       </div>
       <div id="modal-gate-alert" class="gate-alert hidden">
         <div class="gate-alert-content">
