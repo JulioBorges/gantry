@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from common import repo_root, resolve_policy
+from common import read_profile, repo_root, resolve_policy
 import result  # noqa: E402
 import runlog  # noqa: E402
 
@@ -68,7 +68,7 @@ class ExecutionFailureError(RuntimeError):
     """Runtime failure with telemetry-safe diagnostics, never raw streams or exception text."""
 
 
-def resolve_host(*, root: Path, explicit_host: str | None = None) -> dict[str, Any]:
+def resolve_host(*, root: Path, explicit_host: str | None = None, profile_root: Path | None = None) -> dict[str, Any]:
     """Diagnose invocation identity without promoting saved preferences to proof.
 
     No integration currently supplies a verifiable current-invocation adapter.
@@ -90,8 +90,22 @@ def resolve_host(*, root: Path, explicit_host: str | None = None) -> dict[str, A
         diagnosis["status"] = "invalid"
         diagnosis["diagnostics"] = ["Invalid repository policy; inspect .gantry/config.json and repair it through setup. No fallback was used."]
         return diagnosis
-    diagnosis["savedPreference"] = saved
-    if saved is not None:
+
+    profile_host = None
+    try:
+        prof = read_profile(root, custom_profile_root=profile_root)
+        profile_host = prof.get("hostHarness")
+    except Exception as exc:
+        diagnosis["status"] = "invalid"
+        diagnosis["diagnostics"] = [f"Invalid operator profile: {exc}"]
+        return diagnosis
+
+    if profile_host is not None:
+        saved = profile_host
+        diagnosis["savedPreference"] = saved
+        diagnosis["sources"].append({"source": "profile:execution.hostHarness", "kind": "preference", "host": profile_host})
+    elif saved is not None:
+        diagnosis["savedPreference"] = saved
         diagnosis["sources"].append({"source": "policy:execution.hostHarness", "kind": "preference", "host": saved})
     # These identifiers can be inherited by nested tools. Presence is a hint,
     # never proof, and their values must never enter diagnostics.
@@ -323,14 +337,16 @@ def resolve_single_role(
     run_overrides: dict | None = None,
     issue_overrides: dict | None = None,
     environment_defaults: dict | None = None,
+    profile_overlay: dict | None = None,
 ) -> dict[str, Any]:
     """Resolve the effective execution selection for a single role.
 
     Resolution order:
     1. Issue-role override
     2. Run-role override
-    3. Repository role default (policy["execution"]["roles"])
-    4. Explicitly confirmed environment default
+    3. Operator profile overlay
+    4. Repository role default (policy["execution"]["roles"])
+    5. Explicitly confirmed environment default
 
     Derived roles inherit from their parent role at each level unless explicitly set.
     """
@@ -350,14 +366,21 @@ def resolve_single_role(
         if parent and parent in run_overrides:
             return _fill_defaults(run_overrides[parent])
 
-    # 3. Repository role default
+    # 3. Operator profile overlay
+    if profile_overlay:
+        if role in profile_overlay:
+            return _fill_defaults(profile_overlay[role])
+        if parent and parent in profile_overlay:
+            return _fill_defaults(profile_overlay[parent])
+
+    # 4. Repository role default
     roles_policy = (policy or {}).get("execution", {}).get("roles", {})
     if role in roles_policy:
         return _fill_defaults(roles_policy[role])
     if parent and parent in roles_policy:
         return _fill_defaults(roles_policy[parent])
 
-    # 4. Environment default
+    # 5. Environment default
     env_defs = environment_defaults or ENVIRONMENT_DEFAULTS
     if role in env_defs:
         return _fill_defaults(env_defs[role])
@@ -372,8 +395,19 @@ def resolve_roles(
     run_overrides: dict | None = None,
     issue_overrides: dict | None = None,
     environment_defaults: dict | None = None,
+    profile_overlay: dict | None = None,
+    *,
+    root: Path | None = None,
+    profile_root: Path | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Resolve all execution roles."""
+    if profile_overlay is None and root is not None:
+        try:
+            prof = read_profile(root, custom_profile_root=profile_root)
+            profile_overlay = prof.get("roles")
+        except Exception:
+            profile_overlay = None
+
     return {
         r: resolve_single_role(
             r,
@@ -381,6 +415,7 @@ def resolve_roles(
             run_overrides=run_overrides,
             issue_overrides=issue_overrides,
             environment_defaults=environment_defaults,
+            profile_overlay=profile_overlay,
         )
         for r in ALL_ROLES
     }
@@ -1003,6 +1038,7 @@ def main() -> int:
     host_parser.add_argument("--run-id", help="existing Run to compare without creating or changing state")
     host_parser.add_argument("--state-root", help="override machine-local Run state")
     host_parser.add_argument("--cwd", default=".", help="repository root path")
+    host_parser.add_argument("--profile-root", help="override machine-local profile directory")
     host_parser.add_argument("--json", action="store_true", help="output JSON")
     host_parser.add_argument("--require-resolved", action="store_true", help="fail closed at workflow entry and include actual host capabilities")
 
@@ -1059,7 +1095,8 @@ def main() -> int:
     args = parser.parse_args()
     root = Path(args.cwd).resolve() if getattr(args, "cwd", None) else Path(".").resolve()
     if args.command == "host":
-        diagnosis = resolve_host(root=root, explicit_host=args.host)
+        p_root = Path(args.profile_root).resolve() if getattr(args, "profile_root", None) else None
+        diagnosis = resolve_host(root=root, explicit_host=args.host, profile_root=p_root)
         if args.require_resolved and diagnosis["status"] == "resolved":
             capability_path = Path(__file__).resolve().parents[1] / "capabilities" / f"{diagnosis['effectiveHost']}.json"
             try:
@@ -1109,10 +1146,17 @@ def main() -> int:
     issue_ov = json.loads(args.issue_overrides) if getattr(args, "issue_overrides", None) else None
 
     if args.command == "resolve":
+        profile_overlay = None
+        try:
+            prof = read_profile(root)
+            profile_overlay = prof.get("roles")
+        except Exception:
+            profile_overlay = None
+
         if args.role:
-            res = resolve_single_role(args.role, policy=policy, run_overrides=run_ov, issue_overrides=issue_ov)
+            res = resolve_single_role(args.role, policy=policy, run_overrides=run_ov, issue_overrides=issue_ov, profile_overlay=profile_overlay)
         else:
-            res = resolve_roles(policy=policy, run_overrides=run_ov, issue_overrides=issue_ov)
+            res = resolve_roles(policy=policy, run_overrides=run_ov, issue_overrides=issue_ov, profile_overlay=profile_overlay)
         if args.json:
             print(json.dumps(res, indent=2))
         else:

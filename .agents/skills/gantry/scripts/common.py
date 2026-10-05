@@ -4,10 +4,12 @@ from __future__ import annotations
 import copy
 import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 DEFAULT_POLICY = {
     "artifacts": {
@@ -33,6 +35,15 @@ DEFAULT_POLICY = {
     "dashboard": {"staleAfterSeconds": 900},
     "caveman": False,
     "execution": {"roles": {}},
+}
+
+SUPPORTED_HARNESSES = {"antigravity", "claude-code", "codex", "opencode"}
+
+PROHIBITED_PROFILE_KEY_TOKENS = {
+    "token", "tokens", "key", "keys", "secret", "secrets", "auth",
+    "password", "passwords", "credential", "credentials", "transcript",
+    "transcripts", "output", "outputs", "command", "commands",
+    "diff", "diffs", "env", "environment",
 }
 
 REF_RE = re.compile(r"`?([a-z0-9][a-z0-9-]*)#(\d{2,})`?")
@@ -74,6 +85,95 @@ def resolve_policy(root: Path | None = None) -> dict:
     if not isinstance(overlay, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return _merge_policy(DEFAULT_POLICY, overlay)
+
+
+def profile_root(env: dict[str, str] | None = None) -> Path:
+    env_map = env if env is not None else os.environ
+    custom = env_map.get("GANTRY_PROFILE_ROOT")
+    if custom:
+        return Path(custom).resolve()
+    return (Path.home() / ".gantry" / "profiles").resolve()
+
+
+def profile_dir(root: Path, custom_profile_root: Path | None = None) -> Path:
+    import runlog
+    base = custom_profile_root.resolve() if custom_profile_root else profile_root()
+    uid = runlog.unit_id(root)
+    return base / uid
+
+
+def profile_path(root: Path, custom_profile_root: Path | None = None) -> Path:
+    return profile_dir(root, custom_profile_root) / "execution.json"
+
+
+def validate_profile(profile_data: dict[str, Any]) -> None:
+    if not isinstance(profile_data, dict):
+        raise ValueError("Profile must be a JSON object")
+
+    def _check_keys(d: dict):
+        for k, v in d.items():
+            k_lower = k.lower()
+            for token in PROHIBITED_PROFILE_KEY_TOKENS:
+                if token in k_lower:
+                    raise ValueError(f"Prohibited key '{k}' in profile")
+            if isinstance(v, dict):
+                _check_keys(v)
+
+    _check_keys(profile_data)
+
+    allowed_top = {"hostHarness", "roles"}
+    unexpected = set(profile_data.keys()) - allowed_top
+    if unexpected:
+        raise ValueError(f"Unexpected top-level keys in profile: {sorted(unexpected)}")
+
+    host = profile_data.get("hostHarness")
+    if host is not None:
+        if not isinstance(host, str) or host not in SUPPORTED_HARNESSES:
+            raise ValueError(f"Unsupported profile hostHarness: {host}")
+
+    roles = profile_data.get("roles")
+    if roles is not None:
+        if not isinstance(roles, dict):
+            raise ValueError("Profile roles must be an object")
+        allowed_role_keys = {"harness", "model", "effort"}
+        for r_name, r_val in roles.items():
+            if not isinstance(r_val, dict):
+                raise ValueError(f"Role '{r_name}' in profile must be an object")
+            extra = set(r_val.keys()) - allowed_role_keys
+            if extra:
+                raise ValueError(f"Unexpected fields in role '{r_name}': {sorted(extra)}")
+            h = r_val.get("harness")
+            if h is not None and (not isinstance(h, str) or h not in SUPPORTED_HARNESSES):
+                raise ValueError(f"Unsupported harness '{h}' in role '{r_name}'")
+            m = r_val.get("model")
+            if m is not None and not isinstance(m, str):
+                raise ValueError(f"Model in role '{r_name}' must be a string")
+            eff = r_val.get("effort")
+            if eff is not None and not isinstance(eff, str):
+                raise ValueError(f"Effort in role '{r_name}' must be a string")
+
+
+def read_profile(root: Path, custom_profile_root: Path | None = None) -> dict[str, Any]:
+    try:
+        path = profile_path(root, custom_profile_root)
+    except Exception:
+        return {}
+    if not path.exists():
+        return {}
+    try:
+        content = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"Invalid profile JSON at {path}: {exc}") from exc
+    validate_profile(content)
+    return content
+
+
+def write_profile(root: Path, profile_data: dict[str, Any], custom_profile_root: Path | None = None) -> Path:
+    validate_profile(profile_data)
+    path = profile_path(root, custom_profile_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(profile_data, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def resolve_effective_template(root: Path | None, kind: str) -> Path:

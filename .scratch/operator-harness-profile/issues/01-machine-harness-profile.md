@@ -1,7 +1,7 @@
 # Keep each operator's harness in a machine profile
 
 Type: issue
-Status: draft
+Status: done
 Slice: `operator-harness-profile#01`
 Spec: `.scratch/operator-harness-profile/spec.md`
 Created: 2026-10-03
@@ -26,13 +26,13 @@ Give each operator a machine-local harness profile at `~/.gantry/profiles/<unit-
 
 ## Acceptance criteria
 
-- [ ] An approved personal switch writes only `~/.gantry/profiles/<unit-id>/execution.json` and leaves `.gantry/config.json`, adapter files and `AGENTS.md` byte-for-byte unchanged.
-- [ ] Two temporary homes with different profiles resolve different hosts from one unchanged tracked policy.
-- [ ] Explicit `--host` selects that invocation, writes no profile and no tracked policy, and outranks the profile and a legacy tracked host.
-- [ ] Role resolution order is Issue override, Run override, profile overlay, repository default, then confirmed environment default.
-- [ ] Shared setup against an ignored `.gantry/config.json` exits with the tracked-policy migration proposal and writes no ignore rule and no policy.
-- [ ] An approved legacy migration removes tracked `execution.hostHarness` after the profile contains it; until approval, readers use the legacy key only when the profile has no host.
-- [ ] The profile contains harness, model and effort only. A new ADR records `~/.gantry/profiles/<unit-id>/` as the operator home beside observational `~/.gantry/state/`.
+- [x] An approved personal switch writes only `~/.gantry/profiles/<unit-id>/execution.json` and leaves `.gantry/config.json`, adapter files and `AGENTS.md` byte-for-byte unchanged.
+- [x] Two temporary homes with different profiles resolve different hosts from one unchanged tracked policy.
+- [x] Explicit `--host` selects that invocation, writes no profile and no tracked policy, and outranks the profile and a legacy tracked host.
+- [x] Role resolution order is Issue override, Run override, profile overlay, repository default, then confirmed environment default.
+- [x] Shared setup against an ignored `.gantry/config.json` exits with the tracked-policy migration proposal and writes no ignore rule and no policy.
+- [x] An approved legacy migration removes tracked `execution.hostHarness` after the profile contains it; until approval, readers use the legacy key only when the profile has no host.
+- [x] The profile contains harness, model and effort only. A new ADR records `~/.gantry/profiles/<unit-id>/` as the operator home beside observational `~/.gantry/state/`.
 
 ## Blocked by
 
