@@ -200,6 +200,16 @@ const runCommand = async (command, options = {{}}) => {{
 }};
 const agent = async (prompt, options) => {{
   calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, model: options.model, effort: options.effort, selection: options.selection, sequence: sequence++ }});
+  if (options.label.startsWith('technical-plan:')) {{
+    if (args.technicalPlanEdit) writeFileSync(`${{options.cwd}}/unexpected.txt`, 'planner edit');
+    if (args.technicalPlanRawResults && args.technicalPlanRawResults.length) return args.technicalPlanRawResults.shift();
+    return {{ input: options.technicalInput,
+      findings: [{{path: options.technicalInput.issue, line: 1, behavior: 'Issue declares the approved behavior'}}],
+      reuse: ['Retain existing public workflow and verification commands'],
+      changes: ['Extend the delivery at its current public boundary'],
+      coverage: options.criterionIndexes.map(index => ({{index, changes:['Extend delivery.txt'], tests:['Execute fixture gates']}})),
+      adjustments: [], conflicts: args.technicalPlanConflicts || [] }};
+  }}
   if (options.label.startsWith('research:')) return 'factual research';
   if (options.label.startsWith('requirement-critic')) {{
     if (args.requirementCriticRawResults && args.requirementCriticRawResults.length) {{

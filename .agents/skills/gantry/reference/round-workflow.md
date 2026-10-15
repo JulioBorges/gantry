@@ -583,11 +583,11 @@ if (unresolvedFailures.length > 0) {
   }
 }
 
-async function validRoleResult(role, result) {
+async function validRoleResult(role, result, options = {}) {
   if (!result) return false
-  if (hostCapabilities.structured_output === true && A.structuredOutput === true) return true
+  if (role !== 'technical-planner' && hostCapabilities.structured_output === true && A.structuredOutput === true) return true
   const validation = await runCommand(
-    `python3 "${scripts}/result.py" --role "${role}" --json`,
+    `python3 "${scripts}/result.py" --role "${role}" --json${role === 'technical-planner' ? ` --cwd ${shellQuote(options.cwd)} --issue ${shellQuote(options.issuePath)}` : ''}`,
     { cwd: A.repoRoot, input: JSON.stringify(result) },
   )
   return Boolean(validation && validation.exitCode === 0)
@@ -619,11 +619,7 @@ async function executeRole(role, prompt, options) {
     if (res && res.exitCode === 0) {
       try {
         const externalResult = JSON.parse(res.stdout)
-        const validation = await runCommand(
-          `python3 "${scripts}/result.py" --role "${role}" --json`,
-          { cwd: A.repoRoot, input: JSON.stringify(externalResult) },
-        )
-        return validation && validation.exitCode === 0 ? externalResult : null
+        return await validRoleResult(role, externalResult, options) ? externalResult : null
       } catch (e) {
         return null
       }
@@ -651,7 +647,7 @@ async function executeRole(role, prompt, options) {
   if (result && result.executionUnavailable) {
     return { executionUnavailable: true, error: result.error || 'Execution unavailable' }
   }
-  if (await validRoleResult(role, result)) return result
+  if (await validRoleResult(role, result, options)) return result
   const retryPrompt = `${agentPrompt}\nYour prior result was invalid. Return the complete ${role} result contract.`
   const retryOptions = {
     ...agentOptions,
@@ -666,7 +662,7 @@ async function executeRole(role, prompt, options) {
   if (retry && retry.executionUnavailable) {
     return { executionUnavailable: true, error: retry.error || 'Execution unavailable' }
   }
-  return (await validRoleResult(role, retry)) ? retry : null
+  return (await validRoleResult(role, retry, options)) ? retry : null
 }
 
 // Host-owned coordination seam. Its wait must continue status steering without finishing
@@ -909,7 +905,7 @@ async function integrationGatePasses() {
   }
 }
 
-function implementPrompt(issue, feedback, assigned) {
+function implementPrompt(issue, feedback, assigned, plan) {
   const work = `Work in ${assigned.worktree} on ${assigned.branch}; verify the current branch and never switch it.`
   return `You are the fresh TDD Implementer for ${issue.ref} — "${issue.title}".
 ${work}
@@ -923,6 +919,7 @@ or weaken a test. Never bypass the repository git hooks: no \`--no-verify\` in a
 \`--git-dir\`/\`GIT_DIR=\`, no \`GIT_CONFIG_*\`.
 Commit small changes and leave a clean tree.
 Effective Git policy: target ${policy.git.target}, prefix ${policy.git.prefix}.
+${plan ? `Accepted Technical Plan (criteria remain authoritative):\n${JSON.stringify(plan)}\nReport scope-neutral implementation adjustments in decisions, with a reason. Stop for scope/contract conflicts.` : ''}
 ${feedback ? `Fix every item first:\n${feedback.items.map((item, index) => `${index + 1}. ${typeof item === 'string' ? item : `${item.finding} → ${item.fix}`}`).join('\n')}` : ''}
 Return worktree, branch, commits, summary, testsAdded, gatesResult, decisions and blockers as structured output.`
 }
@@ -959,10 +956,61 @@ Return complete only for gate-green, clean, fully evidenced work; otherwise orde
 refutations, gateResult, gateFailures and decisionsForOperator as structured output.`
 }
 
+// Accepted plans belong to individual Issue chains, never a round-wide barrier.
+const technicalPlans = new Map()
+async function technicalPlan(issue, assigned, selection) {
+  const command = action => `python3 "${scripts}/technical_plan.py" ${action} --cwd ${shellQuote(assigned.worktree)} --issue ${shellQuote(issue.path)}${A.stateRoot ? ` --state-root ${shellQuote(A.stateRoot)}` : ''}`
+  const failure = (error, reason = 'execution_unavailable') => ({ planningStopped: true, role: 'technical-planner', error, reason,
+    worktree: assigned.worktree, branch: assigned.branch })
+  let baseline
+  try {
+    baseline = JSON.parse((await runWorkflowCommand(command('capture'), { cwd: assigned.worktree })).stdout)
+  } catch {
+    return failure('Technical Plan checkout/input observation unavailable; handoff refused')
+  }
+  const criterionIndexes = await authoritativeCriterionIndexes(issue)
+  if (!criterionIndexes) return failure('Technical Plan authoritative criteria unavailable')
+  const options = { label: `technical-plan:${issue.ref}`, phase: 'Technical Plan', cwd: assigned.worktree,
+    issueRef: issue.ref, issuePath: issue.path, selection, readOnly: true,
+    technicalInput: baseline.input, criterionIndexes }
+  const prompt = `Research and plan ${issue.ref} in ${assigned.worktree} on ${assigned.branch} before any implementation.
+Read ${issue.path}, ${issue.specPath}, ${paths.context}, ${paths.adrs} and applicable standing decisions, then inspect actual source and tests.
+This is one bounded read-only Research-and-Plan call, separate from Spec decomposition. Never edit files,
+Issue/Spec content, dependencies, criteria or roadmap; never commit or change branches. Use supported read-only
+capabilities; instructions and checkout comparison cannot establish universal filesystem enforcement.
+Return the technical-planner Result Contract, targeting 500–1,000 useful tokens without padding or losing evidence.
+Input identity: ${JSON.stringify(baseline.input)}. Cover criterion indexes ${JSON.stringify(criterionIndexes)} exactly once.
+Cite current behavior with existing checkout-relative paths and line numbers. Name reusable components,
+concrete proposed changes and verification per criterion; do not copy requirements as a plan. Record scope-neutral
+choices with reasons in adjustments. Report scope or contract conflicts in conflicts for the operator before edits.
+A valid plan advances automatically to a separate fresh TDD Implementer; independent Review and Critic remain required.`
+  await appendRunEvent('phase.started', issue.ref, 'Technical Plan', { worktree: assigned.worktree })
+  await appendRunEvent('subagent.started', issue.ref, 'Technical Plan', { role: 'technical-planner' })
+  // Do not send source findings or plan bodies to role-result observations / sanitized Run events.
+  const plan = await executeRole('technical-planner', prompt, options)
+  const checked = await runCommand(command('accept'), { cwd: assigned.worktree,
+    input: JSON.stringify({ baseline, plan: plan && !plan.executionUnavailable ? plan : null }) })
+  let checkpoint
+  try { checkpoint = JSON.parse(checked.stdout) } catch {}
+  await appendRunEvent('subagent.stopped', issue.ref, 'Technical Plan', {
+    role: 'technical-planner', status: checked && checked.exitCode === 0 ? 'validated' : 'failed' })
+  await appendRunEvent('phase.finished', issue.ref, 'Technical Plan', { worktree: assigned.worktree })
+  if (plan && plan.executionUnavailable) return failure(plan.error)
+  if (!checked || checked.exitCode !== 0 || !checkpoint) return failure(checkpoint && checkpoint.error || 'Technical Plan Protocol Failure; handoff refused', checkpoint && checkpoint.reason || 'protocol_failure')
+  if (!checkpoint.accepted) return failure('Technical Plan scope/contract conflict requires operator decision; see retained artifact ' + checkpoint.artifact, 'needs_operator')
+  technicalPlans.set(issue.ref, plan)
+  return null
+}
+
 async function implement(issue, feedback, previous) {
   const assigned = await implementationLocation(issue, previous)
   if (!assigned) return null
   const selection = resolveRoleForIssue(issue.ref, 'implementer', null)
+  await markRunIn(assigned.worktree)
+  if (!technicalPlans.has(issue.ref)) {
+    const stopped = await technicalPlan(issue, assigned, selection)
+    if (stopped) return stopped
+  }
   await logRoleSelected(issue.ref, 'implementer', selection)
   const options = {
     label: `implement:${issue.ref}`, phase: 'Implement', model: A.models.implement, cwd: assigned.worktree,
@@ -972,7 +1020,7 @@ async function implement(issue, feedback, previous) {
   await markRunIn(assigned.worktree)
   await appendRunEvent('phase.started', issue.ref, 'Implement', { worktree: assigned.worktree, ...(priorAssignment(issue) && !priorAssignment(issue).correctionPending && !feedback && !previous ? { recovery: true } : {}) })
   await appendRunEvent('subagent.started', issue.ref, 'Implement', { role: 'implementer' })
-  const result = await requestRole('implementer', implementPrompt(issue, feedback, assigned), options)
+  const result = await requestRole('implementer', implementPrompt(issue, feedback, assigned, technicalPlans.get(issue.ref)), options)
   if (result && result.executionUnavailable) {
     await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', status: 'execution-failure' })
     return { executionUnavailable: true, role: 'implementer', error: result.error, worktree: assigned.worktree, branch: assigned.branch }
@@ -1070,7 +1118,7 @@ const results = await pipeline(
   },
   async (impl, issue) => {
     if (!impl) return null
-    if (impl.executionUnavailable || impl.verificationUnavailable) return impl
+    if (impl.planningStopped || impl.executionUnavailable || impl.verificationUnavailable) return impl
     const selection = resolveRoleForIssue(issue.ref, 'reviewer', null)
     await logRoleSelected(issue.ref, 'reviewer', selection)
     await appendRunEvent('phase.started', issue.ref, 'Review', { worktree: location(impl) })
@@ -1103,6 +1151,12 @@ const results = await pipeline(
   },
   async (state, issue) => {
     if (!state) return { ref: issue.ref, outcome: 'implementer_failed' }
+    if (state.planningStopped) {
+      const prior = priorAssignment(issue)
+      const corrections = prior && prior.correctionsSpent || 0
+      await appendRunEvent('issue.paused', issue.ref, 'Technical Plan', { role: state.role, reason: state.reason, worktree: state.worktree, error: state.error })
+      return { ...state, ref: issue.ref, issuePath: issue.path, outcome: 'paused', status: 'paused', corrections, commits: [], reviewFix: false, verdict: null }
+    }
     if (state.verificationUnavailable) {
       return state
     }
@@ -1112,7 +1166,7 @@ const results = await pipeline(
       const branch = (impl && impl.branch) || state.branch || await configuredIssueBranch(issue)
       const prior = priorAssignment(issue)
       const corrections = state.corrections ?? (prior && prior.correctionsSpent) ?? 0
-      await appendRunEvent('issue.paused', issue.ref, state.role === 'reviewer' ? 'Review' : state.role === 'implementer' ? 'Implement' : 'Critic', {
+      await appendRunEvent('issue.paused', issue.ref, state.role === 'technical-planner' ? 'Technical Plan' : state.role === 'reviewer' ? 'Review' : state.role === 'implementer' ? 'Implement' : 'Critic', {
         role: state.role || 'critic',
         reason: 'execution_unavailable',
         worktree,

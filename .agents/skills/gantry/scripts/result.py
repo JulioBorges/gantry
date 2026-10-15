@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schemas"
-ROLES = ("requirement-critic", "planner", "plan-critic", "implementer", "reviewer", "critic", "learner")
+ROLES = ("requirement-critic", "planner", "technical-planner", "plan-critic", "implementer", "reviewer", "critic", "learner")
 TYPE_NAMES = {
     "object": dict,
     "array": list,
@@ -44,6 +44,12 @@ def validate(value: Any, schema: dict[str, Any], path: str = "$") -> list[str]:
             return [f"{path}: expected {expected_type}"]
     if "enum" in schema and value not in schema["enum"]:
         errors.append(f"{path}: expected one of {schema['enum']!r}")
+    if isinstance(value, str) and len(value.strip()) < schema.get("minLength", 0):
+        errors.append(f"{path}: expected non-empty string")
+    if isinstance(value, list) and len(value) < schema.get("minItems", 0):
+        errors.append(f"{path}: expected non-empty array")
+    if isinstance(value, (int, float)) and value < schema.get("minimum", float("-inf")):
+        errors.append(f"{path}: below minimum")
     if isinstance(value, dict):
         properties = schema.get("properties", {})
         for name in schema.get("required", []):
@@ -128,6 +134,8 @@ def main() -> int:
     parser.add_argument("--role", required=True, choices=ROLES, help="role contract to validate")
     parser.add_argument("--json", action="store_true", help="emit a machine-readable validation result")
     parser.add_argument("--schema", action="store_true", help="print the selected schema")
+    parser.add_argument("--cwd", type=Path, help="assigned checkout for grounded Technical Plan validation")
+    parser.add_argument("--issue", type=Path, help="authoritative Issue for Technical Plan coverage")
     args = parser.parse_args()
     try:
         schema = load_schema(args.role)
@@ -144,6 +152,12 @@ def main() -> int:
         errors = [f"$: invalid JSON: {error.msg}"]
     else:
         errors = validate(result, schema)
+        if args.role == "technical-planner" and not errors:
+            if args.cwd is None or args.issue is None:
+                errors.append("Technical Plan validation requires --cwd and --issue")
+            else:
+                from technical_plan import validate_plan
+                errors.extend(validate_plan(result, args.cwd.resolve(), args.cwd / args.issue))
     payload = {"role": args.role, "valid": not errors, "errors": errors}
     if args.json:
         print(json.dumps(payload))
