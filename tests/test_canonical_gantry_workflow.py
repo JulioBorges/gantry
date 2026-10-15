@@ -120,7 +120,7 @@ Preserve the portable workflow contract.
 
     def run_workflow(self, filename: str, args: dict) -> dict:
         args = {"hostHarness": "claude-code", **args}
-        if filename == "round-workflow.md" and args.get("commandMode") == "real":
+        if filename == "round-workflow.md" and args.get("commandMode") == "real" and args.get("issues"):
             root = Path(args["repoRoot"])
             head = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=root, capture_output=True)
             if head.returncode:

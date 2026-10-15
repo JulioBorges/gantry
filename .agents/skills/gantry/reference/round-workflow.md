@@ -648,8 +648,9 @@ async function executeRole(role, prompt, options) {
   const native = hostCapabilities.structured_output === true && A.structuredOutput === true
   const schema = native ? await roleSchema(role) : null
   const agentPrompt = cavemanActive ? `${prompt}\n\n${cavemanInstruction}` : prompt
+  const { beforeExecute, ...invocationOptions } = options || {}
   const agentOptions = {
-    ...options,
+    ...invocationOptions,
     ...(selection ? { selection, model: selection.model, effort: selection.effort } : {}),
     ...(cavemanActive ? { skills: (options.skills || []).concat(cavemanState.skill_path || 'caveman'), caveman: true } : {}),
     ...(schema ? { schema } : {}),
@@ -704,7 +705,13 @@ async function roleRevision(worktree) {
 }
 async function requestRole(role, prompt, options) {
   // Learner has no assigned Issue and keeps its existing lifecycle contract.
-  if (!options.issueRef || (!A.runId && !A.unitId)) return await executeRole(role, prompt, options)
+  if (!options.issueRef || (!A.runId && !A.unitId)) {
+    if (options.beforeExecute) {
+      const stopped = await options.beforeExecute()
+      if (stopped) return stopped
+    }
+    return await executeRole(role, typeof prompt === 'function' ? prompt() : prompt, options)
+  }
   const worktree = options.cwd || A.repoRoot
   const metadata = {
     role, issue: options.issueRef, runId: A.runId || null, worktree,
@@ -761,8 +768,12 @@ async function requestRole(role, prompt, options) {
     await appendRunEvent('role.result.consumed', options.issueRef, options.phase, { ...recorded, reconciled: true })
     return retained.result
   }
+  if (options.beforeExecute) {
+    const stopped = await options.beforeExecute()
+    if (stopped) return stopped
+  }
   const pending = (async () => {
-    const result = await executeRole(role, prompt, options)
+    const result = await executeRole(role, typeof prompt === 'function' ? prompt() : prompt, options)
     if (result && !result.executionUnavailable) {
       Object.assign(metadata, await roleRevision(worktree), { resultHash: stableHash(result) })
       await appendRunEvent('role.result.ready', options.issueRef, options.phase, metadata)
@@ -862,7 +873,7 @@ async function authoritativeCriterionIndexes(issue) {
   let result
   try {
     result = await runWorkflowCommand(
-      `python3 "${scripts}/acceptance.py" "${A.repoRoot}/${issue.path}" --json`,
+      `python3 "${scripts}/acceptance.py" ${shellQuote(issue.path)} --json`,
     )
   } catch {
     return null
@@ -1025,26 +1036,34 @@ async function implement(issue, feedback, previous) {
   if (!assigned) return null
   const selection = resolveRoleForIssue(issue.ref, 'implementer', null)
   await markRunIn(assigned.worktree)
-  if (!technicalPlans.has(issue.ref)) {
-    const stopped = await technicalPlan(issue, assigned, selection)
-    if (stopped) return stopped
-  }
-  await logRoleSelected(issue.ref, 'implementer', selection)
+  let started = false
   const options = {
     label: `implement:${issue.ref}`, phase: 'Implement', model: A.models.implement, cwd: assigned.worktree,
     issueRef: issue.ref, selection,
     ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'implementer' ? { executionUnavailable: true } : {}),
+    beforeExecute: async () => {
+      // Reconcile recovered implementation before scheduling any new planning/code work.
+      if (!technicalPlans.has(issue.ref)) {
+        const stopped = await technicalPlan(issue, assigned, selection)
+        if (stopped) return stopped
+      }
+      started = true
+      await logRoleSelected(issue.ref, 'implementer', selection)
+      await appendRunEvent('phase.started', issue.ref, 'Implement', { worktree: assigned.worktree, ...(priorAssignment(issue) && !priorAssignment(issue).correctionPending && !feedback && !previous ? { recovery: true } : {}) })
+      await appendRunEvent('subagent.started', issue.ref, 'Implement', { role: 'implementer' })
+      return null
+    },
   }
-  await markRunIn(assigned.worktree)
-  await appendRunEvent('phase.started', issue.ref, 'Implement', { worktree: assigned.worktree, ...(priorAssignment(issue) && !priorAssignment(issue).correctionPending && !feedback && !previous ? { recovery: true } : {}) })
-  await appendRunEvent('subagent.started', issue.ref, 'Implement', { role: 'implementer' })
-  const result = await requestRole('implementer', implementPrompt(issue, feedback, assigned, technicalPlans.get(issue.ref)), options)
+  const result = await requestRole('implementer', () => implementPrompt(issue, feedback, assigned, technicalPlans.get(issue.ref)), options)
+  if (result && result.planningStopped) return result
   if (result && result.executionUnavailable) {
-    await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', status: 'execution-failure' })
+    if (started) await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', status: 'execution-failure' })
     return { executionUnavailable: true, role: 'implementer', error: result.error, worktree: assigned.worktree, branch: assigned.branch }
   }
-  await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', result })
-  await appendRunEvent('phase.finished', issue.ref, 'Implement', { worktree: assigned.worktree })
+  if (started) {
+    await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', result })
+    await appendRunEvent('phase.finished', issue.ref, 'Implement', { worktree: assigned.worktree })
+  }
   return result && result.worktree === assigned.worktree && result.branch === assigned.branch ? result : null
 }
 
