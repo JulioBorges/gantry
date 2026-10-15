@@ -328,9 +328,9 @@ const budget = Number.isInteger(requestedBudget) && requestedBudget >= 0
 
 if (A.priorRun && A.priorRun.correctionPending) {
   if (A.priorRun.correctionsSpent >= budget) throw new Error('Existing Run correction budget exhausted; pending correction requires explicit recovery.')
-  A.priorRun.correctionsSpent += 1
 }
 
+const chargedPendingCorrections = new Set()
 const runLogEnabled = Boolean(A.runId && A.unitId)
 const stateRootFlag = A.stateRoot ? ` --state-root '${String(A.stateRoot).replaceAll("'", "'\\''")}'` : ''
 
@@ -1053,6 +1053,11 @@ async function implement(issue, feedback, previous) {
       started = true
       await logRoleSelected(issue.ref, 'implementer', selection)
       await appendRunEvent('phase.started', issue.ref, 'Implement', { worktree: assigned.worktree, ...(priorAssignment(issue) && !priorAssignment(issue).correctionPending && !feedback && !previous ? { recovery: true } : {}) })
+      const prior = priorAssignment(issue)
+      if (prior && prior.correctionPending && !chargedPendingCorrections.has(issue.ref)) {
+        prior.correctionsSpent += 1
+        chargedPendingCorrections.add(issue.ref)
+      }
       await appendRunEvent('subagent.started', issue.ref, 'Implement', { role: 'implementer' })
       return null
     },

@@ -234,6 +234,46 @@ else:
         self.assertEqual('done',out['result']['results'][0]['outcome'])
 
 
+    def test_pending_resume_correction_is_not_spent_when_planning_refuses_handoff(self):
+        self.git('branch', '-m', 'gantry/ground-01')
+        unit = subprocess.check_output([sys.executable, str(SCRIPTS/'runlog.py'), 'unit-id',
+                                       '--cwd', str(self.root)], text=True).strip()
+        state = self.root.parent/'state'
+        cases = [
+            ('checkout_changed', {'technicalPlanEdit': True}),
+            ('protocol_failure', {'technicalPlanRawResults': [None, None]}),
+            ('execution_unavailable', {'technicalPlanRawResults': [
+                {'executionUnavailable': True, 'error': 'Selected execution unavailable'}]}),
+            ('needs_operator', {'technicalPlanConflicts': ['Approved contract conflicts with source']}),
+        ]
+        for reason, options in cases:
+            with self.subTest(reason=reason):
+                run = 'resume-plan-' + reason
+                events = [
+                    {'event': 'run.started', 'data': {'repositoryRoot': str(self.root),
+                        'policyHash': 'deadbeef', 'tier': 'reference', 'staleAfterSeconds': 900,
+                        'host': {'effectiveHost': 'claude-code'}}},
+                    {'event': 'refutation', 'issue': 'ground#01', 'data': {}},
+                    {'event': 'phase.started', 'issue': 'ground#01', 'phase': 'Implement',
+                     'data': {'worktree': str(self.root)}},
+                    {'event': 'refutation', 'issue': 'ground#01', 'data': {}},
+                ]
+                for event in events:
+                    self.fixture.append_runlog_event(state, unit, run, {'ts': '2026-09-13T09:00:00Z', 'run': run, **event})
+                out = self.workflow(runId=run, unitId=unit, correctionBudget=2,
+                    priorRun={'run': run, 'issue': 'ground#01', 'worktree': str(self.root),
+                              'branch': self.git('branch', '--show-current')}, **options)
+                self.assertIsNone(out['error'])
+                delivery = out['result']['results'][0]
+                self.assertEqual(('paused', reason, 1),
+                    (delivery['outcome'], delivery['reason'], delivery['corrections']))
+                self.assertEqual(1, self.fixture.run_corrections_command(state, unit, run, 'ground#01'))
+                self.assertFalse(any(c['label'].startswith('implement:') for c in out['calls']))
+                recorded = self.fixture.read_run_log_events(state, unit, run)
+                self.assertEqual(1, sum(e['event'] == 'phase.started' and e.get('phase') == 'Implement'
+                                        for e in recorded))
+                (self.root/'unexpected.txt').unlink(missing_ok=True)
+
     def test_recovered_delivery_cannot_advance_when_review_fix_planning_fails(self):
         self.git('branch','-m','gantry/ground-01')
         unit = subprocess.check_output([sys.executable,str(SCRIPTS/'runlog.py'),'unit-id','--cwd',str(self.root)],text=True).strip()
