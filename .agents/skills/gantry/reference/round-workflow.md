@@ -46,7 +46,8 @@ records `projectCriticResult(verdict)`: `complete`, `criteria`, `gatesVerdict`, 
 its `verdict` and `requirements` (both free of command/output data) — never `gateResult.gates`. This
 keeps the Run log a record of the Critic's role result and reasoning, never of command output, while the
 full verdict (including the untouched `gateResult`) still drives `criticAccepted` and the workflow's own
-structured output. Every other role's result reaches `subagent.stopped` unprojected, and `runlog.py`
+structured output. Technical Plan results are retained separately outside these events; only their status is recorded.
+Every other existing role's result reaches `subagent.stopped` unprojected, and `runlog.py`
 still fails loudly if any of them carries prohibited data.
 Before any agent works in a worktree, the workflow marks that worktree with the Run
 (`runlog.py mark <runId> --cwd <worktree>`, written into the worktree's own git directory): the
@@ -200,6 +201,7 @@ export const meta = {
   name: 'gantry-round',
   description: 'Gantry round: TDD, two-axis review and adversarial Critic per Issue',
   phases: [
+    { title: 'Technical Plan', detail: 'one grounded read-only checkpoint per assigned Issue' },
     { title: 'Implement', detail: 'one TDD Implementer per Issue' },
     { title: 'Review', detail: 'standards and Spec, with one fix pass' },
     { title: 'Critic', detail: 'adversarial verification and bounded corrections' },
@@ -599,9 +601,9 @@ if (unresolvedFailures.length > 0) {
   }
 }
 
-async function validRoleResult(role, result, options = {}) {
+async function validRoleResult(role, result, options = {}, forceValidation = false) {
   if (!result) return false
-  if (role !== 'technical-planner' && hostCapabilities.structured_output === true && A.structuredOutput === true) return true
+  if (!forceValidation && role !== 'technical-planner' && hostCapabilities.structured_output === true && A.structuredOutput === true) return true
   const validation = await runCommand(
     `python3 "${scripts}/result.py" --role "${role}" --json${role === 'technical-planner' ? ` --cwd ${shellQuote(options.cwd)} --issue ${shellQuote(options.issuePath)}` : ''}`,
     { cwd: A.repoRoot, input: JSON.stringify(result) },
@@ -635,7 +637,7 @@ async function executeRole(role, prompt, options) {
     if (res && res.exitCode === 0) {
       try {
         const externalResult = JSON.parse(res.stdout)
-        return await validRoleResult(role, externalResult, options) ? externalResult : null
+        return await validRoleResult(role, externalResult, options, true) ? externalResult : null
       } catch (e) {
         return null
       }
@@ -733,7 +735,8 @@ async function requestRole(role, prompt, options) {
   const observations = inventory.length ? await resultObservations() : null
   const latest = observations && observations.results.filter(record => record.issue === options.issueRef && record.role === role).at(-1)
   const retained = latest && inventory.find(record => record.invocationId === latest.invocationId && !reconciledResults.has(record.invocationId))
-  if (latest && !retained && inventory.some(record => record.issue === options.issueRef && record.role === role)) {
+  const authorizedCorrection = latest && role === 'implementer' && options.correction === true && reconciledResults.has(latest.invocationId)
+  if (latest && !retained && !authorizedCorrection && inventory.some(record => record.issue === options.issueRef && record.role === role)) {
     return { executionUnavailable: true, error: 'retained_result_mismatch' }
   }
   if (retained) {
@@ -1039,7 +1042,7 @@ async function implement(issue, feedback, previous) {
   let started = false
   const options = {
     label: `implement:${issue.ref}`, phase: 'Implement', model: A.models.implement, cwd: assigned.worktree,
-    issueRef: issue.ref, selection,
+    issueRef: issue.ref, selection, correction: Boolean(feedback),
     ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'implementer' ? { executionUnavailable: true } : {}),
     beforeExecute: async () => {
       // Reconcile recovered implementation before scheduling any new planning/code work.
@@ -1183,6 +1186,7 @@ const results = await pipeline(
     if (!reviewed) {
       return { impl: null, implementerFailed: true, failedImpl: impl, review, reviewFix: true }
     }
+    if (reviewed.planningStopped) return { ...reviewed, impl, review, reviewFix: true }
     if (reviewed.executionUnavailable || reviewed.verificationUnavailable) return reviewed
     return { impl: reviewed, review, reviewFix: Boolean(review && review.blocking.length) }
   },
@@ -1192,7 +1196,7 @@ const results = await pipeline(
       const prior = priorAssignment(issue)
       const corrections = prior && prior.correctionsSpent || 0
       await appendRunEvent('issue.paused', issue.ref, 'Technical Plan', { role: state.role, reason: state.reason, worktree: state.worktree, error: state.error })
-      return { ...state, ref: issue.ref, issuePath: issue.path, outcome: 'paused', status: 'paused', corrections, commits: [], reviewFix: false, verdict: null }
+      return { ...state, ref: issue.ref, issuePath: issue.path, outcome: 'paused', status: 'paused', corrections, commits: state.impl && state.impl.commits || [], reviewFix: Boolean(state.reviewFix), verdict: null }
     }
     if (state.verificationUnavailable) {
       return state
@@ -1360,6 +1364,13 @@ const results = await pipeline(
           decisions: [...(impl.decisions || []), ...(verdict.decisionsForOperator || [])],
           blockers: impl.blockers || [],
         }
+      }
+      if (corrected.planningStopped) {
+        await appendRunEvent('issue.paused', issue.ref, 'Technical Plan', {
+          role: corrected.role, reason: corrected.reason, worktree: corrected.worktree, error: corrected.error,
+        })
+        return { ...corrected, ref: issue.ref, issuePath: issue.path, outcome: 'paused', status: 'paused',
+          commits: impl.commits, corrections, reviewFix: state.reviewFix, review: state.review, verdict }
       }
       if (corrected.executionUnavailable) {
         await appendRunEvent('issue.paused', issue.ref, 'Implement', {

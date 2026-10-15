@@ -232,3 +232,29 @@ else:
         retained = json.loads(plans[0].read_text())
         self.assertEqual('source.py',retained['plan']['findings'][0]['path'])
         self.assertEqual('done',out['result']['results'][0]['outcome'])
+
+
+    def test_recovered_delivery_cannot_advance_when_review_fix_planning_fails(self):
+        self.git('branch','-m','gantry/ground-01')
+        unit = subprocess.check_output([sys.executable,str(SCRIPTS/'runlog.py'),'unit-id','--cwd',str(self.root)],text=True).strip()
+        stopped = self.workflow(runId='review-fix-plan',unitId=unit,interruptRole='implementer',waitForRetainedResult=True)
+        self.assertEqual('paused',stopped['result']['results'][0]['outcome'])
+        resumed = self.workflow(runId='review-fix-plan',unitId=unit,
+            recoveredResults=stopped['retainedResults'],
+            priorRun={'run':'review-fix-plan','issue':'ground#01','worktree':str(self.root),'branch':self.git('branch','--show-current')},
+            reviewerResult={'blocking':[{'finding':'Missing proof','fix':'Add real verification'}],'nonBlocking':[],'summary':'Requires fix'},
+            technicalPlanRawResults=[None,None])
+        self.assertIsNone(resumed['error'])
+        self.assertEqual(['review:ground#01','technical-plan:ground#01','technical-plan:ground#01:retry'], [c['label'] for c in resumed['calls']])
+        self.assertEqual(('paused','protocol_failure',0), tuple(resumed['result']['results'][0][key] for key in ['outcome','reason','corrections']))
+        self.assertEqual(['test commit'], resumed['result']['results'][0]['commits'])
+        self.assertTrue(resumed['result']['results'][0]['reviewFix'])
+
+    def test_native_structured_output_does_not_bypass_external_critic_validation(self):
+        out = self.workflow(structuredOutput=True,
+            roles={'implement':{'harness':'claude-code','model':'selected-model','effort':'medium'},
+                   'critic':{'harness':'codex','model':'external-critic'}},
+            dispatchResults=[{'exitCode':0,'stdout':'{}','stderr':''}])
+        self.assertIsNone(out['error'])
+        self.assertEqual('critic_failed',out['result']['results'][0]['outcome'])
+        self.assertIn('Status: ready-for-agent',self.issue.read_text())

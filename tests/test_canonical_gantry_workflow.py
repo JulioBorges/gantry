@@ -279,6 +279,7 @@ const agent = async (prompt, options) => {{
     decisions: [], blockers: [],
     }};
   }}
+  if (options.label.startsWith('review:') && args.reviewerResult) return args.reviewerResult;
   if (options.label.startsWith('review:')) return {{
     blocking: [], nonBlocking: [], summary: 'no findings',
   }};
