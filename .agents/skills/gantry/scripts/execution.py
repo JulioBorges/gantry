@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from common import read_profile, repo_root, resolve_policy
+from common import read_profile, repo_root, resolve_policy, parse_issue
 import result  # noqa: E402
 import runlog  # noqa: E402
 
@@ -40,6 +40,7 @@ CLI_NAMES = {
 ROLE_TO_SCHEMA = {
     "plan": "planner",
     "planner": "planner",
+    "technical-planner": "technical-planner",
     "implement": "implementer",
     "implementer": "implementer",
     "review": "reviewer",
@@ -276,6 +277,7 @@ DERIVED_ROLES = {
     "requirement-critic": "critic",
     "plan-critic": "critic",
     "research": "plan",
+    "technical-planner": "implement",
     "learner": "critic",
 }
 ALL_ROLES = (*BASE_ROLES, *DERIVED_ROLES.keys())
@@ -686,12 +688,12 @@ def dispatch_role(
     eff_timeout = timeout if timeout is not None else (policy or {}).get("execution", {}).get("timeout", 300)
     if eff_timeout is None or not 0 < eff_timeout < float("inf"):
         raise ValueError("Role timeout must be positive and bounded")
-    sandbox = eff_selection.get("sandbox")
+    sandbox = "read-only" if role == "technical-planner" and harness == "codex" else eff_selection.get("sandbox")
     if sandbox is not None and (harness != "codex" or sandbox not in ("read-only", "workspace-write")):
         raise ValueError("Unsupported permission scope; select Codex read-only or workspace-write explicitly")
     schema_role = ROLE_TO_SCHEMA.get(role, role)
     invocation_prompt = prompt
-    if harness == "codex" and schema_role:
+    if (harness == "codex" or role == "technical-planner") and schema_role:
         # Generic schemas remain post-execution contracts, not native strict-output schemas.
         invocation_prompt += "\nReturn only the complete JSON Result Contract matching this schema:\n" + json.dumps(result.load_schema(schema_role))
 
@@ -759,6 +761,11 @@ def dispatch_role(
                 check_model_fallback(model, proc.stdout)
                 final = proc.stdout
             data = parse_and_validate_result(role, final)
+            if role == "technical-planner":
+                from technical_plan import validate_plan
+                errors = validate_plan(data, cwd_path, cwd_path / data["input"]["issue"])
+                if errors or (issue_ref and parse_issue(cwd_path / data["input"]["issue"]).ref != issue_ref):
+                    raise ProtocolFailureError("Technical Plan grounding failed")
             if role in ("critic", "requirement-critic", "plan-critic"):
                 verify_critic_result(data)
         except ProtocolFailureError:

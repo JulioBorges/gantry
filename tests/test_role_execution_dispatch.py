@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from tests.preflight_fixture import VERIFIED_PREFLIGHT
+from tests.technical_plan_fixture import AGENT_REPLY
 import os
 import subprocess
 import sys
@@ -433,6 +434,9 @@ class WorkflowTestBase(unittest.TestCase):
         slug, number = ref.split("#")
         path = root / ".scratch" / slug / "issues" / f"{int(number):02d}-example.md"
         path.parent.mkdir(parents=True, exist_ok=True)
+        spec_path = path.parent.parent / "spec.md"
+        if not spec_path.exists():
+            spec_path.write_text("# Approved fixture Spec\nPreserve the portable workflow contract.\n")
         blocked_by = "\n".join(f"- `{blocker}` — prerequisite" for blocker in blockers or []) or "- None"
         acceptance_criteria = "\n".join(f"- [ ] {criterion}" for criterion in criteria or ["exposes a deterministic behaviour"])
         path.write_text(
@@ -560,6 +564,7 @@ const runCommand = async (command, options = {{}}) => {{
 }};
 const agent = async (prompt, options) => {{
   calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, sequence: sequence++ }});
+{AGENT_REPLY}
   if (options.label.startsWith('research:')) return 'factual research';
   if (options.label.startsWith('requirement-critic')) {{
     if (args.requirementCriticRawResults && args.requirementCriticRawResults.length) {{

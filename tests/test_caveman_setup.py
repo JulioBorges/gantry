@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from tests.preflight_fixture import VERIFIED_PREFLIGHT
+from tests.technical_plan_fixture import COMMAND_REPLIES, AGENT_REPLY
 import os
 import subprocess
 import sys
@@ -210,6 +211,7 @@ const commandCalls = [];
 let initialFailed = false;
 
 const runCommand = async (command, options = {{}}) => {{
+{COMMAND_REPLIES}
   // Readiness is simulated here; selected-profile proof has its own public tests.
   if (command.includes('/execution.py" preflight ')) return {{exitCode:0,stdout:{json.dumps(json.dumps(VERIFIED_PREFLIGHT))},stderr:''}};
   if (command.includes('/execution.py" host ')) {{
@@ -263,6 +265,7 @@ const agent = async (promptText, options) => {{
   if (options.label.startsWith('critique')) return {{ acceptable: true, problems: [], frontierErrors: [] }};
   if (options.label.startsWith('research:format')) return JSON.stringify({{ selected: [] }});
   if (options.label.startsWith('research:')) return 'factual research';
+{AGENT_REPLY}
   if (options.label.startsWith('implement:')) return {{
     worktree: args.repoRoot, branch: args.branch, commits: ['commit 1'],
     summary: 'implemented vertical slice', testsAdded: ['test_one'], gatesResult: 'verdict: pass',

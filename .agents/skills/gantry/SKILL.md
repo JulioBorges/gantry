@@ -183,7 +183,9 @@ Every script provides `--help`, and data-producing paths support `--json`.
   `gantry-plan` executes the Socratic Gate interview or spec validation, tracer-bullet vertical slicing,
   token budget audit, Plan Critic validation, and operator approval transition. Once approved, delegated
   execution automatically advances into the round implementation loop without prompting to start `gantry`.
-- Each Issue follows `reference/round-workflow.md`: a fresh TDD implementer, a reviewer on both standards
+- Each Issue follows `reference/round-workflow.md`: after checkout assignment, one bounded read-only
+  Technical Plan inherits the effective Implement harness/model and configured effort, then a separate
+  fresh TDD implementer receives the accepted plan, followed by a reviewer on both standards
   and Spec axes, one review fix pass, then a fresh adversarial Critic. The Critic alone can establish a
   complete delivery. Its refutation consumes at most the correction budget.
 - A multi-Issue round uses one isolated worktree and branch per implementer. Integrate accepted branches
@@ -231,6 +233,32 @@ Every script provides `--help`, and data-producing paths support `--json`.
 Use the host harness to ask the operator and spawn agents. Where native workflow scripts, structured
 outputs, parallel agents or worktree isolation are available, use them. Otherwise execute the same
 prompts from the reference files manually and validate their JSON-shaped results before advancing.
+Before a first implementation, native and manual paths use the dedicated
+`schemas/technical-planner.json` contract, never the Spec decomposition planner contract:
+
+1. Assign and mark the Issue checkout. Run `technical_plan.py capture --cwd <worktree> --issue <issue>`
+   and keep its JSON outside the checkout. Resolve the effective Implement selection after overrides.
+2. Invoke one bounded, read-only Research-and-Plan agent using that harness/model and initially the
+   same configured effort. Follow the Technical Plan prompt in `reference/round-workflow.md`. Cite
+   actual source, reusable behavior, concrete changes and tests for every criterion. Target 500–1,000
+   useful tokens without padding or truncating evidence. Use supported read-only capabilities (bounded
+   Codex dispatch requests its read-only sandbox); report other enforcement as unavailable or unknown.
+3. Validate with `result.py --role technical-planner --cwd <worktree> --issue <issue> --json` on stdin.
+   Structured output alone cannot prove source references or criterion coverage. Missing/invalid results
+   allow one re-ask, then a Protocol Failure; they never consume a Critic correction attempt.
+4. Run `technical_plan.py accept --cwd <worktree> --issue <issue>` with stdin
+   `{"baseline": <capture JSON>, "plan": <validated result>}`. It compares checkout contents, index,
+   branch and revision, and retains the result under machine-local execution-unit `technical-plans/`,
+   outside sanitized Run events. An observed edit refuses handoff and preserves the changes. This
+   observation does not establish universal filesystem enforcement or detect transient/reverted edits,
+   ignored files or edits outside the assigned checkout.
+5. A reported scope/contract conflict pauses that Issue for the operator before edits; never amend the
+   Issue, Spec, dependencies or criteria. A valid conflict-free result releases a separate fresh TDD
+   Implementer automatically, with the retained plan in its prompt. Each Issue advances independently.
+   Reuse the accepted plan during this chain's review/correction calls. Report scope-neutral adjustments
+   with reasons in Implementer decisions; criteria remain authoritative. Independent Review, Critic,
+   gates and completion authority remain mandatory.
+
 The deterministic scripts and workflow semantics stay identical in every harness. The host's command
 runner contract is `runCommand(command, { cwd, input })`: `input`, when supplied, must be written to the
 command's stdin, not appended to the command line. Every recorded Run event goes through

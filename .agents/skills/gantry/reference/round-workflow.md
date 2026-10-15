@@ -75,11 +75,27 @@ all of the above and leaves the round behaviorally identical, so a harness witho
 keeps working.
 
 ```
-implement (TDD) → review (standards + Spec) → one review fix pass
+assigned checkout → Technical Plan → separate implement (TDD) → review (standards + Spec) → one review fix pass
 → adversarial Critic → correction implementer ⇄ Critic (at most two correction attempts)
 ```
 
 ## Per-Issue roles
+
+**Technical Planner:** one bounded read-only Research-and-Plan call after checkout assignment, using
+that Issue's effective Implement harness/model and configured effort. The dedicated
+`technical-planner` contract binds input identity, cited current source and reusable behavior, concrete
+changes and tests for every authoritative criterion, scope-neutral choices and blocking conflicts.
+Target 500–1,000 useful tokens without padding or omitting evidence. `result.py --role technical-planner
+--cwd <worktree> --issue <issue> --json` validates even native structured output. Missing/invalid results
+receive at most one re-ask and never spend a Critic correction attempt. `technical_plan.py capture` /
+`accept` compares checkout contents, index, branch and revision and retains results outside Run events.
+Observed unexpected changes refuse handoff, preserving evidence. Bounded Codex dispatch requests a
+read-only sandbox; native adapters receive `readOnly: true` as a request, not proof of enforcement.
+Ignored files, transient/reverted edits and changes outside the checkout are outside this observation.
+Report these capability limits honestly. Conflicts pause affected work for the operator; accepted plans
+release fresh TDD implementation automatically. Each Issue progresses independently. Manual hosts
+follow the same checkpoint commands and dedicated contract (see `SKILL.md`); decomposition results
+cannot satisfy this checkpoint.
 
 **Implementer:** a fresh agent reads the complete Issue, parent Spec, settled decisions, context and ADRs.
 It follows red → green TDD at the approved CLI, script-interface and template-file seams, makes small
@@ -970,15 +986,17 @@ async function technicalPlan(issue, assigned, selection) {
   }
   const criterionIndexes = await authoritativeCriterionIndexes(issue)
   if (!criterionIndexes) return failure('Technical Plan authoritative criteria unavailable')
+  await logRoleSelected(issue.ref, 'technical-planner', selection)
   const options = { label: `technical-plan:${issue.ref}`, phase: 'Technical Plan', cwd: assigned.worktree,
     issueRef: issue.ref, issuePath: issue.path, selection, readOnly: true,
-    technicalInput: baseline.input, criterionIndexes }
+    technicalInput: baseline.input, criterionIndexes,
+    ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'technical-planner' ? { executionUnavailable: true } : {}) }
   const prompt = `Research and plan ${issue.ref} in ${assigned.worktree} on ${assigned.branch} before any implementation.
 Read ${issue.path}, ${issue.specPath}, ${paths.context}, ${paths.adrs} and applicable standing decisions, then inspect actual source and tests.
 This is one bounded read-only Research-and-Plan call, separate from Spec decomposition. Never edit files,
 Issue/Spec content, dependencies, criteria or roadmap; never commit or change branches. Use supported read-only
 capabilities; instructions and checkout comparison cannot establish universal filesystem enforcement.
-Return the technical-planner Result Contract, targeting 500–1,000 useful tokens without padding or losing evidence.
+Read ${A.skillDir}/schemas/technical-planner.json and return that dedicated Result Contract, targeting 500–1,000 useful tokens without padding or losing evidence.
 Input identity: ${JSON.stringify(baseline.input)}. Cover criterion indexes ${JSON.stringify(criterionIndexes)} exactly once.
 Cite current behavior with existing checkout-relative paths and line numbers. Name reusable components,
 concrete proposed changes and verification per criterion; do not copy requirements as a plan. Record scope-neutral
@@ -997,7 +1015,7 @@ A valid plan advances automatically to a separate fresh TDD Implementer; indepen
   await appendRunEvent('phase.finished', issue.ref, 'Technical Plan', { worktree: assigned.worktree })
   if (plan && plan.executionUnavailable) return failure(plan.error)
   if (!checked || checked.exitCode !== 0 || !checkpoint) return failure(checkpoint && checkpoint.error || 'Technical Plan Protocol Failure; handoff refused', checkpoint && checkpoint.reason || 'protocol_failure')
-  if (!checkpoint.accepted) return failure('Technical Plan scope/contract conflict requires operator decision; see retained artifact ' + checkpoint.artifact, 'needs_operator')
+  if (!checkpoint.accepted) return { ...failure('Technical Plan scope/contract conflict requires operator decision; see retained artifact ' + checkpoint.artifact, 'needs_operator'), decisionsForOperator: checkpoint.conflicts, artifact: checkpoint.artifact }
   technicalPlans.set(issue.ref, plan)
   return null
 }

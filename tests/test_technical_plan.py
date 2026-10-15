@@ -14,7 +14,8 @@ class TechnicalPlanTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name) / "repo"
+        self.root.mkdir()
         self.fixture = canonical.CanonicalGantryWorkflowTests()
         self.fixture.init_repo(self.root)
         self.issue = self.fixture.write_issue(self.root, 'ground#01', 'ready-for-agent', criteria=['Preserve behavior', 'Verify delivery'])
@@ -89,15 +90,16 @@ class TechnicalPlanTests(unittest.TestCase):
         self.fixture.write_roadmap(self.root)
         (self.root / 'Makefile').write_text('test:\n\t@true\n')
         self.git('add', '.')
-        self.git('commit', '-qm', 'workflow fixture')
+        if self.git('status','--porcelain'):
+            self.git('commit', '-qm', 'workflow fixture')
         args = {'round': 1, 'issues': [{'ref':'ground#01', 'path':str(self.issue.relative_to(self.root)),
                 'specPath':str(self.spec.relative_to(self.root)), 'title':'Ground first implementation'}],
                 'models':{'implement':'selected-model','review':'review','critic':'critic'},
                 'roles':{'implement':{'harness':'claude-code','model':'selected-model','effort':'medium'}},
                 'branch':self.git('branch','--show-current'), 'baseRef':'HEAD', 'isolate':False,
                 'correctionBudget':0, 'skillDir':str(canonical.SKILL_DIR), 'repoRoot':str(self.root),
-                'policy':{'git':{'target':'main','prefix':'gantry/'}}, 'paths':{}, 'commandMode':'real',
-                'criticResult':{'criteria':self.fixture.critic_evidence(self.root,self.issue)}, **extra}
+                'stateRoot':str(self.root.parent/'state'), 'policy':{'git':{'target':'main','prefix':'gantry/'}}, 'paths':{}, 'commandMode':'real',
+                'technicalPlanSource':'source.py', 'criticResult':{'criteria':self.fixture.critic_evidence(self.root,self.issue)}, **extra}
         return self.fixture.run_workflow('round-workflow.md', args)
 
     def test_assigned_checkout_plans_before_separate_implementer_and_independent_verification(self):
@@ -136,3 +138,97 @@ class TechnicalPlanTests(unittest.TestCase):
         self.assertEqual('checkout_changed', delivery['reason'])
         self.assertIn('universal filesystem enforcement', delivery['error'])
         self.assertEqual('planner edit', (self.root/'unexpected.txt').read_text())
+
+    def test_bounded_dispatch_uses_implement_identity_and_read_only_codex_process(self):
+        import os
+        binary_dir = self.root / 'bin'
+        binary_dir.mkdir()
+        binary = binary_dir / 'codex'
+        binary.write_text(f'#!{sys.executable}\n' + '''import json, sys
+from pathlib import Path
+if '--version' in sys.argv:
+    print('codex 99.0.0')
+else:
+    Path('invocation.json').write_text(json.dumps(sys.argv))
+    plan = json.loads(Path('response.json').read_text())
+    print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps(plan)}}))
+    print(json.dumps({'type':'turn.completed'}))
+''')
+        binary.chmod(0o755)
+        (self.root/'response.json').write_text(json.dumps(self.plan))
+        command = [sys.executable, str(SCRIPTS/'execution.py'), 'dispatch', '--role','technical-planner',
+                   '--cwd',str(self.root), '--selection',json.dumps({'harness':'codex','model':'chosen-model','effort':'medium'})]
+        completed = subprocess.run(command, input='Inspect without editing', text=True, capture_output=True,
+                                   env={**os.environ, 'PATH':str(binary_dir)+os.pathsep+os.environ['PATH']})
+        self.assertEqual(0,completed.returncode,completed.stderr)
+        invocation = json.loads((self.root/'invocation.json').read_text())
+        self.assertEqual('chosen-model',invocation[invocation.index('--model')+1])
+        self.assertIn('model_reasoning_effort="medium"',invocation)
+        self.assertEqual('read-only',invocation[invocation.index('--sandbox')+1])
+        self.assertEqual(self.plan,json.loads(completed.stdout))
+
+
+    def test_two_assigned_issue_chains_advance_without_a_planning_barrier(self):
+        second = self.fixture.write_issue(self.root, 'ground#02', 'ready-for-agent', criteria=['Independent delivery'])
+        assignments = {f'ground#{i:02d}':{'worktree':f'{self.root}.gantry-ground-{i:02d}', 'branch':f'gantry/ground-{i:02d}'} for i in [1,2]}
+        issues = [{'ref':f'ground#{i:02d}', 'path':str(path.relative_to(self.root)),
+                   'specPath':str(self.spec.relative_to(self.root)), 'title':'Independent Issue'} for i,path in [(1,self.issue),(2,second)]]
+        out = self.workflow(issues=issues, isolate=True, interleavePlans=True, issueAssignments=assignments)
+        self.assertIsNone(out['error'])
+        labels = [c['label'] for c in out['calls']]
+        self.assertLess(labels.index('technical-plan:ground#02'), labels.index('implement:ground#01'))
+        self.assertLess(labels.index('implement:ground#01'), labels.index('implement:ground#02'))
+        for ref, assigned in assignments.items():
+            chain = [c for c in out['calls'] if c['label'] in [f'technical-plan:{ref}',f'implement:{ref}']]
+            self.assertEqual([assigned['worktree']]*2, [c['cwd'] for c in chain])
+        self.assertTrue(all(any(c['label'].startswith(f'critic:{ref}') for c in out['calls']) for ref in assignments))
+
+
+    def test_invalid_grounding_cannot_bypass_native_structured_output(self):
+        for defect in ['source', 'coverage']:
+            with self.subTest(defect=defect):
+                out = self.workflow(technicalPlanDefect=defect, structuredOutput=True)
+                self.assertIsNone(out['error'])
+                self.assertEqual(['technical-plan:ground#01','technical-plan:ground#01:retry'], [c['label'] for c in out['calls']])
+                self.assertEqual('protocol_failure', out['result']['results'][0]['reason'])
+
+    def test_checkpoint_observes_approved_inputs_even_when_tracker_files_are_ignored(self):
+        (self.root/'.gitignore').write_text('.scratch/\n')
+        self.git('rm','--cached','-r','.scratch')
+        self.git('add','.gitignore')
+        self.git('commit','-qm','machine-local tracker fixture')
+        self.plan['input']['revision'] = self.git('rev-parse','HEAD')
+        baseline = json.loads(self.cli('capture').stdout)
+        self.spec.write_text('# Unexpected change to approved scope\n')
+        refused = self.cli('accept', {'baseline':baseline,'plan':self.plan})
+        self.assertEqual(1,refused.returncode,refused.stdout)
+        self.assertIn('changed',refused.stdout)
+
+    def test_planning_execution_failure_preserves_override_and_spends_no_correction(self):
+        selection = {'harness':'claude-code','model':'issue-selected-model','effort':'medium'}
+        unit = subprocess.check_output([sys.executable,str(SCRIPTS/'runlog.py'),'unit-id','--cwd',str(self.root)],text=True).strip()
+        out = self.workflow(issueRoles={'ground#01':{'implementer':selection}}, runId='planning-failure', unitId=unit,
+                            technicalPlanRawResults=[{'executionUnavailable':True,'error':'Selected execution unavailable'}])
+        self.assertIsNone(out['error'])
+        self.assertEqual([selection], [c['selection'] for c in out['calls']])
+        delivery = out['result']['results'][0]
+        self.assertEqual(('paused','execution_unavailable','technical-planner',0),
+                         (delivery['outcome'],delivery['reason'],delivery['role'],delivery['corrections']))
+        self.assertEqual('',self.git('status','--porcelain'))
+        events = self.fixture.read_run_log_events(self.root.parent/'state',unit,'planning-failure')
+        self.assertFalse(any(e['event']=='refutation' or e.get('phase')=='Implement' for e in events))
+        selected = next(e['data'] for e in events if e['event']=='role.selected')
+        self.assertEqual(selection,selected['effective'])
+
+    def test_accepted_plan_is_retained_outside_sanitized_run_events(self):
+        unit = subprocess.check_output([sys.executable,str(SCRIPTS/'runlog.py'),'unit-id','--cwd',str(self.root)],text=True).strip()
+        out = self.workflow(runId='retained-plan',unitId=unit)
+        self.assertIsNone(out['error'])
+        events = self.fixture.read_run_log_events(self.root.parent/'state',unit,'retained-plan')
+        text = json.dumps(events)
+        self.assertNotIn('existing() returns True',text)
+        plans = list((self.root.parent/'state'/unit/'technical-plans').glob('*.json'))
+        self.assertEqual(1,len(plans))
+        retained = json.loads(plans[0].read_text())
+        self.assertEqual('source.py',retained['plan']['findings'][0]['path'])
+        self.assertEqual('done',out['result']['results'][0]['outcome'])

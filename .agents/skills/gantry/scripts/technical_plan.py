@@ -47,7 +47,10 @@ def capture(root: Path, issue_path: Path) -> dict:
     """Observe checkout contents, index and identity; this is detection, not a sandbox."""
     import hashlib
     import os
+    identity = input_identity(root, issue_path)
     files = subprocess.check_output(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], cwd=root).split(b'\0')
+    # Approved input files remain protected even with a machine-local ignored tracker.
+    files.extend(os.fsencode(identity[key]) for key in ('issue', 'spec'))
     contents = {}
     for raw in files:
         if not raw:
@@ -61,7 +64,7 @@ def capture(root: Path, issue_path: Path) -> dict:
         else:
             data = b'<missing>'
         contents[relative] = [hashlib.sha256(data).hexdigest(), path.lstat().st_mode if path.exists() or path.is_symlink() else None]
-    return {'input': input_identity(root, issue_path), 'branch': git(root, 'branch', '--show-current'),
+    return {'input': identity, 'branch': git(root, 'branch', '--show-current'),
             'files': contents, 'index': git(root, 'diff', '--cached', '--binary', '--no-ext-diff')}
 
 
