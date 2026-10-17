@@ -19,8 +19,13 @@ You are the sole conversational writer of repository policy.
      documented Claude hook JSON. The Claude-specific wiring resolves its project
      path from `CLAUDE_PROJECT_DIR`, falling back to the current directory when the
      variable is absent or empty. It does not consult another harness's variables
-     or change repository Host Harness or role execution selections. Other harnesses
-     may import this protocol; that does not establish a new support tier.
+     or change repository Host Harness or role execution selections.
+   - Setup does not install `PreToolUse` into `.claude/settings.json`. Cursor imports
+     that project file and blocks every tool when the guard response is not Cursor
+     hook JSON. An approved denial still removes any Gantry-owned `PreToolUse`
+     command already in that file. Claude Code can keep a manual `PreToolUse` entry
+     outside the project settings Cursor imports. Other harnesses may import the
+     Claude protocol; that does not establish a new support tier.
    - When upgrading an existing installation, rerun setup with the operator's
      approved policy merge to replace previously generated Claude hook commands;
      updating skills alone does not rewrite `.claude/settings.json`.
@@ -37,7 +42,7 @@ You are the sole conversational writer of repository policy.
    - Each role selection contains `harness`, `model` and optional `effort`.
    - Only an intentional host selection in the proposed policy or `--harness` selects an adapter. Installed binaries, `.agents/`, `.codex/` and inherited environment hints never select adapters.
    - Persist approved hook event names in `hooks.record` and `hooks.deny`. Decision-bearing `PreToolUse` requires explicit denial approval; recording-only approval cannot install its existing denial-capable guard. Recording events such as `PostToolUse` use `hooks.record`.
-   - For selected Claude Code or Antigravity, setup reuses the existing pack fragment for approved events only. It preserves unrelated commands, wrapper settings and all other adapters. Capability declarations describe the existing boundary; adapter installation is not live hook compatibility proof.
+   - For selected Claude Code or Antigravity, setup reuses the existing pack fragment for approved events only, except Claude Code `PreToolUse`, which is never written to `.claude/settings.json`. It preserves unrelated commands, wrapper settings and all other adapters. Capability declarations describe the existing boundary; adapter installation is not live hook compatibility proof.
    - Unrelated repository policy, hook settings and Caveman opt-in are preserved during merges.
 
 5. **Codex Host Harness & Defense in Depth**:

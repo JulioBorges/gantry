@@ -1,23 +1,12 @@
 {
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.agents/skills/gantry/scripts/guard.py\" PreToolUse --cwd \"$CLAUDE_PROJECT_DIR\""
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.agents/skills/gantry/scripts/guard.py\" PostToolUse --cwd \"$CLAUDE_PROJECT_DIR\""
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-$PWD}/.agents/skills/gantry/scripts/guard.py\" PostToolUse --cwd \"${CLAUDE_PROJECT_DIR:-$PWD}\" --format claude-code"
           }
         ]
       }
@@ -27,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.agents/skills/gantry/scripts/guard.py\" SubagentStart --cwd \"$CLAUDE_PROJECT_DIR\""
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-$PWD}/.agents/skills/gantry/scripts/guard.py\" SubagentStart --cwd \"${CLAUDE_PROJECT_DIR:-$PWD}\" --format claude-code"
           }
         ]
       }
@@ -37,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.agents/skills/gantry/scripts/guard.py\" SubagentStop --cwd \"$CLAUDE_PROJECT_DIR\""
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-$PWD}/.agents/skills/gantry/scripts/guard.py\" SubagentStop --cwd \"${CLAUDE_PROJECT_DIR:-$PWD}\" --format claude-code"
           }
         ]
       }
@@ -47,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.agents/skills/gantry/scripts/guard.py\" PreCompact --cwd \"$CLAUDE_PROJECT_DIR\""
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-$PWD}/.agents/skills/gantry/scripts/guard.py\" PreCompact --cwd \"${CLAUDE_PROJECT_DIR:-$PWD}\" --format claude-code"
           }
         ]
       }
