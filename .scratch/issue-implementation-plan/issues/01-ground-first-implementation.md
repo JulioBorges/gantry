@@ -1,7 +1,7 @@
 # Require a grounded technical plan before first implementation
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `issue-implementation-plan#01`
 Spec: `.scratch/issue-implementation-plan/spec.md`
 Created: 2026-10-06
@@ -17,14 +17,14 @@ Deliver the complete per-Issue path from assigned checkout through one bounded r
 
 ## Acceptance criteria
 
-- [ ] A one-Issue workflow fixture proves assigned checkout → Technical Plan → separate TDD Implementer → independent Review and Critic, with the effective Implement harness/model preserved.
-- [ ] Public result validation rejects a missing/invalid plan, nonexistent source references or missing criterion coverage; bounded Protocol Failure handling cannot release implementation on failure.
-- [ ] A reported scope or contract conflict waits for the operator without changing code, Issue/Spec content, dependencies or acceptance criteria; an accepted plan advances without routine approval.
-- [ ] Technical planning makes no checkout edits; an observed unexpected change refuses handoff and reports capability limitations honestly.
-- [ ] Two independent Issue chains prove that one accepted plan can release implementation while the other is still planning, in their own assigned worktrees.
-- [ ] Existing protocol/execution failure behavior preserves work, selected execution identity and correction counts; planning failures consume no Critic correction attempt.
-- [ ] Native and manual workflow instructions use the same dedicated technical-plan contract and checkpoint; legacy decomposition results do not satisfy it.
-- [ ] Plans include concrete changes, reusable behavior and tests rather than copied requirements; scope-neutral implementation adjustments are reported with a reason and criteria remain authoritative.
+- [x] A one-Issue workflow fixture proves assigned checkout → Technical Plan → separate TDD Implementer → independent Review and Critic, with the effective Implement harness/model preserved.
+- [x] Public result validation rejects a missing/invalid plan, nonexistent source references or missing criterion coverage; bounded Protocol Failure handling cannot release implementation on failure.
+- [x] A reported scope or contract conflict waits for the operator without changing code, Issue/Spec content, dependencies or acceptance criteria; an accepted plan advances without routine approval.
+- [x] Technical planning makes no checkout edits; an observed unexpected change refuses handoff and reports capability limitations honestly.
+- [x] Two independent Issue chains prove that one accepted plan can release implementation while the other is still planning, in their own assigned worktrees.
+- [x] Existing protocol/execution failure behavior preserves work, selected execution identity and correction counts; planning failures consume no Critic correction attempt.
+- [x] Native and manual workflow instructions use the same dedicated technical-plan contract and checkpoint; legacy decomposition results do not satisfy it.
+- [x] Plans include concrete changes, reusable behavior and tests rather than copied requirements; scope-neutral implementation adjustments are reported with a reason and criteria remain authoritative.
 
 ## Blocked by
 
