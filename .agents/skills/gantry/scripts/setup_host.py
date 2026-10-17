@@ -15,6 +15,10 @@ JSON_ADAPTERS = {
     'antigravity': ('.agents/hooks.json', 'antigravity.hooks.json'),
 }
 DECISION_EVENTS = {'PreToolUse', 'tool.execute.before'}
+# Cursor imports project `.claude/settings.json` and fail-closes when a
+# PreToolUse command does not return Cursor hook JSON. Do not install that
+# event there. Claude Code can keep a manual entry outside this file.
+CURSOR_IMPORTED_EVENTS = {'PreToolUse'}
 
 
 def read_object(text: str) -> dict:
@@ -179,6 +183,10 @@ def adapter_proposal(root: Path, host: str, policy: dict) -> tuple[dict[Path, st
         raise ValueError('Adapter hooks must be an object')
     desired = read_object((PACK / 'hooks' / fragment).read_text())['hooks']
     allowed = events & set(capabilities['hook_events'])
+    skipped = set()
+    if host == 'claude-code':
+        skipped = CURSOR_IMPORTED_EVENTS & allowed
+        allowed -= skipped
     for event in list(hooks):
         if not isinstance(hooks[event], list):
             raise ValueError('Adapter hook events must contain arrays')
@@ -190,6 +198,13 @@ def adapter_proposal(root: Path, host: str, policy: dict) -> tuple[dict[Path, st
         if event in allowed:
             hooks.setdefault(event, []).extend(entries)
     diagnostics.append(f'{host}: selected adapter {relative}; approved wired events: {", ".join(sorted(allowed)) or "none"}. Existing capability declaration only; wiring is not live hook proof.')
+    if skipped:
+        diagnostics.append(
+            'claude-code: PreToolUse is not installed into .claude/settings.json. '
+            'Cursor imports that file and blocks every tool when guard.py does not return Cursor hook JSON. '
+            'Existing Gantry PreToolUse commands in that file are removed. '
+            'Claude Code can keep a manual PreToolUse entry outside the project settings Cursor imports.'
+        )
     unsupported = events - set(capabilities['hook_events'])
     if unsupported:
         diagnostics.append('Unsupported hook selections require manual guidance: ' + ', '.join(sorted(unsupported)))

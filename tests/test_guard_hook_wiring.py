@@ -123,8 +123,8 @@ class ClaudeCodeHookWiringTests(unittest.TestCase):
                 settings = json.loads(settings_path.read_text(encoding="utf-8"))
                 self.assertEqual(legacy["permissions"], settings["permissions"])
                 self.assertEqual(legacy["hooks"]["SessionStart"], settings["hooks"]["SessionStart"])
-                self.assertEqual(self.settings["hooks"]["PreToolUse"], settings["hooks"]["PreToolUse"])
-                self.assertIn("--format claude-code", next(iter_commands(settings["hooks"]["PreToolUse"])))
+                self.assertNotIn("PreToolUse", settings["hooks"])
+                self.assertIn("PreToolUse is not installed into .claude/settings.json", result.stdout)
 
 
 class OpenCodeHookWiringTests(unittest.TestCase):

@@ -107,10 +107,10 @@ class HostSetupRepairTests(unittest.TestCase):
         final = json.loads(claude.read_bytes())
         self.assertEqual(initial['permissions'], final['permissions'])
         self.assertTrue(claude.read_bytes().startswith(b'{\n\t"permissions" : '))
-        self.assertEqual([{'matcher': '*', 'timeout': 15, 'hooks': [user]}], final['hooks']['PreToolUse'][:1])
+        self.assertEqual([{'matcher': '*', 'timeout': 15, 'hooks': [user]}], final['hooks']['PreToolUse'])
         self.assertEqual(initial['hooks']['CustomEvent'], final['hooks']['CustomEvent'])
         self.assertNotIn('PreCompact', final['hooks'])
-        self.assertEqual(2, len(final['hooks']['PreToolUse']))
+        self.assertIn('PreToolUse is not installed into .claude/settings.json', result.stdout)
         self.assertEqual(1, len(final['hooks']['PostToolUse']))
         self.assertEqual(b'{ "other" : "bytes" }\n', antigravity.read_bytes())
         self.assertEqual(b'{ "plugin" : ["user"] }\n', opencode.read_bytes())
@@ -202,8 +202,8 @@ class HostSetupRepairTests(unittest.TestCase):
         result = self.run_setup('--host-only', '--host', 'claude-code', '--apply', answer='y\n')
         self.assertEqual(0, result.returncode, result.stderr)
         final = json.loads(adapter.read_text())
-        self.assertEqual(settings['hooks']['PreToolUse'][0], final['hooks']['PreToolUse'][0])
-        self.assertEqual(2, len(final['hooks']['PreToolUse']))
+        self.assertEqual(settings['hooks']['PreToolUse'], final['hooks']['PreToolUse'])
+        self.assertIn('PreToolUse is not installed into .claude/settings.json', result.stdout)
 
     def test_executable_substitutions_survive_repair_and_repetition_without_execution(self) -> None:
         adapter = self.root / '.claude/settings.json'
@@ -215,7 +215,7 @@ class HostSetupRepairTests(unittest.TestCase):
             'python3 "`touch USER_ACTION; pwd`/skills/gantry/scripts/guard.py" PreToolUse',
         ]
         static_guard = {'type': 'command', 'command': 'python3 "old/.agents/skills/gantry/scripts/guard.py" PreToolUse'}
-        environment_guard = {
+        installed_guard = {
             'type': 'command',
             'command': 'python3 "${CLAUDE_PROJECT_DIR:-$PWD}/.agents/skills/gantry/scripts/guard.py" PreToolUse --cwd "${CLAUDE_PROJECT_DIR:-$PWD}" --format claude-code',
         }
@@ -224,12 +224,13 @@ class HostSetupRepairTests(unittest.TestCase):
                 user = {'type': 'command', 'command': command, 'timeout': 19}
                 wrapper = {'matcher': 'Read', 'timeout': 23, 'hooks': [user]}
                 adapter.write_text(json.dumps({'hooks': {'PreToolUse': [
-                    {**wrapper, 'hooks': [user, static_guard, environment_guard, static_guard]},
+                    {**wrapper, 'hooks': [user, static_guard, installed_guard, static_guard]},
                 ]}}))
                 applied = self.run_setup('--host-only', '--host', 'claude-code', '--apply', answer='y\n')
                 self.assertEqual(0, applied.returncode, applied.stderr)
                 hooks = json.loads(adapter.read_bytes())['hooks']['PreToolUse']
-                self.assertEqual([wrapper, {'matcher': '*', 'hooks': [environment_guard]}], hooks)
+                self.assertEqual([wrapper], hooks)
+                self.assertIn('PreToolUse is not installed into .claude/settings.json', applied.stdout)
                 self.assertFalse((self.root / 'USER_ACTION').exists())
                 first = (adapter.read_bytes(), self.policy.read_bytes())
                 repeat = self.run_setup('--host-only', '--host', 'claude-code', '--apply', answer='y\n')
