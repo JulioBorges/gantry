@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **67 / 68** |
-| Specs completed | **12 / 13** |
+| Issues completed | **68 / 68** |
+| Specs completed | **13 / 13** |
 | Execution waves | **38** |
 
 ## Specs
@@ -74,7 +74,7 @@ by* constrains the frontier; *Ordered after* is what the intended order below is
 | 18 | `run-execution-reliability` | **approved** | 14, 17 | — | harness adapters, execution preflight, Host continuation, verification recovery, Run Log, read-only reporting and Dashboard | verified role dispatch; result consumption before Host handoff; explicit verification pauses; truthful lifecycle states and timing |
 | 19 | `operator-harness-profile` | **planned** | 17 | 17 | setup writer, policy resolver, execution host resolution, `AGENTS.md` generation, `~/.gantry/profiles/` | each operator's harness and role overlay live in a machine profile; tracked policy stays shared |
 | 20 | `issue-implementation-plan` | **approved** | 18, 19 | 18, 19 | per-Issue workflow, role dispatch, technical-plan contract, retained results and read-only Run reports | mandatory grounded technical planning with the effective Implement model, supported high effort, safe plan reuse and attributable execution cost |
-| 21 | `gantry-cli` | **approved** | 01 | — | repository `gantry` command, Run execution, approval | deterministic command the harness invokes: board read, one Issue Run, plan, corrections, approval and pull request |
+| 21 | `gantry-cli` | **done** | 01 | — | repository `gantry` command, Run execution, approval | deterministic command the harness invokes: board read, one Issue Run, plan, corrections, approval and pull request |
 
 ### Spec waves (structural)
 
@@ -119,11 +119,8 @@ and 05, so they are written after a few real run logs exist, not before.
 
 ## Where work can start
 
-Waves 0–33 retain their completed Issue membership. Spec 20 (`issue-implementation-plan`) and its four-Issue breakdown are approved for planning publication.
-Spec 21 (`gantry-cli`) and its six-Issue breakdown are approved for planning publication. The executable frontier for that spec starts at `gantry-cli#01`. Issue 02 depends on 01. Issues 03, 04 and 05 depend on 02. Issue 06 depends on 03. All six Issues are `ready-for-agent`. This planning branch does not start implementation.
-The new executable frontier starts with `issue-implementation-plan#01`; Issues 02 and 03 depend on 01, and Issue 04 depends on both 02 and 03.
-The roadmap script supplies the generated wave numbers below. All four Issues are `ready-for-agent`, with implementation criteria unchecked; this planning PR does not start implementation.
-Spec 02 (`opencode-tier`) remains a separate future planning candidate.
+Waves 0–37 are complete. Every published implementation Issue is done.
+Spec 02 (`opencode-tier`) remains the next planning candidate.
 
 ## Progress by spec
 
@@ -143,7 +140,7 @@ Spec 02 (`opencode-tier`) remains a separate future planning candidate.
 | 18 | `run-execution-reliability` | 5/5 | 30–33 |
 | 19 | `operator-harness-profile` | 1/1 | 31 |
 | 20 | `issue-implementation-plan` | 4/4 | 34–36 |
-| 21 | `gantry-cli` | 5/6 | 34–37 |
+| 21 | `gantry-cli` | 6/6 | 34–37 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -389,9 +386,9 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-cli#05`** — Approve and open the pull request
   <br>↳ blocked by: gantry-cli#02
 
-### Wave 37 — 0/1 done
+### Wave 37 — 1/1 done
 
-- [ ] **`gantry-cli#06`** — Interrupt, resume and discard
+- [x] **`gantry-cli#06`** — Interrupt, resume and discard
   <br>↳ blocked by: gantry-cli#03
 
 <!-- END GENERATED: issue checklist -->

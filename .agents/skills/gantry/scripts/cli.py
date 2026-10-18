@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read the Gantry board, execute one Run, or approve it by opening a pull request."""
+"""Read the Gantry board, execute one Run, resume or discard it, or approve it."""
 from __future__ import annotations
 
 import argparse
@@ -188,44 +188,115 @@ def discard_worktree(root: Path, worktree: Path, branch: str) -> None:
     git(root, "branch", "-D", branch)
 
 
+def git_common_dir(root: Path) -> Path:
+    completed = git(root, "rev-parse", "--git-common-dir")
+    path = Path(completed.stdout.strip() or ".git")
+    if not path.is_absolute():
+        path = (root / path).resolve()
+    return path
+
+
+def run_record_path(root: Path, ref: str) -> Path:
+    return git_common_dir(root) / "gantry-cli" / f"{ref.replace('#', '--')}.json"
+
+
+def save_run(root: Path, record: dict[str, object]) -> None:
+    path = run_record_path(root, str(record["ref"]))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
+
+
+def load_run(root: Path, ref: str) -> dict[str, object] | None:
+    path = run_record_path(root, ref)
+    if not path.is_file():
+        return None
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    return loaded if isinstance(loaded, dict) else None
+
+
+def delete_run(root: Path, ref: str) -> None:
+    path = run_record_path(root, ref)
+    if path.is_file():
+        path.unlink()
+
+
 def implement_failed(worktree: Path, target: str, completed: subprocess.CompletedProcess[str]) -> bool:
     ahead = git(worktree, "rev-list", "--count", f"{target}..HEAD")
     return completed.returncode != 0 or tree_dirty(worktree) or ahead.returncode != 0 or ahead.stdout.strip() in {"", "0"}
 
 
-def deliver(worktree: Path, branch: str, target: str, policy: dict, commands: dict[str, Path]) -> int:
-    granted = correction_budget(policy)
-    spent = 0
-    first = True
+def ready_payload(branch: str, worktree: Path) -> dict[str, object]:
+    return {"event": "ready-for-approval", "branch": branch, "worktree": str(worktree), "pushed": False}
+
+
+def deliver(
+    root: Path, worktree: Path, branch: str, target: str, policy: dict,
+    commands: dict[str, Path], record: dict[str, object],
+) -> int:
     while True:
-        if not first and spent >= granted:
-            answer = pause({
-                "event": "pause", "reason": "corrections-exhausted", "choices": ["continue", "stop"],
-                "branch": branch, "worktree": str(worktree), "pushed": False,
-            })
-            if answer != "continue":
-                emit({"event": "stopped", "branch": branch, "worktree": str(worktree), "pushed": False})
-                return 1
-            granted += 1
-        first = False
-        implement = invoke_role(commands["implement"], worktree, "implement", target, "")
-        if implement_failed(worktree, target, implement):
-            spent += 1
-            continue
-        if not run_checks(worktree, policy):
-            spent += 1
-            continue
-        diff = git(worktree, "diff", f"{target}...HEAD").stdout
-        review = invoke_role(commands["review"], worktree, "review", target, diff)
-        if not verdict_passed(review):
-            spent += 1
-            continue
-        critic = invoke_role(commands["critic"], worktree, "critic", target, diff)
-        if not verdict_passed(critic):
-            spent += 1
-            continue
-        emit({"event": "ready-for-approval", "branch": branch, "worktree": str(worktree), "pushed": False})
-        return 0
+        phase = record["phase"]
+        if phase == "ready":
+            emit(ready_payload(branch, worktree))
+            return 0
+        if phase == "implement":
+            spent = int(record["spent"])
+            granted = int(record["granted"])
+            if spent > 0 and spent >= granted:
+                save_run(root, record)
+                answer = pause({
+                    "event": "pause", "reason": "corrections-exhausted", "choices": ["continue", "stop"],
+                    "branch": branch, "worktree": str(worktree), "pushed": False,
+                })
+                if answer != "continue":
+                    emit({"event": "stopped", "branch": branch, "worktree": str(worktree), "pushed": False})
+                    return 1
+                record["granted"] = granted + 1
+                save_run(root, record)
+            record["phase"] = "implement"
+            save_run(root, record)
+            implement = invoke_role(commands["implement"], worktree, "implement", target, "")
+            if implement_failed(worktree, target, implement):
+                record["spent"] = int(record["spent"]) + 1
+                record["phase"] = "implement"
+                save_run(root, record)
+                continue
+            record["phase"] = "checks"
+            phase = "checks"
+        if phase == "checks":
+            save_run(root, record)
+            if not run_checks(worktree, policy):
+                record["spent"] = int(record["spent"]) + 1
+                record["phase"] = "implement"
+                save_run(root, record)
+                continue
+            record["phase"] = "review"
+            phase = "review"
+        if phase == "review":
+            record["phase"] = "review"
+            save_run(root, record)
+            diff = git(worktree, "diff", f"{target}...HEAD").stdout
+            review = invoke_role(commands["review"], worktree, "review", target, diff)
+            if not verdict_passed(review):
+                record["spent"] = int(record["spent"]) + 1
+                record["phase"] = "implement"
+                save_run(root, record)
+                continue
+            record["phase"] = "critic"
+            phase = "critic"
+        if phase == "critic":
+            record["phase"] = "critic"
+            save_run(root, record)
+            diff = git(worktree, "diff", f"{target}...HEAD").stdout
+            critic = invoke_role(commands["critic"], worktree, "critic", target, diff)
+            if not verdict_passed(critic):
+                record["spent"] = int(record["spent"]) + 1
+                record["phase"] = "implement"
+                save_run(root, record)
+                continue
+            record["phase"] = "ready"
+            save_run(root, record)
+            emit(ready_payload(branch, worktree))
+            return 0
 
 
 def execution_context(root: Path) -> tuple[dict, str] | int:
@@ -296,8 +367,16 @@ def execute_issue(root: Path, ref: str) -> int:
         if worktree.exists():
             git(root, "worktree", "remove", "--force", str(worktree))
         return setup_error("worktree-create-failed")
+    record = {
+        "ref": issue.ref,
+        "branch": branch,
+        "phase": "implement",
+        "spent": 0,
+        "granted": correction_budget(policy),
+    }
+    save_run(root, record)
     emit({"event": "worktree", "branch": branch, "worktree": str(worktree), "pushed": False})
-    return deliver(worktree, branch, target, policy, commands)
+    return deliver(root, worktree, branch, target, policy, commands, record)
 
 
 def next_issue_number(root: Path, policy: dict, slug: str) -> int:
@@ -308,6 +387,73 @@ def next_issue_number(root: Path, policy: dict, slug: str) -> int:
         if directory.is_dir() and (match := re.match(r"^(\d{2,})-", path.name))
     ]
     return max(numbers, default=0) + 1
+
+
+def plan_environment(record: dict[str, object]) -> dict[str, str]:
+    ref = str(record["ref"])
+    slug, number = ref.split("#")
+    return {
+        "GANTRY_SLUG": slug,
+        "GANTRY_ISSUE_NUMBER": number,
+        "GANTRY_SPEC_PATH": str(record["specPath"]),
+        "GANTRY_ISSUE_PATH": str(record["issuePath"]),
+    }
+
+
+def artifacts_ready(worktree: Path, record: dict[str, object]) -> bool:
+    spec = record.get("specPath")
+    issue = record.get("issuePath")
+    if not isinstance(spec, str) or not isinstance(issue, str):
+        return False
+    return (worktree / spec).is_file() and (worktree / issue).is_file() and not tree_dirty(worktree)
+
+
+def reject_plan(root: Path, worktree: Path, branch: str, ref: str) -> int:
+    discard_worktree(root, worktree, branch)
+    delete_run(root, ref)
+    emit({"event": "rejected", "branch": branch, "pushed": False})
+    return 1
+
+
+def finish_plan(
+    root: Path, worktree: Path, branch: str, target: str, policy: dict,
+    commands: dict[str, Path], record: dict[str, object],
+) -> int:
+    environment = plan_environment(record)
+
+    def call_plan() -> subprocess.CompletedProcess[str]:
+        record["phase"] = "plan"
+        save_run(root, record)
+        return invoke_role(commands["plan"], worktree, "plan", target, "", environment)
+
+    def plan_ready(completed: subprocess.CompletedProcess[str]) -> bool:
+        return completed.returncode == 0 and not tree_dirty(worktree)
+
+    if not artifacts_ready(worktree, record):
+        completed = call_plan()
+        if not plan_ready(completed):
+            completed = call_plan()
+        while not plan_ready(completed):
+            answer = pause({
+                "event": "pause", "reason": "plan-dirty", "choices": ["try-again", "reject"],
+                "branch": branch, "worktree": str(worktree), "pushed": False,
+            })
+            if answer != "try-again":
+                return reject_plan(root, worktree, branch, str(record["ref"]))
+            completed = call_plan()
+    record["phase"] = "plan-approval"
+    save_run(root, record)
+    answer = pause({
+        "event": "pause", "reason": "plan-approval", "choices": ["approve", "reject"],
+        "branch": branch, "worktree": str(worktree), "pushed": False,
+    })
+    if answer != "approve":
+        return reject_plan(root, worktree, branch, str(record["ref"]))
+    record["phase"] = "implement"
+    record["spent"] = 0
+    record["granted"] = correction_budget(policy)
+    save_run(root, record)
+    return deliver(root, worktree, branch, target, policy, commands, record)
 
 
 def execute_plan(root: Path, slug: str) -> int:
@@ -329,44 +475,69 @@ def execute_plan(root: Path, slug: str) -> int:
     worktree = create_worktree(root, branch, target)
     if worktree is None:
         return setup_error("worktree-create-failed")
-    emit({"event": "worktree", "branch": branch, "worktree": str(worktree), "pushed": False})
-    spec_path = policy["artifacts"]["specs"].format(slug=slug)
-    issue_path = policy["artifacts"]["issues"].format(slug=slug).rstrip("/") + f"/{number:02d}-{slug}.md"
-    plan_env = {
-        "GANTRY_SLUG": slug,
-        "GANTRY_ISSUE_NUMBER": f"{number:02d}",
-        "GANTRY_SPEC_PATH": spec_path,
-        "GANTRY_ISSUE_PATH": issue_path,
+    ref = f"{slug}#{number:02d}"
+    record = {
+        "ref": ref,
+        "branch": branch,
+        "phase": "plan",
+        "spent": 0,
+        "granted": correction_budget(policy),
+        "specPath": policy["artifacts"]["specs"].format(slug=slug),
+        "issuePath": policy["artifacts"]["issues"].format(slug=slug).rstrip("/") + f"/{number:02d}-{slug}.md",
     }
+    save_run(root, record)
+    emit({"event": "worktree", "branch": branch, "worktree": str(worktree), "pushed": False})
+    return finish_plan(root, worktree, branch, target, policy, commands, record)
 
-    def call_plan() -> subprocess.CompletedProcess[str]:
-        return invoke_role(commands["plan"], worktree, "plan", target, "", plan_env)
 
-    def plan_ready(completed: subprocess.CompletedProcess[str]) -> bool:
-        return completed.returncode == 0 and not tree_dirty(worktree)
+def resume_run(root: Path, ref: str) -> int:
+    checkout = primary_checkout(root)
+    prepared = execution_context(checkout)
+    if isinstance(prepared, int):
+        return prepared
+    policy, target = prepared
+    key = normalise_ref(ref) if ref else None
+    if key is None:
+        return setup_error("issue-missing")
+    record = load_run(checkout, key)
+    if record is None:
+        return setup_error("run-missing")
+    branch = str(record["branch"])
+    worktree = worktree_path(checkout, branch)
+    if not worktree.is_dir():
+        return setup_error("worktree-missing")
+    if record.get("phase") == "ready":
+        emit(ready_payload(branch, worktree))
+        return 0
+    if record.get("phase") in {"plan", "plan-approval"}:
+        commands = require_commands(checkout, policy, ("plan", "implement", "review", "critic"))
+        if isinstance(commands, int):
+            return commands
+        return finish_plan(checkout, worktree, branch, target, policy, commands, record)
+    commands = require_commands(checkout, policy, ("implement", "review", "critic"))
+    if isinstance(commands, int):
+        return commands
+    return deliver(checkout, worktree, branch, target, policy, commands, record)
 
-    completed = call_plan()
-    if not plan_ready(completed):
-        completed = call_plan()
-    while not plan_ready(completed):
-        answer = pause({
-            "event": "pause", "reason": "plan-dirty", "choices": ["try-again", "reject"],
-            "branch": branch, "worktree": str(worktree), "pushed": False,
-        })
-        if answer != "try-again":
-            discard_worktree(root, worktree, branch)
-            emit({"event": "rejected", "branch": branch, "pushed": False})
-            return 1
-        completed = call_plan()
-    answer = pause({
-        "event": "pause", "reason": "plan-approval", "choices": ["approve", "reject"],
-        "branch": branch, "worktree": str(worktree), "pushed": False,
-    })
-    if answer != "approve":
-        discard_worktree(root, worktree, branch)
-        emit({"event": "rejected", "branch": branch, "pushed": False})
-        return 1
-    return deliver(worktree, branch, target, policy, commands)
+
+def discard_issue(root: Path, ref: str) -> int:
+    checkout = primary_checkout(root)
+    prepared = execution_context(checkout)
+    if isinstance(prepared, int):
+        return prepared
+    key = normalise_ref(ref) if ref else None
+    if key is None:
+        return setup_error("issue-missing")
+    record = load_run(checkout, key)
+    if record is None:
+        return setup_error("run-missing")
+    if record.get("phase") == "ready":
+        return setup_error("not-interrupted")
+    branch = str(record["branch"])
+    discard_worktree(checkout, worktree_path(checkout, branch), branch)
+    delete_run(checkout, key)
+    emit({"event": "discarded", "branch": branch, "pushed": False})
+    return 0
 
 
 def issue_status(path: Path) -> str:
@@ -439,7 +610,11 @@ def approve_issue(root: Path, ref: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cwd", default=".", help="repository to inspect")
-    parser.add_argument("command", choices=("board", "issues", "specs", "frontier", "execute", "approve"), nargs="?", default="board")
+    parser.add_argument(
+        "command",
+        choices=("board", "issues", "specs", "frontier", "execute", "approve", "resume", "discard"),
+        nargs="?", default="board",
+    )
     parser.add_argument("issue", nargs="?")
     args = parser.parse_args(argv)
     root = repo_root(Path(args.cwd))
@@ -453,6 +628,14 @@ def main(argv: list[str] | None = None) -> int:
         if not args.issue:
             return setup_error("issue-missing")
         return approve_issue(root, args.issue)
+    if args.command == "resume":
+        if not args.issue:
+            return setup_error("issue-missing")
+        return resume_run(root, args.issue)
+    if args.command == "discard":
+        if not args.issue:
+            return setup_error("issue-missing")
+        return discard_issue(root, args.issue)
     pack = root / ".agents" / "skills" / "gantry"
     if not pack.is_dir():
         print(json.dumps({"error": {"code": "pack-unreadable", "repository": str(root)}}))

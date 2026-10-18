@@ -1,7 +1,7 @@
 # Interrupt, resume and discard
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-cli#06`
 Spec: `.scratch/gantry-cli/spec.md`
 Created: 2026-10-17
@@ -17,12 +17,12 @@ A Run stopped without a merge stays interrupted in the same worktree and on the 
 
 ## Acceptance criteria
 
-- [ ] Stop without merge keeps the worktree, branch and local commits.
-- [ ] Resume with remaining budget continues from the last unfinished role in the same worktree.
-- [ ] Resume does not reserve another number and does not redo plan when the Spec and Issue are already on the branch.
-- [ ] Resume at zero budget reopens the pause and does not call implement.
-- [ ] Discard deletes the local worktree and branch.
-- [ ] Resuming a Run that is ready for approval does not call an agent. It stays available for the approval command.
+- [x] Stop without merge keeps the worktree, branch and local commits.
+- [x] Resume with remaining budget continues from the last unfinished role in the same worktree.
+- [x] Resume does not reserve another number and does not redo plan when the Spec and Issue are already on the branch.
+- [x] Resume at zero budget reopens the pause and does not call implement.
+- [x] Discard deletes the local worktree and branch.
+- [x] Resuming a Run that is ready for approval does not call an agent. It stays available for the approval command.
 
 ## Blocked by
 
