@@ -1,7 +1,7 @@
 # Read the board
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-cli#01`
 Spec: `.scratch/gantry-cli/spec.md`
 Created: 2026-10-17
@@ -17,10 +17,10 @@ Deterministic commands that list Issues, Specs and the frontier as structured ou
 
 ## Acceptance criteria
 
-- [ ] List Issues and Specs from a fixture repository using the paths in policy.
-- [ ] Report, for each Issue, whether the frontier blocks it and which blockers are open.
-- [ ] A Spec is presented as a supporting document and is not executable.
-- [ ] Structured output and the exit code distinguish success from a repository whose pack cannot be read.
+- [x] List Issues and Specs from a fixture repository using the paths in policy.
+- [x] Report, for each Issue, whether the frontier blocks it and which blockers are open.
+- [x] A Spec is presented as a supporting document and is not executable.
+- [x] Structured output and the exit code distinguish success from a repository whose pack cannot be read.
 
 ## Blocked by
 

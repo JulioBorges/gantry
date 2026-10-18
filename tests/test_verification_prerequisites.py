@@ -121,6 +121,7 @@ class VerificationPrerequisiteWorkflowTests(unittest.TestCase):
 
         spec_dir = root / ".scratch" / "sample" / "issues"
         spec_dir.mkdir(parents=True)
+        (spec_dir.parent / "spec.md").write_text("# Approved fixture Spec\nDeliver the independent files.\n")
         issue_file = spec_dir / "01-sample.md"
         prereq_line = f"Prerequisites: {issue_prerequisites}\n" if issue_prerequisites else ""
         issue_file.write_text(

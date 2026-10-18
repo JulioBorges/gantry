@@ -53,8 +53,16 @@ The planning limit, 15% of the chosen model's window by default, for an issue's 
 _Avoid_: Source-file count, measured runtime usage, agent self-estimate
 
 **Result Contract**:
-The versioned JSON Schema, shipped in the pack per role (requirement critic, planner, plan critic, implementer, reviewer, critic, learner), that every agent result must satisfy. Harnesses that can enforce structured output load it directly; everywhere else the orchestrator validates the result with the workflow script before accepting it.
+The versioned JSON Schema, shipped in the pack per role (requirement critic, planner, plan critic, technical planner, implementer, reviewer, critic, learner), that every agent result must satisfy. Harnesses that can enforce structured output load it directly; everywhere else the orchestrator validates the result with the workflow script before accepting it.
 _Avoid_: Inline schema, task envelope, free-text report
+
+**Technical Plan**:
+A bounded, read-only Research-and-Plan result for one Issue's assigned checkout, required before its
+first implementation. It cites current source and reusable behavior, maps every criterion to changes
+and tests, and reports scope or contract conflicts. The effective Implement harness/model produces it;
+a separate fresh TDD Implementer receives it after deterministic validation. It is distinct from Spec
+and Issue decomposition Plan and adds no routine operator approval for conflict-free plans.
+_Avoid_: Spec approval, decomposition Plan, implementation completion
 
 **Protocol Failure**:
 A missing or invalid agent result, judged against the role's result contract by a workflow script. It never advances the workflow: the work stays in the worktree, the agent is asked once more, and then the issue is reported as failed for that phase.

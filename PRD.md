@@ -94,7 +94,13 @@ If `/gantry` encounters an older incomplete scope, it may delegate the missing p
 
 `frontier.py` computes rounds from the blocker graph; it exits non-zero on a cycle or dangling ref, and lists parked (`blocked`, `needs-operator`, `draft`) and externally blocked issues, which are skipped, not failed. Per round, every issue runs its own chain without barriers:
 
-1. **Implementer** (fresh agent, `tdd` skill, its own worktree when the round has more than one issue): every criterion, failing test → minimal code → refactor, small commits, clean tree, `gates.py --run`. Never touches `ROADMAP.md`, `Status:` or checkboxes.
+1. **Technical Plan**, then **Implementer**: after assigning the Issue checkout, one bounded read-only
+   Research-and-Plan call inherits its effective Implement harness/model and configured effort. A
+   dedicated grounded contract cites current source and reusable behavior and maps every criterion to
+   changes and tests. Invalid results receive one re-ask; observed checkout edits refuse handoff;
+   scope/contract conflicts wait for the operator without edits. Accepted results are retained outside
+   sanitized Run events and automatically release a separate Implementer. Independent Issues do not
+   share a planning barrier. The **Implementer** (fresh agent, `tdd` skill, its own worktree when the round has more than one issue): every criterion, failing test → minimal code → refactor, small commits, clean tree, `gates.py --run`. Never touches `ROADMAP.md`, `Status:` or checkboxes.
 2. **Reviewer**: standards axis and spec axis; blocking findings get exactly one fix pass by a fresh implementer in the same worktree.
 3. **Critic** (fresh agent): runs `acceptance.py` and `gates.py` itself, demands evidence per criterion, inspects the diff for skipped tests, mocks standing in for required real things, TODOs and scope creep, defaults to not complete. Refutation → a fresh implementer with the ordered `requiredFixes`, up to the correction budget. Budget spent → `Status: blocked` with the critic's refutations and the worktree path in `## Comments`.
 4. **Integration** (orchestrator): `complete` issues merge into the run branch one at a time with `--no-ff`; `gates.py` runs after each merge; a red gate after a merge stops the run — the merge, not the slice, is at fault. Then `roadmap.py done <ref>` — the only way an issue becomes done — and a commit naming the slice.

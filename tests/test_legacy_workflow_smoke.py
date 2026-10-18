@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 from tests.preflight_fixture import VERIFIED_PREFLIGHT
+from tests.technical_plan_fixture import COMMAND_REPLIES, AGENT_REPLY
 import subprocess
 import sys
 import tempfile
@@ -295,6 +296,7 @@ const researchFormat = {json.dumps(research_format)};
 const calls = [];
 const commandCalls = [];
 const runCommand = async (command, options = {{}}) => {{
+{COMMAND_REPLIES}
   // Readiness is simulated here; selected-profile proof has its own public tests.
   if (command.includes('/execution.py" preflight ')) return {{exitCode:0,stdout:{json.dumps(json.dumps(VERIFIED_PREFLIGHT))},stderr:''}};
   if (command.includes('/execution.py" host ')) {{
@@ -328,6 +330,7 @@ const agent = async (promptText, options) => {{
   if (options.label.startsWith('critique')) return {{ acceptable: true, problems: [], frontierErrors: [] }};
   if (options.label === 'research:format') return JSON.stringify(researchFormat);
   if (options.label.startsWith('research:')) return 'research brief';
+{AGENT_REPLY}
   if (options.label.startsWith('implement:')) return {{
     worktree: args.repoRoot, branch: args.branch, commits: ['test commit'],
     summary: 'stubbed rendered workflow', testsAdded: [], gatesResult: 'verdict: pass',
@@ -514,6 +517,7 @@ process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
             "subprocess",
             "sys",
             "tempfile",
+            "technical_plan",
             "threading",
             "time",
             "typing",

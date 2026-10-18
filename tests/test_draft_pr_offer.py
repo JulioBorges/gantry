@@ -1,5 +1,6 @@
 import json
 from tests.preflight_fixture import VERIFIED_PREFLIGHT
+from tests.technical_plan_fixture import COMMAND_REPLIES, AGENT_REPLY
 import os
 import subprocess
 import sys
@@ -45,6 +46,7 @@ const prompt = async (message) => {{
 }};
 const agent = async (promptMsg, options) => {{
   calls.push({{ kind: 'agent', label: options.label }});
+{AGENT_REPLY}
   if (options.label.startsWith('implement:')) return {{
     worktree: args.repoRoot, branch: args.branch, commits: ['test commit'],
     summary: 'stubbed rendered workflow', testsAdded: [], gatesResult: 'verdict: pass',
@@ -63,6 +65,7 @@ const agent = async (promptMsg, options) => {{
   return null;
 }};
 const runCommand = async (command, options = {{}}) => {{
+{COMMAND_REPLIES}
   // Readiness is simulated here; selected-profile proof has its own public tests.
   if (command.includes('/execution.py" preflight ')) return {{exitCode:0,stdout:{json.dumps(json.dumps(VERIFIED_PREFLIGHT))},stderr:''}};
   if (command.includes('/execution.py" host ')) {{

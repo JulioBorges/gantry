@@ -41,6 +41,9 @@ class CanonicalGantryWorkflowTests(unittest.TestCase):
         slug, number = ref.split("#")
         path = root / ".scratch" / slug / "issues" / f"{int(number):02d}-example.md"
         path.parent.mkdir(parents=True, exist_ok=True)
+        spec_path = path.parent.parent / "spec.md"
+        if not spec_path.exists():
+            spec_path.write_text("# Approved fixture Spec\nPreserve the portable workflow contract.\n")
         blocked_by = "\n".join(f"- `{blocker}` — prerequisite" for blocker in blockers or []) or "- None"
         acceptance_criteria = "\n".join(f"- [ ] {criterion}" for criterion in criteria or ["exposes a deterministic behaviour"])
         path.write_text(
@@ -117,6 +120,12 @@ Preserve the portable workflow contract.
 
     def run_workflow(self, filename: str, args: dict) -> dict:
         args = {"hostHarness": "claude-code", **args}
+        if filename == "round-workflow.md" and args.get("commandMode") == "real" and args.get("issues"):
+            root = Path(args["repoRoot"])
+            head = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=root, capture_output=True)
+            if head.returncode:
+                subprocess.run(["git", "add", "."], cwd=root, check=True)
+                subprocess.run(["git", "commit", "--quiet", "-m", "assigned fixture baseline"], cwd=root, check=True)
         source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
         source = source.replace("export const meta", "const meta", 1)
         driver = f"""
@@ -192,14 +201,34 @@ const runCommand = async (command, options = {{}}) => {{
       stderr: completed.stderr || '',
     }};
   }}
+  if (command.includes('/technical_plan.py')) return {{exitCode:0, stdout:JSON.stringify(command.includes(' capture ')
+    ? {{input:{{worktree:options.cwd,revision:'fixture-head',issue:args.issues[0].path,spec:args.issues[0].specPath}}}}
+    : {{accepted:true,artifact:'/fixture/technical-plan.json',conflicts:[]}})}};
+  if (command.includes('/acceptance.py')) return {{exitCode:0,stdout:JSON.stringify({{criteria:[{{index:1}}]}})}};
   if (args.commandResults && args.commandResults.length) return args.commandResults.shift();
   if (command.includes('/common.py')) return {{ exitCode: 0, stdout: JSON.stringify({{ issueBranch: args.issueBranch || args.branch }}) }};
   if (command === 'git branch --show-current') return {{ exitCode: 0, stdout: args.issueBranch || args.branch }};
   return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}'
     : command.includes('/spec.py') ? '{{"valid":true}}' : '' }};
 }};
+let releaseFirstImplementation;
+const firstImplementation = new Promise(resolve => releaseFirstImplementation = resolve);
 const agent = async (prompt, options) => {{
   calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, model: options.model, effort: options.effort, selection: options.selection, sequence: sequence++ }});
+  if (options.label.startsWith('technical-plan:')) {{
+    if (args.interleavePlans && options.issueRef.endsWith('#02')) await firstImplementation;
+    if (args.technicalPlanEdit) writeFileSync(`${{options.cwd}}/unexpected.txt`, 'planner edit');
+    if (args.technicalPlanRawResults && args.technicalPlanRawResults.length) return args.technicalPlanRawResults.shift();
+    const plan = {{ input: options.technicalInput,
+      findings: [{{path: args.technicalPlanSource || options.technicalInput.issue, line: 1, behavior: args.technicalPlanSource ? 'existing() returns True; extend this public boundary' : 'Issue declares the approved behavior'}}],
+      reuse: ['Retain existing public workflow and verification commands'],
+      changes: ['Extend the delivery at its current public boundary'],
+      coverage: options.criterionIndexes.map(index => ({{index, changes:['Extend delivery.txt'], tests:['Execute fixture gates']}})),
+      adjustments: [], conflicts: args.technicalPlanConflicts || [] }};
+    if (args.technicalPlanDefect === 'source') plan.findings[0].path = 'fabricated.py';
+    if (args.technicalPlanDefect === 'coverage') plan.coverage = [];
+    return plan;
+  }}
   if (options.label.startsWith('research:')) return 'factual research';
   if (options.label.startsWith('requirement-critic')) {{
     if (args.requirementCriticRawResults && args.requirementCriticRawResults.length) {{
@@ -231,6 +260,7 @@ const agent = async (prompt, options) => {{
     return {{ acceptable: true, problems: [], frontierErrors: [] }};
   }}
   if (options.label.startsWith('implement:')) {{
+    if (args.interleavePlans && options.issueRef.endsWith('#01')) releaseFirstImplementation();
     if (args.implementerRawResults && args.implementerRawResults.length) {{
       return args.implementerRawResults.shift();
     }}
@@ -249,6 +279,7 @@ const agent = async (prompt, options) => {{
     decisions: [], blockers: [],
     }};
   }}
+  if (options.label.startsWith('review:') && args.reviewerResult) return args.reviewerResult;
   if (options.label.startsWith('review:')) return {{
     blocking: [], nonBlocking: [], summary: 'no findings',
   }};
@@ -275,6 +306,11 @@ const agent = async (prompt, options) => {{
 }};
 const parallel = async (tasks) => Promise.all(tasks.map((task) => task()));
 const pipeline = async (items, ...steps) => {{
+  if (args.interleavePlans) return await Promise.all(items.map(async item => {{
+    let value = item;
+    for (const step of steps) value = await step(value, item);
+    return value;
+  }}));
   const results = [];
   for (const item of items) {{
     let value = await steps[0](item);
@@ -308,6 +344,8 @@ try {{
 
     def init_repo(self, root: Path) -> None:
         subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+        subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
 
     def test_result_contract_cli_rejects_missing_critic_criteria_and_accepts_large_result(self) -> None:
         missing = subprocess.run(
@@ -371,10 +409,11 @@ try {{
         self.assertIn("usage:", help_result.stdout.lower())
 
     def test_result_schemas_use_the_supported_subset_for_every_role(self) -> None:
-        roles = ("requirement-critic", "planner", "plan-critic", "implementer", "reviewer", "critic", "learner")
-        supported = {"type", "properties", "required", "items", "enum", "additionalProperties"}
+        roles = ("requirement-critic", "planner", "technical-planner", "plan-critic", "implementer", "reviewer", "critic", "learner")
+        supported = {"type", "properties", "required", "items", "enum", "additionalProperties", "minItems", "minLength", "minimum"}
         required_fields = {
             "requirement-critic": {"blocking", "findings"},
+            "technical-planner": {"input", "findings", "reuse", "changes", "coverage", "adjustments", "conflicts"},
             "planner": {"filesWritten", "issues", "roadmapAdditions", "openDecisions"},
             "plan-critic": {"acceptable", "problems", "frontierErrors"},
             "implementer": {"worktree", "branch", "commits", "summary", "testsAdded", "gatesResult", "decisions", "blockers"},
@@ -1131,7 +1170,7 @@ Scenario: greet a user
             self.assertEqual(before_roadmap, roadmap.read_bytes())
             critic_calls = [call for call in run["calls"] if call["label"].startswith("critic:")]
             self.assertEqual(["critic:protocol#01#1", "critic:protocol#01#1:retry"], [call["label"] for call in critic_calls])
-            self.assertFalse(any(call["label"].startswith("implement:protocol#01") for call in run["calls"][1:]))
+            self.assertEqual(1, sum(call["label"].startswith("implement:protocol#01") for call in run["calls"]))
             self.assertFalse(any('roadmap.py" done' in call["command"] for call in run["commandCalls"]))
 
     def test_round_stops_on_invalid_correction_implementer_without_spending_budget(self) -> None:
@@ -1200,6 +1239,7 @@ Scenario: greet a user
             labels = [call["label"] for call in run["calls"]]
             self.assertEqual(
                 [
+                    "technical-plan:implementer-protocol#01",
                     "implement:implementer-protocol#01",
                     "review:implementer-protocol#01",
                     "critic:implementer-protocol#01#1",
@@ -1280,12 +1320,17 @@ Scenario: greet a user
 
             self.assertEqual("integration_failed", run["result"]["results"][0]["outcome"])
             self.assertEqual("ready-for-agent", parse_issue(issue).status)
-            self.assertEqual(5, len(run["commandCalls"]))
-            self.assertIn('result.py" --role "implementer" --json', run["commandCalls"][0]["command"])
-            self.assertIn('result.py" --role "reviewer" --json', run["commandCalls"][1]["command"])
-            self.assertIn('result.py" --role "critic" --json', run["commandCalls"][2]["command"])
-            self.assertIn('acceptance.py"', run["commandCalls"][3]["command"])
-            self.assertIn('gates.py" --run', run["commandCalls"][4]["command"])
+            commands = [call["command"] for call in run["commandCalls"]]
+            self.assertEqual(9, len(commands))
+            self.assertIn('technical_plan.py" capture', commands[0])
+            self.assertIn('acceptance.py"', commands[1])
+            self.assertIn('result.py" --role "technical-planner" --json', commands[2])
+            self.assertIn('technical_plan.py" accept', commands[3])
+            self.assertIn('result.py" --role "implementer" --json', commands[4])
+            self.assertIn('result.py" --role "reviewer" --json', commands[5])
+            self.assertIn('result.py" --role "critic" --json', commands[6])
+            self.assertIn('acceptance.py"', commands[7])
+            self.assertIn('gates.py" --run', commands[8])
 
     def test_round_serially_integrates_then_gates_then_marks_done(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -1340,20 +1385,24 @@ Scenario: greet a user
                 self.assertEqual("done", parse_issue(issue).status)
                 self.assertEqual("integrated\n", (root / "delivery.txt").read_text(encoding="utf-8"))
                 commands = [call["command"] for call in run["commandCalls"]]
-                self.assertEqual(12, len(commands))
+                self.assertEqual(16, len(commands))
                 self.assertIn('common.py" --cwd', commands[0])
                 self.assertIn("--issue", commands[0])
                 self.assertIn(f"git worktree add --quiet -b '{issue_branch}'", commands[1])
                 self.assertEqual("git branch --show-current", commands[2])
-                self.assertIn('result.py" --role "implementer" --json', commands[3])
-                self.assertIn('result.py" --role "reviewer" --json', commands[4])
-                self.assertIn('result.py" --role "critic" --json', commands[5])
-                self.assertIn('acceptance.py"', commands[6])
-                self.assertIn(f'git merge --no-ff "{issue_branch}"', commands[7])
-                self.assertIn('gates.py" --run', commands[8])
-                self.assertIn('roadmap.py" done serial#01', commands[9])
-                self.assertIn('git add -- ROADMAP.md', commands[10])
-                self.assertIn('git commit -m "gantry: complete serial#01"', commands[11])
+                self.assertIn('technical_plan.py" capture', commands[3])
+                self.assertIn('acceptance.py"', commands[4])
+                self.assertIn('result.py" --role "technical-planner" --json', commands[5])
+                self.assertIn('technical_plan.py" accept', commands[6])
+                self.assertIn('result.py" --role "implementer" --json', commands[7])
+                self.assertIn('result.py" --role "reviewer" --json', commands[8])
+                self.assertIn('result.py" --role "critic" --json', commands[9])
+                self.assertIn('acceptance.py"', commands[10])
+                self.assertIn(f'git merge --no-ff "{issue_branch}"', commands[11])
+                self.assertIn('gates.py" --run', commands[12])
+                self.assertIn('roadmap.py" done serial#01', commands[13])
+                self.assertIn('git add -- ROADMAP.md', commands[14])
+                self.assertIn('git commit -m "gantry: complete serial#01"', commands[15])
                 self.assertFalse(any('roadmap.py" status' in command for command in commands))
                 self.assertEqual(
                     [str(issue_worktree)] * 3,
@@ -1413,6 +1462,10 @@ Scenario: greet a user
                 [
                     ("run.started", None, None),
                     ("round.started", None, None),
+                    ("phase.started", "lifecycle#01", "Technical Plan"),
+                    ("subagent.started", "lifecycle#01", "Technical Plan"),
+                    ("subagent.stopped", "lifecycle#01", "Technical Plan"),
+                    ("phase.finished", "lifecycle#01", "Technical Plan"),
                     ("phase.started", "lifecycle#01", "Implement"),
                     ("subagent.started", "lifecycle#01", "Implement"),
                     ("role.result.ready", "lifecycle#01", "Implement"),
@@ -3326,13 +3379,14 @@ Slice: `legacy#07`
             "subprocess",
             "sys",
             "tempfile",
+            "technical_plan",
             "threading",
             "time",
             "typing",
             "urllib",
         }
         self.assertEqual(
-            {"acceptance.py", "budget.py", "caveman.py", "cleanup.py", "common.py", "dashboard.py", "discovery.py", "execution.py", "frontier.py", "gates.py", "guard.py", "learner.py", "plan.py", "profile_preflight.py", "result.py", "roadmap.py", "runlog.py", "setup.py", "setup_host.py", "spec.py", "wait_gate.py"},
+            {"acceptance.py", "budget.py", "caveman.py", "cleanup.py", "cli.py", "common.py", "dashboard.py", "discovery.py", "execution.py", "frontier.py", "gates.py", "guard.py", "learner.py", "plan.py", "profile_preflight.py", "result.py", "roadmap.py", "runlog.py", "setup.py", "setup_host.py", "spec.py", "technical_plan.py", "wait_gate.py"},
             {script.name for script in SCRIPTS.glob("*.py")},
         )
         git_hooks = SKILL_DIR / "hooks" / "git"
