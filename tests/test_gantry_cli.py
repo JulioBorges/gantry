@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -631,4 +632,345 @@ print('https://example.test/pr/1')
             self.assertFalse(json.loads(repeated.stdout.strip().splitlines()[-1])["createdCommit"])
             self.assertEqual(2, len(gh_log.read_text().splitlines()))
             self.assertEqual(target_before, self.git(origin, "rev-parse", "trunk").stdout.strip())
+
+
+class GantryCliInterruptTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.case = GantryCliCorrectionsPlanAndApprovalTests()
+        self.case.setUp()
+
+    def write_script(self, path: Path, body: str) -> None:
+        self.case.write_script(path, body)
+
+    def git(self, root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return self.case.git(root, *args)
+
+    def invoke(self, root: Path, *args: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
+        return self.case.invoke(root, *args, stdin=stdin)
+
+    def events(self, result: subprocess.CompletedProcess[str]) -> list[dict]:
+        return self.case.events(result)
+
+    def failing_review(self, root: Path, scripts: dict[str, Path]) -> Path:
+        count = root / "implement.count"
+        self.write_script(scripts["implement"], f"""
+import subprocess
+from pathlib import Path
+count = Path({str(count)!r})
+seen = int(count.read_text()) if count.exists() else 0
+count.write_text(str(seen + 1))
+if not Path('one.txt').exists():
+    Path('one.txt').write_text('one\\n')
+    subprocess.check_call(['git','add','one.txt'])
+    subprocess.check_call(['git','commit','-qm','one'])
+""")
+        self.case.quiet_check(scripts["check"])
+        self.write_script(scripts["review"], """
+import json
+print(json.dumps({'verdict': 'fail'}))
+""")
+        return count
+
+    def test_stop_keeps_the_worktree_branch_and_local_commits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            origin = Path(directory) / "origin.git"
+            root.mkdir()
+            subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True)
+            scripts = self.case.execute_case.fixture(root)
+            self.git(root, "remote", "add", "origin", str(origin))
+            self.case.set_budget(root, 0)
+            self.failing_review(root, scripts)
+            stopped = self.invoke(root, "execute", "sample#01", stdin="stop\n")
+            self.assertEqual(1, stopped.returncode, stopped.stdout + stopped.stderr)
+            self.assertEqual("stopped", self.events(stopped)[-1]["event"])
+            worktree = Path(self.events(stopped)[-1]["worktree"])
+            self.assertTrue(worktree.is_dir())
+            self.assertEqual("gantry/sample-01", self.git(worktree, "branch", "--show-current").stdout.strip())
+            self.assertEqual(["one"], self.git(worktree, "log", "--format=%s", "trunk..HEAD").stdout.splitlines())
+            self.assertNotEqual(0, self.git(origin, "rev-parse", "--verify", "gantry/sample-01").returncode)
+
+    def test_resume_at_zero_budget_reopens_the_pause_without_calling_implement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "pause"
+            root.mkdir()
+            scripts = self.case.execute_case.fixture(root)
+            self.case.set_budget(root, 0)
+            count = self.failing_review(root, scripts)
+            stopped = self.invoke(root, "execute", "sample#01", stdin="stop\n")
+            self.assertEqual(1, stopped.returncode, stopped.stdout + stopped.stderr)
+            self.assertEqual("1", count.read_text())
+            resumed = self.invoke(root, "resume", "sample#01", stdin="stop\n")
+            self.assertEqual(1, resumed.returncode, resumed.stdout + resumed.stderr)
+            self.assertEqual("corrections-exhausted", self.events(resumed)[0]["reason"])
+            self.assertEqual(["continue", "stop"], self.events(resumed)[0]["choices"])
+            self.assertEqual(self.events(stopped)[-1]["worktree"], self.events(resumed)[0]["worktree"])
+            self.assertEqual("stopped", self.events(resumed)[-1]["event"])
+            self.assertEqual("1", count.read_text())
+
+            root = Path(directory) / "continue"
+            root.mkdir()
+            scripts = self.case.execute_case.fixture(root)
+            self.case.set_budget(root, 0)
+            count = root / "implement.count"
+            self.write_script(scripts["implement"], f"""
+import subprocess
+from pathlib import Path
+count = Path({str(count)!r})
+seen = int(count.read_text()) if count.exists() else 0
+count.write_text(str(seen + 1))
+if not Path('one.txt').exists():
+    Path('one.txt').write_text('one\\n')
+    subprocess.check_call(['git','add','one.txt'])
+    subprocess.check_call(['git','commit','-qm','one'])
+""")
+            self.case.quiet_check(scripts["check"])
+            review_count = root / "review.count"
+            self.write_script(scripts["review"], f"""
+import json
+from pathlib import Path
+count = Path({str(review_count)!r})
+seen = int(count.read_text()) if count.exists() else 0
+count.write_text(str(seen + 1))
+print(json.dumps({{'verdict': 'fail' if seen == 0 else 'pass'}}))
+""")
+            stopped = self.invoke(root, "execute", "sample#01", stdin="stop\n")
+            self.assertEqual("1", count.read_text())
+            continued = self.invoke(root, "resume", "sample#01", stdin="continue\n")
+            self.assertEqual(0, continued.returncode, continued.stdout + continued.stderr)
+            self.assertEqual("corrections-exhausted", self.events(continued)[0]["reason"])
+            self.assertEqual("ready-for-approval", self.events(continued)[-1]["event"])
+            self.assertFalse(self.events(continued)[-1]["pushed"])
+            self.assertEqual("2", count.read_text())
+            self.assertEqual(self.events(stopped)[-1]["worktree"], self.events(continued)[-1]["worktree"])
+
+    def test_resume_continues_the_unfinished_role_with_the_remaining_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = self.case.execute_case.fixture(root)
+            self.case.set_budget(root, 2)
+            implement_count = root / "implement.count"
+            review_count = root / "review.count"
+            critic_count = root / "critic.count"
+            check_count = root / "check.count"
+            self.write_script(scripts["check"], f"""
+from pathlib import Path
+count = Path({str(check_count)!r})
+seen = int(count.read_text()) if count.exists() else 0
+count.write_text(str(seen + 1))
+if seen:
+    raise SystemExit(1)
+""")
+            self.write_script(scripts["implement"], f"""
+import subprocess
+from pathlib import Path
+count = Path({str(implement_count)!r})
+seen = int(count.read_text()) if count.exists() else 0
+count.write_text(str(seen + 1))
+if not Path('one.txt').exists():
+    Path('one.txt').write_text('one\\n')
+    subprocess.check_call(['git','add','one.txt'])
+    subprocess.check_call(['git','commit','-qm','one'])
+""")
+            self.write_script(scripts["review"], f"""
+import os, signal
+from pathlib import Path
+count = Path({str(review_count)!r})
+seen = int(count.read_text()) if count.exists() else 0
+count.write_text(str(seen + 1))
+os.kill(os.getppid(), signal.SIGTERM)
+raise SystemExit(1)
+""")
+            self.write_script(scripts["critic"], f"""
+import json
+from pathlib import Path
+Path({str(critic_count)!r}).write_text('1')
+print(json.dumps({{'verdict': 'pass'}}))
+""")
+            interrupted = self.invoke(root, "execute", "sample#01")
+            self.assertNotEqual(0, interrupted.returncode)
+            self.assertEqual("1", implement_count.read_text())
+            self.assertEqual("1", review_count.read_text())
+            self.assertFalse(critic_count.exists())
+            worktree = root / ".gantry" / "worktrees" / "gantry-sample-01"
+            self.assertTrue(worktree.is_dir())
+            self.write_script(scripts["review"], f"""
+import json
+from pathlib import Path
+count = Path({str(review_count)!r})
+seen = int(count.read_text()) if count.exists() else 0
+count.write_text(str(seen + 1))
+print(json.dumps({{'verdict': 'pass'}}))
+""")
+            resumed = self.invoke(root, "resume", "sample#01")
+            self.assertEqual(0, resumed.returncode, resumed.stdout + resumed.stderr)
+            self.assertEqual("1", implement_count.read_text())
+            self.assertEqual("1", check_count.read_text())
+            self.assertEqual("2", review_count.read_text())
+            self.assertEqual("1", critic_count.read_text())
+            self.assertEqual("ready-for-approval", self.events(resumed)[-1]["event"])
+            self.assertEqual(str(worktree), self.events(resumed)[-1]["worktree"])
+            self.assertEqual("", self.git(root, "branch", "--list", "gantry/sample-02").stdout)
+
+    def test_resume_does_not_redo_plan_or_reserve_another_number(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.case.execute_case.fixture(root)
+            plan = root / "plan-role.py"
+            calls = root / "plan.count"
+            self.write_script(plan, f"""
+import os, subprocess
+from pathlib import Path
+count = Path({str(calls)!r})
+seen = int(count.read_text()) if count.exists() else 0
+count.write_text(str(seen + 1))
+spec = Path(os.environ['GANTRY_SPEC_PATH'])
+issue = Path(os.environ['GANTRY_ISSUE_PATH'])
+spec.parent.mkdir(parents=True, exist_ok=True)
+issue.parent.mkdir(parents=True, exist_ok=True)
+spec.write_text('# Fresh\\n')
+issue.write_text('# Planned\\n\\nType: issue\\nStatus: ready-for-agent\\nSlice: `fresh#01`\\n\\n## Acceptance criteria\\n\\n- [ ] Ship it.\\n\\n## Blocked by\\n\\nNone\\n')
+subprocess.check_call(['git','add', spec.as_posix(), issue.as_posix()])
+subprocess.check_call(['git','commit','-qm','plan'])
+""")
+            policy = json.loads((root / ".gantry" / "config.json").read_text())
+            policy["execution"]["roles"]["plan"] = {"harness": "claude-code", "model": "fixture", "command": str(plan)}
+            (root / ".gantry" / "config.json").write_text(json.dumps(policy))
+            proc = subprocess.Popen(
+                [sys.executable, str(CLI), "--cwd", str(root), "execute", "fresh"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            try:
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    if "plan-approval" in line:
+                        break
+                proc.send_signal(signal.SIGTERM)
+                proc.wait(timeout=5)
+            finally:
+                for stream in (proc.stdin, proc.stdout, proc.stderr):
+                    if stream:
+                        stream.close()
+            self.assertEqual("1", calls.read_text())
+            worktree = root / ".gantry" / "worktrees" / "gantry-fresh-01"
+            self.assertTrue((worktree / ".scratch" / "fresh" / "spec.md").is_file())
+            self.assertTrue((worktree / ".scratch" / "fresh" / "issues" / "01-fresh.md").is_file())
+            resumed = self.invoke(root, "resume", "fresh#01", stdin="approve\n")
+            self.assertEqual(0, resumed.returncode, resumed.stdout + resumed.stderr)
+            self.assertEqual("1", calls.read_text())
+            self.assertEqual("plan-approval", self.events(resumed)[0]["reason"])
+            self.assertEqual("ready-for-approval", self.events(resumed)[-1]["event"])
+            self.assertEqual("gantry/fresh-01", self.git(worktree, "branch", "--show-current").stdout.strip())
+            self.assertEqual("", self.git(root, "branch", "--list", "gantry/fresh-02").stdout)
+            self.assertFalse((worktree / ".scratch" / "fresh" / "issues" / "02-fresh.md").exists())
+
+    def test_discard_deletes_the_local_worktree_and_branch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            origin = Path(directory) / "origin.git"
+            root.mkdir()
+            subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True)
+            scripts = self.case.execute_case.fixture(root)
+            self.git(root, "remote", "add", "origin", str(origin))
+            self.case.set_budget(root, 0)
+            self.failing_review(root, scripts)
+            stopped = self.invoke(root, "execute", "sample#01", stdin="stop\n")
+            worktree = Path(self.events(stopped)[-1]["worktree"])
+            self.assertTrue(worktree.is_dir())
+            discarded = self.invoke(root, "discard", "sample#01")
+            self.assertEqual(0, discarded.returncode, discarded.stdout + discarded.stderr)
+            self.assertEqual("discarded", self.events(discarded)[-1]["event"])
+            self.assertFalse(self.events(discarded)[-1]["pushed"])
+            self.assertFalse(worktree.exists())
+            self.assertEqual("", self.git(root, "branch", "--list", "gantry/sample-01").stdout)
+            self.assertNotEqual(0, self.git(origin, "rev-parse", "--verify", "gantry/sample-01").returncode)
+            missing = self.invoke(root, "resume", "sample#01")
+            self.assertNotEqual(0, missing.returncode)
+            self.assertEqual("run-missing", json.loads(missing.stdout)["error"]["reason"])
+
+    def test_resume_of_a_ready_run_does_not_call_an_agent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            origin = Path(directory) / "origin.git"
+            root.mkdir()
+            subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True)
+            scripts = self.case.execute_case.fixture(root, target="trunk")
+            self.case.quiet_check(scripts["check"])
+            implement_count = root / "implement.count"
+            review_count = root / "review.count"
+            critic_count = root / "critic.count"
+            self.write_script(scripts["implement"], f"""
+import subprocess
+from pathlib import Path
+count = Path({str(implement_count)!r})
+seen = int(count.read_text()) if count.exists() else 0
+count.write_text(str(seen + 1))
+if not Path('one.txt').exists():
+    Path('one.txt').write_text('one\\n')
+    subprocess.check_call(['git','add','one.txt'])
+    subprocess.check_call(['git','commit','-qm','one'])
+""")
+            self.write_script(scripts["review"], f"""
+import json
+from pathlib import Path
+count = Path({str(review_count)!r})
+seen = int(count.read_text()) if count.exists() else 0
+count.write_text(str(seen + 1))
+print(json.dumps({{'verdict': 'pass'}}))
+""")
+            self.write_script(scripts["critic"], f"""
+import json
+from pathlib import Path
+count = Path({str(critic_count)!r})
+seen = int(count.read_text()) if count.exists() else 0
+count.write_text(str(seen + 1))
+print(json.dumps({{'verdict': 'pass'}}))
+""")
+            roadmap = root / "ROADMAP.md"
+            roadmap.write_text("""# Roadmap
+
+| Metric | Value |
+|---|---|
+| Issues completed | **0 / 0** |
+| Specs completed | **0 / 0** |
+| Execution waves | **0** |
+
+<!-- BEGIN GENERATED: spec progress -->
+
+<!-- END GENERATED: spec progress -->
+
+<!-- BEGIN GENERATED: issue checklist -->
+
+<!-- END GENERATED: issue checklist -->
+""", encoding="utf-8")
+            self.git(root, "add", "ROADMAP.md")
+            self.git(root, "commit", "-qm", "roadmap")
+            self.git(root, "remote", "add", "origin", str(origin))
+            self.git(root, "push", "-q", "origin", "trunk")
+            gh = root / "gh"
+            self.write_script(gh, """
+print('https://example.test/pr/1')
+""")
+            prepared = self.invoke(root, "execute", "sample#01")
+            self.assertEqual(0, prepared.returncode, prepared.stdout + prepared.stderr)
+            resumed = subprocess.run(
+                ["node", str(COMMAND), "resume", "sample#01", "--cwd", str(root)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(0, resumed.returncode, resumed.stdout + resumed.stderr)
+            self.assertNotIn("Unknown command", resumed.stderr)
+            self.assertEqual("ready-for-approval", self.events(resumed)[-1]["event"])
+            self.assertFalse(self.events(resumed)[-1]["pushed"])
+            self.assertEqual("1", implement_count.read_text())
+            self.assertEqual("1", review_count.read_text())
+            self.assertEqual("1", critic_count.read_text())
+            env = os.environ.copy()
+            env["PATH"] = f"{root}{os.pathsep}{env.get('PATH', '')}"
+            approved = subprocess.run(
+                ["node", str(COMMAND), "approve", "sample#01", "--cwd", str(root)],
+                text=True, capture_output=True, check=False, env=env,
+            )
+            self.assertEqual(0, approved.returncode, approved.stdout + approved.stderr)
+            self.assertEqual("pull-request", json.loads(approved.stdout.strip().splitlines()[-1])["event"])
+            self.assertEqual("1", implement_count.read_text())
 
