@@ -69,6 +69,10 @@ class ExecutionFailureError(RuntimeError):
     """Runtime failure with telemetry-safe diagnostics, never raw streams or exception text."""
 
 
+class EffortCapabilityUnknown(ExecutionFailureError):
+    """Technical-planning effort cannot be negotiated from known capability."""
+
+
 def resolve_host(*, root: Path, explicit_host: str | None = None, profile_root: Path | None = None) -> dict[str, Any]:
     """Diagnose invocation identity without promoting saved preferences to proof.
 
@@ -283,6 +287,58 @@ DERIVED_ROLES = {
 ALL_ROLES = (*BASE_ROLES, *DERIVED_ROLES.keys())
 
 
+_PLANNING_EFFORTS = ("low", "medium", "high")
+
+
+def planning_effort_decision(capability: dict | None) -> dict[str, Any]:
+    """Negotiate technical-planning effort. Observed provider effort is never invented."""
+    unknown = {
+        "stop": True,
+        "reason": "effort_capability_unknown",
+        "error": "Effort capability is unknown; readiness recovery required. No effort was selected.",
+    }
+    if not isinstance(capability, dict) or capability.get("status") == "unknown":
+        return unknown
+    if capability.get("configurable") is False:
+        return {"stop": False, "policy": {
+            "intent": "high", "selected": None, "policy": "model-default",
+            "observed": None, "evidence": "provider effort unobserved",
+        }}
+    supported = capability.get("supportedEfforts")
+    if not isinstance(supported, list) or not supported or not all(isinstance(item, str) for item in supported):
+        return unknown
+    normalized: list[str] = []
+    for item in supported:
+        value = item.lower()
+        if value not in _PLANNING_EFFORTS or value in normalized:
+            return unknown
+        normalized.append(value)
+    if "high" in normalized:
+        selected, name = "high", "supported-high"
+    elif "medium" in normalized:
+        selected, name = "medium", "greatest-at-or-below-high"
+    else:
+        selected, name = "low", "greatest-at-or-below-high"
+    return {"stop": False, "policy": {
+        "intent": "high", "selected": selected, "policy": name,
+        "observed": None, "evidence": "provider effort unobserved",
+    }}
+
+
+def apply_planning_effort(selection: dict[str, Any], capability: dict | None) -> dict[str, Any]:
+    """Return a planning selection. Does not write profiles, policy, or the caller's dict."""
+    decision = planning_effort_decision(capability)
+    if decision["stop"]:
+        return decision
+    resolved = copy.deepcopy(selection)
+    selected = decision["policy"]["selected"]
+    if selected is None:
+        resolved.pop("effort", None)
+    else:
+        resolved["effort"] = selected
+    return {"stop": False, "selection": resolved, "policy": decision["policy"]}
+
+
 def validate_effort(
     model_id: str,
     effort: str | None,
@@ -447,6 +503,7 @@ def validate_selection(
     root: Path | None = None,
     check_auth: bool = True,
     runner: Callable[..., Any] | None = None,
+    supported_efforts: list[str] | None = None,
 ) -> dict[str, Any]:
     """Validate a single role execution selection."""
     harness = selection.get("harness", "")
@@ -467,17 +524,17 @@ def validate_selection(
 
     effort = selection.get("effort")
     if effort:
-        cap_file = Path(__file__).resolve().parents[1] / "capabilities" / f"{harness}.json"
-        supported_efforts = None
-        if cap_file.exists():
-            try:
-                cap_data = json.loads(cap_file.read_text(encoding="utf-8"))
-                model_meta = cap_data.get("models", {}).get(model, {})
-                supported_efforts = model_meta.get("supportedEfforts")
-            except Exception:
-                pass
         if supported_efforts is None:
-            supported_efforts = HARNESS_SUPPORTED_EFFORTS.get(harness)
+            cap_file = Path(__file__).resolve().parents[1] / "capabilities" / f"{harness}.json"
+            if cap_file.exists():
+                try:
+                    cap_data = json.loads(cap_file.read_text(encoding="utf-8"))
+                    model_meta = cap_data.get("models", {}).get(model, {})
+                    supported_efforts = model_meta.get("supportedEfforts")
+                except Exception:
+                    pass
+            if supported_efforts is None:
+                supported_efforts = HARNESS_SUPPORTED_EFFORTS.get(harness)
         eff_check = validate_effort(model, effort, supported_efforts=supported_efforts)
         if not eff_check["valid"]:
             return {
@@ -669,6 +726,7 @@ def dispatch_role(
     issue_ref: str | None = None,
     retry_on_invalid: bool = True,
     timeout: int | float | None = None,
+    effort_capability: dict | None = None,
 ) -> dict[str, Any] | str:
     """Execute a bounded role invocation; requested selection is never observed identity."""
     cwd_path = Path(cwd).resolve()
@@ -678,11 +736,27 @@ def dispatch_role(
         role, policy=policy, run_overrides=run_overrides,
         issue_overrides=issue_overrides, environment_defaults=environment_defaults,
     )
+    effort_policy = None
+    declared_efforts = None
+    if role == "technical-planner":
+        if effort_capability is None:
+            raise EffortCapabilityUnknown(
+                "Effort capability is unknown; readiness recovery required. No effort was selected."
+            )
+        applied = apply_planning_effort(eff_selection, effort_capability)
+        if applied["stop"]:
+            raise EffortCapabilityUnknown(applied["error"])
+        eff_selection = applied["selection"]
+        effort_policy = applied["policy"]
+        if effort_policy["policy"] != "model-default":
+            declared_efforts = [item.lower() for item in effort_capability.get("supportedEfforts") or []]
     harness, model, effort = (eff_selection.get(k) for k in ("harness", "model", "effort"))
     ver_check = validate_harness_version(harness, runner=runner, cwd=cwd_path)
     if not ver_check["valid"]:
         raise UnsupportedHarnessVersionError(ver_check["error"])
-    eff_val = validate_selection(eff_selection, role=role, root=cwd_path, check_auth=False)
+    eff_val = validate_selection(
+        eff_selection, role=role, root=cwd_path, check_auth=False, supported_efforts=declared_efforts,
+    )
     if not eff_val["valid"]:
         raise ValueError(eff_val["error"])
     eff_timeout = timeout if timeout is not None else (policy or {}).get("execution", {}).get("timeout", 300)
@@ -712,6 +786,7 @@ def dispatch_role(
             "observedSelection": {"harness": harness, "model": None, "effort": None},
             "selectionEvidence": "CLI invocation arguments; model and effort unobserved",
             "permissionScope": sandbox or "inherited CLI configuration",
+            **({"effortPolicy": effort_policy} if effort_policy is not None else {}),
             **extra,
         }
         payload = {
@@ -1080,6 +1155,10 @@ def main() -> int:
     dispatch_parser.add_argument("--issue-ref", help="Issue reference for invocation attribution")
     dispatch_parser.add_argument("--timeout", type=float, help="execution timeout in seconds")
     dispatch_parser.add_argument("--json", action="store_true", help="output JSON")
+    dispatch_parser.add_argument("--effort-capability", help="JSON effort capability for technical-planning negotiation")
+
+    planning_parser = subparsers.add_parser("planning-effort", help="negotiate technical-planning effort without persisting it")
+    planning_parser.add_argument("--json", action="store_true", help="output JSON")
 
     failures_parser = subparsers.add_parser("unresolved-failures", help="check for unresolved paused executions")
     failures_parser.add_argument("unit_id", help="repository unit ID")
@@ -1212,11 +1291,18 @@ def main() -> int:
                     print(f"  - {err}", file=sys.stderr)
         return 0 if res["valid"] else 1
 
+    elif args.command == "planning-effort":
+        payload = json.load(sys.stdin)
+        negotiated = apply_planning_effort(payload.get("selection") or {}, payload.get("capability"))
+        print(json.dumps(negotiated))
+        return 1 if negotiated.get("stop") else 0
+
     elif args.command == "dispatch":
         prompt = args.prompt
         if not prompt:
             prompt = sys.stdin.read()
         selection = json.loads(args.selection) if getattr(args, "selection", None) else None
+        capability = json.loads(args.effort_capability) if getattr(args, "effort_capability", None) else None
         try:
             res = dispatch_role(
                 role=args.role,
@@ -1231,6 +1317,7 @@ def main() -> int:
                 state_root=getattr(args, "state_root", None),
                 timeout=getattr(args, "timeout", None),
                 issue_ref=getattr(args, "issue_ref", None),
+                effort_capability=capability,
             )
             print(json.dumps(res, indent=2))
             return 0

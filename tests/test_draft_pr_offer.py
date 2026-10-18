@@ -28,6 +28,7 @@ class DraftPullRequestOfferTests(unittest.TestCase):
             env["PATH"] = f"{tempdir}:{env.get('PATH', '')}"
             
             args["repoRoot"] = str(tempdir)
+            args.setdefault("effortCapabilities", {"*": {"configurable": True, "supportedEfforts": ["low", "medium", "high"]}})
 
             driver = f"""
 import {{ spawnSync }} from 'child_process';

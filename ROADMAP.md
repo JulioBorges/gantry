@@ -39,7 +39,7 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **60 / 68** |
+| Issues completed | **63 / 68** |
 | Specs completed | **11 / 13** |
 | Execution waves | **38** |
 
@@ -142,8 +142,8 @@ Spec 02 (`opencode-tier`) remains a separate future planning candidate.
 | 17 | `host-harness-resolution` | 4/4 | 27–29 |
 | 18 | `run-execution-reliability` | 5/5 | 30–33 |
 | 19 | `operator-harness-profile` | 1/1 | 31 |
-| 20 | `issue-implementation-plan` | 1/4 | 34–36 |
-| 21 | `gantry-cli` | 1/6 | 34–37 |
+| 20 | `issue-implementation-plan` | 3/4 | 34–36 |
+| 21 | `gantry-cli` | 2/6 | 34–37 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -369,13 +369,13 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`issue-implementation-plan#01`** — Require a grounded technical plan before first implementation _(no blockers)_
 - [x] **`gantry-cli#01`** — Read the board _(no blockers)_
 
-### Wave 35 — 0/3 done
+### Wave 35 — 3/3 done
 
-- [ ] **`issue-implementation-plan#02`** — Use supported high reasoning for technical planning only
+- [x] **`issue-implementation-plan#02`** — Use supported high reasoning for technical planning only
   <br>↳ blocked by: issue-implementation-plan#01
-- [ ] **`issue-implementation-plan#03`** — Reuse technical plans safely across corrections and resumption
+- [x] **`issue-implementation-plan#03`** — Reuse technical plans safely across corrections and resumption
   <br>↳ blocked by: issue-implementation-plan#01
-- [ ] **`gantry-cli#02`** — Execute an Issue that already exists
+- [x] **`gantry-cli#02`** — Execute an Issue that already exists
   <br>↳ blocked by: gantry-cli#01
 
 ### Wave 36 — 0/4 done

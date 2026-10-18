@@ -120,6 +120,8 @@ Preserve the portable workflow contract.
 
     def run_workflow(self, filename: str, args: dict) -> dict:
         args = {"hostHarness": "claude-code", **args}
+        if filename == "round-workflow.md":
+            args.setdefault("effortCapabilities", {"*": {"configurable": True, "supportedEfforts": ["low", "medium", "high"]}})
         if filename == "round-workflow.md" and args.get("commandMode") == "real" and args.get("issues"):
             root = Path(args["repoRoot"])
             head = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=root, capture_output=True)
@@ -178,6 +180,10 @@ const runCommand = async (command, options = {{}}) => {{
     return {{exitCode:readiness.valid ? 0 : 1,stdout:JSON.stringify(readiness),stderr:''}};
   }}
   commandCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});
+  if (command.includes('planning-effort') || (command.includes('technical_plan.py') && command.includes(' evaluate '))) {{
+    const completed = spawnSync(command, {{ cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8', input: options.input }});
+    return {{ exitCode: completed.status ?? 1, stdout: completed.stdout || '', stderr: completed.stderr || '' }};
+  }}
   if (command.includes('/spec.py') && args.stubSpecCheck !== false) {{
     return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
   }}
@@ -214,13 +220,14 @@ const runCommand = async (command, options = {{}}) => {{
 let releaseFirstImplementation;
 const firstImplementation = new Promise(resolve => releaseFirstImplementation = resolve);
 const agent = async (prompt, options) => {{
-  calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, model: options.model, effort: options.effort, selection: options.selection, sequence: sequence++ }});
-  if (options.label.startsWith('technical-plan:')) {{
+  calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, model: options.model, effort: options.effort, effortPolicy: options.effortPolicy, selection: options.selection, sequence: sequence++ }});
+  if (options.label.startsWith('technical-plan')) {{
+    if (options.label.includes('refresh') && args.technicalPlanRefreshResults && args.technicalPlanRefreshResults.length) return args.technicalPlanRefreshResults.shift();
     if (args.interleavePlans && options.issueRef.endsWith('#02')) await firstImplementation;
     if (args.technicalPlanEdit) writeFileSync(`${{options.cwd}}/unexpected.txt`, 'planner edit');
     if (args.technicalPlanRawResults && args.technicalPlanRawResults.length) return args.technicalPlanRawResults.shift();
     const plan = {{ input: options.technicalInput,
-      findings: [{{path: args.technicalPlanSource || options.technicalInput.issue, line: 1, behavior: args.technicalPlanSource ? 'existing() returns True; extend this public boundary' : 'Issue declares the approved behavior'}}],
+      findings: [{{path: args.technicalPlanSource || options.technicalInput.issue, line: 1, behavior: options.label.includes('refresh') && args.technicalPlanRefreshBehavior ? args.technicalPlanRefreshBehavior : (args.technicalPlanSource ? 'existing() returns True; extend this public boundary' : 'Issue declares the approved behavior')}}],
       reuse: ['Retain existing public workflow and verification commands'],
       changes: ['Extend the delivery at its current public boundary'],
       coverage: options.criterionIndexes.map(index => ({{index, changes:['Extend delivery.txt'], tests:['Execute fixture gates']}})),
@@ -1321,16 +1328,18 @@ Scenario: greet a user
             self.assertEqual("integration_failed", run["result"]["results"][0]["outcome"])
             self.assertEqual("ready-for-agent", parse_issue(issue).status)
             commands = [call["command"] for call in run["commandCalls"]]
-            self.assertEqual(9, len(commands))
-            self.assertIn('technical_plan.py" capture', commands[0])
-            self.assertIn('acceptance.py"', commands[1])
-            self.assertIn('result.py" --role "technical-planner" --json', commands[2])
-            self.assertIn('technical_plan.py" accept', commands[3])
-            self.assertIn('result.py" --role "implementer" --json', commands[4])
-            self.assertIn('result.py" --role "reviewer" --json', commands[5])
-            self.assertIn('result.py" --role "critic" --json', commands[6])
-            self.assertIn('acceptance.py"', commands[7])
-            self.assertIn('gates.py" --run', commands[8])
+            self.assertEqual(11, len(commands))
+            self.assertIn('technical_plan.py" evaluate', commands[0])
+            self.assertIn('planning-effort', commands[1])
+            self.assertIn('technical_plan.py" capture', commands[2])
+            self.assertIn('acceptance.py"', commands[3])
+            self.assertIn('result.py" --role "technical-planner" --json', commands[4])
+            self.assertIn('technical_plan.py" accept', commands[5])
+            self.assertIn('result.py" --role "implementer" --json', commands[6])
+            self.assertIn('result.py" --role "reviewer" --json', commands[7])
+            self.assertIn('result.py" --role "critic" --json', commands[8])
+            self.assertIn('acceptance.py"', commands[9])
+            self.assertIn('gates.py" --run', commands[10])
 
     def test_round_serially_integrates_then_gates_then_marks_done(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -1385,24 +1394,26 @@ Scenario: greet a user
                 self.assertEqual("done", parse_issue(issue).status)
                 self.assertEqual("integrated\n", (root / "delivery.txt").read_text(encoding="utf-8"))
                 commands = [call["command"] for call in run["commandCalls"]]
-                self.assertEqual(16, len(commands))
+                self.assertEqual(18, len(commands))
                 self.assertIn('common.py" --cwd', commands[0])
                 self.assertIn("--issue", commands[0])
                 self.assertIn(f"git worktree add --quiet -b '{issue_branch}'", commands[1])
                 self.assertEqual("git branch --show-current", commands[2])
-                self.assertIn('technical_plan.py" capture', commands[3])
-                self.assertIn('acceptance.py"', commands[4])
-                self.assertIn('result.py" --role "technical-planner" --json', commands[5])
-                self.assertIn('technical_plan.py" accept', commands[6])
-                self.assertIn('result.py" --role "implementer" --json', commands[7])
-                self.assertIn('result.py" --role "reviewer" --json', commands[8])
-                self.assertIn('result.py" --role "critic" --json', commands[9])
-                self.assertIn('acceptance.py"', commands[10])
-                self.assertIn(f'git merge --no-ff "{issue_branch}"', commands[11])
-                self.assertIn('gates.py" --run', commands[12])
-                self.assertIn('roadmap.py" done serial#01', commands[13])
-                self.assertIn('git add -- ROADMAP.md', commands[14])
-                self.assertIn('git commit -m "gantry: complete serial#01"', commands[15])
+                self.assertIn('technical_plan.py" evaluate', commands[3])
+                self.assertIn('planning-effort', commands[4])
+                self.assertIn('technical_plan.py" capture', commands[5])
+                self.assertIn('acceptance.py"', commands[6])
+                self.assertIn('result.py" --role "technical-planner" --json', commands[7])
+                self.assertIn('technical_plan.py" accept', commands[8])
+                self.assertIn('result.py" --role "implementer" --json', commands[9])
+                self.assertIn('result.py" --role "reviewer" --json', commands[10])
+                self.assertIn('result.py" --role "critic" --json', commands[11])
+                self.assertIn('acceptance.py"', commands[12])
+                self.assertIn(f'git merge --no-ff "{issue_branch}"', commands[13])
+                self.assertIn('gates.py" --run', commands[14])
+                self.assertIn('roadmap.py" done serial#01', commands[15])
+                self.assertIn('git add -- ROADMAP.md', commands[16])
+                self.assertIn('git commit -m "gantry: complete serial#01"', commands[17])
                 self.assertFalse(any('roadmap.py" status' in command for command in commands))
                 self.assertEqual(
                     [str(issue_worktree)] * 3,
