@@ -18,6 +18,13 @@ RUNLOG = SCRIPTS / "runlog.py"
 
 
 class GuardHookTests(unittest.TestCase):
+    def assert_pre_tool_allow(self, result: subprocess.CompletedProcess[str]) -> None:
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual("allow", payload["permission"])
+        self.assertEqual("PreToolUse", payload["hookSpecificOutput"]["hookEventName"])
+        self.assertEqual("allow", payload["hookSpecificOutput"]["permissionDecision"])
+
     def run_guard(self, root: Path, *args: str, payload: object) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(GUARD), *args],
@@ -91,8 +98,7 @@ class GuardHookTests(unittest.TestCase):
 
             read_payload = {"session_id": "sess-1", "tool_name": "Read", "tool_input": {"file_path": "ROADMAP.md"}}
             allowed = self.run_guard(root, "PreToolUse", "--state-root", str(state), "--run-id", run, payload=read_payload)
-            self.assertEqual(0, allowed.returncode)
-            self.assertEqual("allow", allowed.stdout.strip())
+            self.assert_pre_tool_allow(allowed)
 
     def test_denies_editing_roadmap_case_insensitively(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -668,8 +674,7 @@ class GuardHookTests(unittest.TestCase):
                 with self.subTest(command=command):
                     payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
                     allowed = self.run_guard(root, "PreToolUse", payload=payload)
-                    self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
-                    self.assertEqual("allow", allowed.stdout.strip())
+                    self.assert_pre_tool_allow(allowed)
 
     def test_denies_bash_commands_that_would_disable_the_git_hooks_layer(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -743,8 +748,7 @@ class GuardHookTests(unittest.TestCase):
                 with self.subTest(command=command):
                     payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
                     allowed = self.run_guard(root, "PreToolUse", payload=payload)
-                    self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
-                    self.assertEqual("allow", allowed.stdout.strip())
+                    self.assert_pre_tool_allow(allowed)
 
     def test_still_allows_commands_that_merely_look_like_the_disabling_spellings(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -759,8 +763,7 @@ class GuardHookTests(unittest.TestCase):
                 with self.subTest(command=command):
                     payload = {"session_id": "sess-1", "tool_name": "Bash", "tool_input": {"command": command}}
                     allowed = self.run_guard(root, "PreToolUse", payload=payload)
-                    self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
-                    self.assertEqual("allow", allowed.stdout.strip())
+                    self.assert_pre_tool_allow(allowed)
 
     # -- performance --------------------------------------------------------------------------
 

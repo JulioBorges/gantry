@@ -72,7 +72,9 @@ class ClaudeCodeHookWiringTests(unittest.TestCase):
                             text=True, capture_output=True,
                         )
                         self.assertEqual(0, result.returncode, result.stderr)
-                        response = json.loads(result.stdout)["hookSpecificOutput"]
+                        body = json.loads(result.stdout)
+                        response = body["hookSpecificOutput"]
+                        self.assertEqual(expected, body["permission"])
                         self.assertEqual("PreToolUse", response["hookEventName"])
                         self.assertEqual(expected, response["permissionDecision"])
                         if expected == "deny":
