@@ -83,7 +83,17 @@ assigned checkout → Technical Plan → separate implement (TDD) → review (st
 ## Per-Issue roles
 
 **Technical Planner:** one bounded read-only Research-and-Plan call after checkout assignment, using
-that Issue's effective Implement harness/model and configured effort. The dedicated
+that Issue's effective Implement harness and model after profile, Run and Issue overrides. Request high
+reasoning when that selection's effort capability includes high; otherwise the greatest supported effort
+at or below high, or the model default when effort is not configurable. Unknown effort capability stops
+for the existing readiness recovery and does not invent a setting or change the saved selection. The
+implementation call keeps its configured effort. Record the requested planning effort separately from
+provider-observed effort, which stays unobserved unless the provider reports it. Review fixes, Critic
+corrections and same-Run resumption call `technical_plan.py evaluate`: reuse valid findings, refresh only
+findings affected by cited source or standing-decision changes, and stop for an operator when the approved
+Issue contract, Spec or dependency changed. A missing, corrupt or mismatched artifact cannot be reused as
+another Issue or worktree result. Reuse does not reset corrections, silently change the harness or model,
+or grant delivery completion. The dedicated
 `technical-planner` contract binds input identity, cited current source and reusable behavior, concrete
 changes and tests for every authoritative criterion, scope-neutral choices and blocking conflicts.
 Target 500–1,000 useful tokens without padding or omitting evidence. `result.py --role technical-planner
@@ -505,7 +515,7 @@ function resolveRoleForIssue(issueRef, role, options) {
   return null
 }
 
-async function logRoleSelected(issueRef, role, selection) {
+async function logRoleSelected(issueRef, role, selection, extra) {
   const isSelectionConfigured = Boolean(A.roles || A.issueRoles || A.issueRoleReplacements || A.recordRoleSelection)
   if (!runLogEnabled || !selection || !issueRef || !isSelectionConfigured) return
   await appendRunEvent('role.selected', issueRef, undefined, {
@@ -514,6 +524,7 @@ async function logRoleSelected(issueRef, role, selection) {
     requested: selection,
     effective: selection,
     evidence: { source: 'role_selection' },
+    ...(extra || {}),
   })
 }
 
@@ -624,6 +635,9 @@ async function executeRole(role, prompt, options) {
   if (selection && selection.harness && (selection.harness !== hostHarness || A.boundedRoleExecution === true)) {
     const cwd = (options && options.cwd) || A.repoRoot
     const selectionJson = JSON.stringify(selection)
+    const capabilityArg = role === 'technical-planner'
+      ? ` --effort-capability '${JSON.stringify(capabilityFor(selection && selection.model)).replaceAll("'", "'\\''")}'`
+      : ''
     const agentPrompt = cavemanActive ? `${prompt}\n\n${cavemanInstruction}` : prompt
     const attribution = []
     if (A.runId && A.unitId) {
@@ -632,7 +646,7 @@ async function executeRole(role, prompt, options) {
       if (issueRef) attribution.push(`--issue-ref ${shellQuote(issueRef)}`)
     }
     if (A.executionTimeout) attribution.push(`--timeout ${Number(A.executionTimeout)}`)
-    const cmd = `python3 "${scripts}/execution.py" dispatch --role "${role}" --cwd ${shellQuote(cwd)} --selection '${selectionJson.replaceAll("'", "'\\''")}' ${attribution.join(' ')}`
+    const cmd = `python3 "${scripts}/execution.py" dispatch --role "${role}" --cwd ${shellQuote(cwd)} --selection '${selectionJson.replaceAll("'", "'\\''")}'${capabilityArg} ${attribution.join(' ')}`
     const res = await runCommand(cmd, { cwd: A.repoRoot, input: agentPrompt })
     if (res && res.exitCode === 0) {
       try {
@@ -653,7 +667,7 @@ async function executeRole(role, prompt, options) {
   const { beforeExecute, ...invocationOptions } = options || {}
   const agentOptions = {
     ...invocationOptions,
-    ...(selection ? { selection, model: selection.model, effort: selection.effort } : {}),
+    ...(selection ? { selection, model: selection.model, effort: selection.effort, effortPolicy: options.effortPolicy } : {}),
     ...(cavemanActive ? { skills: (options.skills || []).concat(cavemanState.skill_path || 'caveman'), caveman: true } : {}),
     ...(schema ? { schema } : {}),
   }
@@ -988,10 +1002,62 @@ refutations, gateResult, gateFailures and decisionsForOperator as structured out
 
 // Accepted plans belong to individual Issue chains, never a round-wide barrier.
 const technicalPlans = new Map()
+function capabilityFor(model) {
+  const table = A.effortCapabilities
+  if (!table || typeof table !== 'object' || Array.isArray(table)) return { status: 'unknown' }
+  if (model && Object.hasOwn(table, model)) return table[model]
+  if (Object.hasOwn(table, '*')) return table['*']
+  return { status: 'unknown' }
+}
+async function resolvePlanningSelection(selection) {
+  const unknown = { stop: true, reason: 'effort_capability_unknown', error: 'Effort capability is unknown; readiness recovery required. No effort was selected.' }
+  let res
+  try {
+    res = await runCommand(`python3 "${scripts}/execution.py" planning-effort --json`, {
+      cwd: A.repoRoot,
+      input: JSON.stringify({ selection: selection || {}, capability: capabilityFor(selection && selection.model) }),
+    })
+  } catch {
+    return unknown
+  }
+  let body = null
+  try { body = JSON.parse((res && res.stdout) || '') } catch {}
+  if (!res || res.exitCode !== 0 || !body || body.stop || !body.selection || !body.policy) {
+    return { stop: true, reason: (body && body.reason) || unknown.reason, error: (body && body.error) || unknown.error }
+  }
+  return { stop: false, selection: body.selection, policy: body.policy }
+}
+async function loadPlanEvaluation(issue, assigned) {
+  const command = `python3 "${scripts}/technical_plan.py" evaluate --cwd ${shellQuote(assigned.worktree)} --issue ${shellQuote(issue.path)}${A.stateRoot ? ` --state-root ${shellQuote(A.stateRoot)}` : ''}`
+  let evaluated
+  try {
+    evaluated = await runCommand(command, { cwd: assigned.worktree })
+  } catch {
+    return { action: 'absent' }
+  }
+  if (!evaluated || evaluated.exitCode !== 0 || !evaluated.stdout || !evaluated.stdout.trim()) return { action: 'absent' }
+  try {
+    const body = JSON.parse(evaluated.stdout)
+    return body && typeof body.action === 'string' ? body : { action: 'absent' }
+  } catch {
+    return { action: 'corrupt' }
+  }
+}
 async function technicalPlan(issue, assigned, selection) {
   const command = action => `python3 "${scripts}/technical_plan.py" ${action} --cwd ${shellQuote(assigned.worktree)} --issue ${shellQuote(issue.path)}${A.stateRoot ? ` --state-root ${shellQuote(A.stateRoot)}` : ''}`
   const failure = (error, reason = 'execution_unavailable') => ({ planningStopped: true, role: 'technical-planner', error, reason,
     worktree: assigned.worktree, branch: assigned.branch })
+  const evaluation = await loadPlanEvaluation(issue, assigned)
+  if (evaluation.action === 'reuse' && evaluation.plan) {
+    technicalPlans.set(issue.ref, evaluation.plan)
+    return null
+  }
+  if (evaluation.action === 'operator') {
+    return { ...failure(evaluation.error || 'Approved contract or dependency changed; operator decision required', 'needs_operator'), decisionsForOperator: [evaluation.reason || 'approved_contract_changed'] }
+  }
+  const planning = await resolvePlanningSelection(selection)
+  if (planning.stop) return failure(planning.error, planning.reason || 'effort_capability_unknown')
+  const refresh = evaluation.action === 'refresh'
   let baseline
   try {
     baseline = JSON.parse((await runWorkflowCommand(command('capture'), { cwd: assigned.worktree })).stdout)
@@ -1000,12 +1066,14 @@ async function technicalPlan(issue, assigned, selection) {
   }
   const criterionIndexes = await authoritativeCriterionIndexes(issue)
   if (!criterionIndexes) return failure('Technical Plan authoritative criteria unavailable')
-  await logRoleSelected(issue.ref, 'technical-planner', selection)
-  const options = { label: `technical-plan:${issue.ref}`, phase: 'Technical Plan', cwd: assigned.worktree,
-    issueRef: issue.ref, issuePath: issue.path, selection, readOnly: true,
+  await logRoleSelected(issue.ref, 'technical-planner', planning.selection, { effortPolicy: planning.policy })
+  const options = { label: `${refresh ? 'technical-plan-refresh' : 'technical-plan'}:${issue.ref}`, phase: 'Technical Plan', cwd: assigned.worktree,
+    issueRef: issue.ref, issuePath: issue.path, selection: planning.selection, effortPolicy: planning.policy, readOnly: true,
     technicalInput: baseline.input, criterionIndexes,
     ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'technical-planner' ? { executionUnavailable: true } : {}) }
-  const prompt = `Research and plan ${issue.ref} in ${assigned.worktree} on ${assigned.branch} before any implementation.
+  const prompt = `${refresh ? `Refresh only the stale findings for ${issue.ref}` : `Research and plan ${issue.ref}`} in ${assigned.worktree} on ${assigned.branch} before any implementation.
+${refresh ? `Keep valid findings. Stale sources: ${JSON.stringify(evaluation.staleSources || [])}. Standing decisions changed: ${evaluation.standingChanged === true}. Do not repeat unaffected research.` : ''}
+Planning effort policy, requested separately from unobserved provider execution: ${JSON.stringify(planning.policy)}. Do not write this temporary effort to a profile or repository default.
 Read ${issue.path}, ${issue.specPath}, ${paths.context}, ${paths.adrs} and applicable standing decisions, then inspect actual source and tests.
 This is one bounded read-only Research-and-Plan call, separate from Spec decomposition. Never edit files,
 Issue/Spec content, dependencies, criteria or roadmap; never commit or change branches. Use supported read-only
@@ -1045,11 +1113,9 @@ async function implement(issue, feedback, previous) {
     issueRef: issue.ref, selection, correction: Boolean(feedback),
     ...(A.issueExecutionUnavailable && A.issueExecutionUnavailable[issue.ref] === 'implementer' ? { executionUnavailable: true } : {}),
     beforeExecute: async () => {
-      // Reconcile recovered implementation before scheduling any new planning/code work.
-      if (!technicalPlans.has(issue.ref)) {
-        const stopped = await technicalPlan(issue, assigned, selection)
-        if (stopped) return stopped
-      }
+      // Re-evaluate retained research before every implementation, including review fixes.
+      const stopped = await technicalPlan(issue, assigned, selection)
+      if (stopped) return stopped
       started = true
       await logRoleSelected(issue.ref, 'implementer', selection)
       await appendRunEvent('phase.started', issue.ref, 'Implement', { worktree: assigned.worktree, ...(priorAssignment(issue) && !priorAssignment(issue).correctionPending && !feedback && !previous ? { recovery: true } : {}) })

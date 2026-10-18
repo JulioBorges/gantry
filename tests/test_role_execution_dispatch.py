@@ -517,6 +517,8 @@ Preserve the portable workflow contract.
         subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
 
     def run_workflow(self, filename: str, args: dict) -> dict:
+        if filename == "round-workflow.md":
+            args.setdefault("effortCapabilities", {"*": {"configurable": True, "supportedEfforts": ["low", "medium", "high"]}})
         source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
         source = source.replace("export const meta", "const meta", 1)
         driver = f"""

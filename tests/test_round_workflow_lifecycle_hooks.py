@@ -41,6 +41,7 @@ class RoundWorkflowLifecycleHooksTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tempdir:
             args["repoRoot"] = str(tempdir)
+            args.setdefault("effortCapabilities", {"*": {"configurable": True, "supportedEfforts": ["low", "medium", "high"]}})
 
             driver = f"""
 import {{ spawnSync }} from 'child_process';

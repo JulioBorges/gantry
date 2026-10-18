@@ -184,7 +184,10 @@ Every script provides `--help`, and data-producing paths support `--json`.
   token budget audit, Plan Critic validation, and operator approval transition. Once approved, delegated
   execution automatically advances into the round implementation loop without prompting to start `gantry`.
 - Each Issue follows `reference/round-workflow.md`: after checkout assignment, one bounded read-only
-  Technical Plan inherits the effective Implement harness/model and configured effort, then a separate
+  Technical Plan inherits the effective Implement harness and model. It requests high reasoning when that
+  capability supports it, the greatest supported effort at or below high otherwise, or the model default
+  when effort is not configurable. Unknown effort capability stops for readiness recovery. Implementation
+  keeps its configured effort, and the temporary planning effort is not saved. Then a separate
   fresh TDD implementer receives the accepted plan, followed by a reviewer on both standards
   and Spec axes, one review fix pass, then a fresh adversarial Critic. The Critic alone can establish a
   complete delivery. Its refutation consumes at most the correction budget.
@@ -238,8 +241,13 @@ Before a first implementation, native and manual paths use the dedicated
 
 1. Assign and mark the Issue checkout. Run `technical_plan.py capture --cwd <worktree> --issue <issue>`
    and keep its JSON outside the checkout. Resolve the effective Implement selection after overrides.
-2. Invoke one bounded, read-only Research-and-Plan agent using that harness/model and initially the
-   same configured effort. Follow the Technical Plan prompt in `reference/round-workflow.md`. Cite
+2. Run `execution.py planning-effort` for the effective Implement selection and its effort capability.
+   Request high when supported; otherwise the greatest supported effort at or below high, or omit effort
+   when it is not configurable. Unknown capability stops; do not treat unknown as proof that effort is
+   unavailable and do not change saved profiles or repository defaults. Invoke one bounded, read-only
+   Research-and-Plan agent with that resolved request. Record requested effort separately from
+   provider-observed effort. Keep the later implementation call at its original configured effort.
+   Follow the Technical Plan prompt in `reference/round-workflow.md`. Cite
    actual source, reusable behavior, concrete changes and tests for every criterion. Target 500–1,000
    useful tokens without padding or truncating evidence. Use supported read-only capabilities (bounded
    Codex dispatch requests its read-only sandbox); report other enforcement as unavailable or unknown.
@@ -255,7 +263,12 @@ Before a first implementation, native and manual paths use the dedicated
 5. A reported scope/contract conflict pauses that Issue for the operator before edits; never amend the
    Issue, Spec, dependencies or criteria. A valid conflict-free result releases a separate fresh TDD
    Implementer automatically, with the retained plan in its prompt. Each Issue advances independently.
-   Reuse the accepted plan during this chain's review/correction calls. Report scope-neutral adjustments
+   Reuse the accepted plan during this chain's review/correction calls after `technical_plan.py evaluate`.
+   Own implementation commits and unrelated changes keep valid findings. Refresh only findings whose cited
+   source or standing decisions changed. A changed approved contract or dependency waits for the operator.
+   Recovery verifies artifact identity, rejects a missing, corrupt or other-checkout artifact, and does not
+   repeat valid research, reset corrections, change the selected harness or model, or grant completion.
+   Report scope-neutral adjustments
    with reasons in Implementer decisions; criteria remain authoritative. Independent Review, Critic,
    gates and completion authority remain mandatory.
 

@@ -217,7 +217,8 @@ class WorkflowHostBindingTests(unittest.TestCase):
             self.assertEqual("codex", run["result"]["hostResolution"]["effectiveHost"])
             dispatch = next(call["command"] for call in run["commandCalls"] if 'execution.py" dispatch' in call["command"])
             self.assertIn('"model":"issue-model"', dispatch)
-            self.assertIn('"effort":"medium"', dispatch)
+            self.assertIn('--role "technical-planner"', dispatch)
+            self.assertIn('"effort":"high"', dispatch)
             self.assertIn('"harness":"codex"', dispatch)
             self.assertFalse(any(call["label"].startswith("implement:") for call in run["calls"]))
             self.assertEqual("paused", run["result"]["results"][0]["outcome"])
@@ -228,7 +229,7 @@ class WorkflowHostBindingTests(unittest.TestCase):
             else:
                 invoked = json.loads(received.read_text())
                 self.assertEqual('issue-model', invoked[invoked.index('--model') + 1])
-                self.assertIn('model_reasoning_effort="medium"', invoked)
+                self.assertIn('model_reasoning_effort="high"', invoked)
                 self.assertIn('--json', invoked)
                 self.assertNotIn('--effort', invoked)
             log = root / 'state/abcdef123456/runs/run-bounded-fixture.jsonl'

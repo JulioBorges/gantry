@@ -1,7 +1,7 @@
 # Use supported high reasoning for technical planning only
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `issue-implementation-plan#02`
 Spec: `.scratch/issue-implementation-plan/spec.md`
 Created: 2026-10-06
@@ -17,12 +17,12 @@ Deliver the approved planning-effort policy through effective Implement selectio
 
 ## Acceptance criteria
 
-- [ ] Controlled public dispatch proves high is requested for technical planning while a medium-configured implementation still requests medium on the same effective harness/model.
-- [ ] Fixtures cover high support, low/medium-only support and a model with no configurable effort; each produces the documented requested selection and observed evidence without invented identity.
-- [ ] Unknown effort capabilities stop for existing readiness/recovery handling rather than silently selecting an assumed setting.
-- [ ] Run and Issue selection overrides reach planning and implementation; saved operator profiles and repository role defaults remain unchanged.
-- [ ] An unavailable selected execution pauses visibly and preserves the plan/worktree without automatic model or harness fallback or correction-budget consumption.
-- [ ] Native and manual paths report the accepted effort policy and distinguish requested effort from provider-observed execution.
+- [x] Controlled public dispatch proves high is requested for technical planning while a medium-configured implementation still requests medium on the same effective harness/model.
+- [x] Fixtures cover high support, low/medium-only support and a model with no configurable effort; each produces the documented requested selection and observed evidence without invented identity.
+- [x] Unknown effort capabilities stop for existing readiness/recovery handling rather than silently selecting an assumed setting.
+- [x] Run and Issue selection overrides reach planning and implementation; saved operator profiles and repository role defaults remain unchanged.
+- [x] An unavailable selected execution pauses visibly and preserves the plan/worktree without automatic model or harness fallback or correction-budget consumption.
+- [x] Native and manual paths report the accepted effort policy and distinguish requested effort from provider-observed execution.
 
 ## Blocked by
 

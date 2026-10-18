@@ -1,7 +1,7 @@
 # Reuse technical plans safely across corrections and resumption
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `issue-implementation-plan#03`
 Spec: `.scratch/issue-implementation-plan/spec.md`
 Created: 2026-10-06
@@ -17,13 +17,13 @@ Deliver retained plan reuse from execution artifacts through correction and same
 
 ## Acceptance criteria
 
-- [ ] Review fixes and Critic corrections reuse a valid plan without unconditionally invoking full Research-and-Plan again; correction-budget semantics remain unchanged.
-- [ ] A real temporary Git history proves that own implementation commits and unrelated changes can retain valid findings after freshness evaluation.
-- [ ] Changed relevant source, Issue, Spec or standing decisions prevent stale handoff; affected findings and criterion coverage are refreshed before affected implementation.
-- [ ] A changed approved contract or dependency requests an operator decision rather than automatically rewriting the approved Issue breakdown.
-- [ ] Interruption after a validated plan retains a machine-local artifact; same-Run recovery verifies its identity, detects missing/corrupted or mismatched artifacts and cannot reuse another Issue/worktree result.
-- [ ] Recovery does not repeat already consumed valid work, reset correction attempts, change execution selection silently or grant delivery completion.
-- [ ] Public workflow/continuation tests exercise valid reuse, targeted replanning and refusal paths for native and manual execution semantics.
+- [x] Review fixes and Critic corrections reuse a valid plan without unconditionally invoking full Research-and-Plan again; correction-budget semantics remain unchanged.
+- [x] A real temporary Git history proves that own implementation commits and unrelated changes can retain valid findings after freshness evaluation.
+- [x] Changed relevant source, Issue, Spec or standing decisions prevent stale handoff; affected findings and criterion coverage are refreshed before affected implementation.
+- [x] A changed approved contract or dependency requests an operator decision rather than automatically rewriting the approved Issue breakdown.
+- [x] Interruption after a validated plan retains a machine-local artifact; same-Run recovery verifies its identity, detects missing/corrupted or mismatched artifacts and cannot reuse another Issue/worktree result.
+- [x] Recovery does not repeat already consumed valid work, reset correction attempts, change execution selection silently or grant delivery completion.
+- [x] Public workflow/continuation tests exercise valid reuse, targeted replanning and refusal paths for native and manual execution semantics.
 
 ## Blocked by
 

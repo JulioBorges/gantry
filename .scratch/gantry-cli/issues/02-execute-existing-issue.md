@@ -1,7 +1,7 @@
 # Execute an Issue that already exists
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-cli#02`
 Spec: `.scratch/gantry-cli/spec.md`
 Created: 2026-10-17
@@ -17,12 +17,12 @@ User stories covered: 4–9, 27–28
 
 ## Acceptance criteria
 
-- [ ] Invalid setup exits with no branch and no worktree.
-- [ ] An Issue with an open blocker exits with no worktree.
-- [ ] The happy path creates the worktree on the final branch, records micro commits, and does not push.
-- [ ] Review and Critic receive the diff of the branch against the target.
-- [ ] When both pass, execute exits and the Run is ready for approval.
-- [ ] The configured role command can be replaced. The test does not open a real harness.
+- [x] Invalid setup exits with no branch and no worktree.
+- [x] An Issue with an open blocker exits with no worktree.
+- [x] The happy path creates the worktree on the final branch, records micro commits, and does not push.
+- [x] Review and Critic receive the diff of the branch against the target.
+- [x] When both pass, execute exits and the Run is ready for approval.
+- [x] The configured role command can be replaced. The test does not open a real harness.
 
 ## Blocked by
 
