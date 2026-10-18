@@ -344,6 +344,8 @@ try {{
 
     def init_repo(self, root: Path) -> None:
         subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+        subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
 
     def test_result_contract_cli_rejects_missing_critic_criteria_and_accepts_large_result(self) -> None:
         missing = subprocess.run(
