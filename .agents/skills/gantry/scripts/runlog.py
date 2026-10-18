@@ -51,7 +51,12 @@ FINISHED_EVENTS = {"run.cancelled", "run.finished"}
 UNIT_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 ISSUE_RE = re.compile(r"^[a-z0-9][a-z0-9-]*#\d{2,}$")
-PROHIBITED_KEY_TOKENS = {"command", "commands", "cmd", "diff", "diffs", "output", "outputs", "patch", "patches", "stderr", "stdout"}
+PROHIBITED_KEY_TOKENS = {
+    "command", "commands", "cmd", "diff", "diffs", "output", "outputs", "patch", "patches",
+    "stderr", "stdout", "prompt", "prompts", "excerpt", "excerpts", "body", "bodies", "plan", "plans",
+}
+MEASUREMENT_INVOCATIONS = {"original", "replan", "reuse", "implementation", "correction", "review-fix"}
+USAGE_PAIRS = {("actual", "provider"), ("estimate", "estimate"), ("unknown", "unavailable")}
 
 
 class EventError(ValueError):
@@ -215,6 +220,48 @@ def validate_secret_checks(value: object, path: str = "data") -> None:
             validate_secret_checks(nested, f"{path}[{index}]")
 
 
+def _count(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def validate_measurement(measurement: object, path: str = "data.measurement") -> None:
+    """Accept a sanitized phase measurement and refuse plan or prompt payloads."""
+    if not isinstance(measurement, dict):
+        raise EventError(f"{path} must be an object")
+    unexpected = sorted(set(measurement) - {"invocation", "counted", "usage"})
+    if unexpected:
+        raise EventError(f"{path} must not store {', '.join(unexpected)}")
+    invocation = measurement.get("invocation")
+    if invocation not in MEASUREMENT_INVOCATIONS:
+        raise EventError(f"{path}.invocation is not a measurement identity")
+    if not isinstance(measurement.get("counted"), bool):
+        raise EventError(f"{path}.counted must be a boolean")
+    if invocation == "reuse" and measurement["counted"] is not False:
+        raise EventError("a reused plan is not a counted invocation")
+    if invocation != "reuse" and measurement["counted"] is not True:
+        raise EventError(f"{path}.counted must be true for a new invocation")
+    usage = measurement.get("usage")
+    if not isinstance(usage, dict):
+        raise EventError(f"{path}.usage must be an object")
+    extra = sorted(set(usage) - {"classification", "provenance", "inputCount", "producedCount"})
+    if extra:
+        raise EventError(f"{path}.usage must not store {', '.join(extra)}")
+    classification = usage.get("classification")
+    provenance = usage.get("provenance")
+    if (classification, provenance) not in USAGE_PAIRS:
+        raise EventError(f"{path}.usage provenance does not match its classification")
+    input_count = usage.get("inputCount")
+    produced_count = usage.get("producedCount")
+    if classification == "unknown":
+        if input_count is not None or produced_count is not None:
+            raise EventError("unknown usage cannot carry counts")
+        return
+    if _count(input_count) is None or _count(produced_count) is None:
+        raise EventError(f"{path}.usage counts must be non-negative integers")
+
+
 def validate_event(payload: object) -> dict:
     """Validate a stable event envelope before it reaches persistent state."""
     if not isinstance(payload, dict):
@@ -243,6 +290,8 @@ def validate_event(payload: object) -> dict:
         raise EventError("data must be an object when supplied")
     validate_sensitive_data(data)
     validate_secret_checks(data)
+    if isinstance(data, dict) and "measurement" in data:
+        validate_measurement(data["measurement"])
 
     if event == "run.started":
         if "data" not in payload:
@@ -483,6 +532,176 @@ def derive_corrections_spent(events: list[dict], issue_ref: str) -> int:
     return base + started_corrections
 
 
+def _unknown_usage() -> dict[str, object]:
+    return {"classification": "unknown", "provenance": "unavailable", "inputCount": None, "producedCount": None}
+
+
+def _duration_seconds(started: str, finished: str) -> float | None:
+    try:
+        start = datetime.datetime.fromisoformat(started.replace("Z", "+00:00"))
+        end = datetime.datetime.fromisoformat(finished.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return (end - start).total_seconds()
+
+
+def _usage_projection(measurement: object) -> dict[str, object]:
+    if not isinstance(measurement, dict) or not isinstance(measurement.get("usage"), dict):
+        return _unknown_usage()
+    usage = measurement["usage"]
+    classification = usage.get("classification")
+    provenance = usage.get("provenance")
+    if (classification, provenance) not in USAGE_PAIRS:
+        return _unknown_usage()
+    if classification == "unknown":
+        return _unknown_usage()
+    return {
+        "classification": classification,
+        "provenance": provenance,
+        "inputCount": _count(usage.get("inputCount")),
+        "producedCount": _count(usage.get("producedCount")),
+    }
+
+
+def _project_phase(issue: str, phase: str, started: dict | None, finished: dict | None) -> dict[str, object]:
+    measurement = None
+    for event in (finished, started):
+        data = event.get("data") if isinstance(event, dict) else None
+        if isinstance(data, dict) and isinstance(data.get("measurement"), dict):
+            measurement = data["measurement"]
+            break
+    invocation = measurement.get("invocation") if isinstance(measurement, dict) else None
+    counted = measurement.get("counted") if isinstance(measurement, dict) else None
+    reuse = invocation == "reuse"
+    completed = started is not None and finished is not None and not reuse
+    duration = None
+    if completed and isinstance(started, dict) and isinstance(finished, dict):
+        duration = _duration_seconds(str(started.get("ts")), str(finished.get("ts")))
+    return {
+        "issue": issue,
+        "phase": phase,
+        "completed": completed,
+        "startedAt": started.get("ts") if isinstance(started, dict) else None,
+        "finishedAt": finished.get("ts") if isinstance(finished, dict) else None,
+        "durationSeconds": duration,
+        "invocation": invocation,
+        "counted": counted if isinstance(counted, bool) else None,
+        "usage": _usage_projection(measurement),
+    }
+
+
+def build_report(events: list[dict]) -> dict[str, object]:
+    """Public Run report. Missing measurements stay unknown and reuse is not usage."""
+    open_phases: dict[tuple[str, str], list[dict]] = {}
+    phases: list[dict[str, object]] = []
+    issues: set[str] = set()
+    completed: set[str] = set()
+    for event in events:
+        issue = event.get("issue")
+        if isinstance(issue, str) and ISSUE_RE.fullmatch(issue):
+            issues.add(issue)
+        if event.get("event") == "issue.done" and isinstance(issue, str):
+            completed.add(issue)
+        phase = event.get("phase")
+        if not isinstance(issue, str) or not isinstance(phase, str):
+            continue
+        key = (issue, phase)
+        if event.get("event") == "phase.started":
+            open_phases.setdefault(key, []).append(event)
+        elif event.get("event") == "phase.finished":
+            pending = open_phases.get(key, [])
+            started = pending.pop(0) if pending else None
+            phases.append(_project_phase(issue, phase, started, event))
+    for (issue, phase), pending in open_phases.items():
+        for started in pending:
+            phases.append(_project_phase(issue, phase, started, None))
+
+    def counted(invocation: str, phase_name: str | None = None) -> int:
+        return sum(
+            1 for phase in phases
+            if phase["counted"] is True and phase["invocation"] == invocation
+            and (phase_name is None or phase["phase"] == phase_name)
+        )
+
+    actual_input = 0
+    actual_produced = 0
+    estimate_input = 0
+    estimate_produced = 0
+    actual_complete = True
+    saw_actual = False
+    saw_estimate = False
+    saw_unknown = False
+    for phase in phases:
+        if phase["counted"] is not True:
+            continue
+        usage = phase["usage"]
+        if not isinstance(usage, dict):
+            actual_complete = False
+            saw_unknown = True
+            continue
+        if usage["classification"] == "actual" and usage["inputCount"] is not None and usage["producedCount"] is not None:
+            saw_actual = True
+            actual_input += int(usage["inputCount"])
+            actual_produced += int(usage["producedCount"])
+        elif usage["classification"] == "estimate" and usage["inputCount"] is not None and usage["producedCount"] is not None:
+            saw_estimate = True
+            estimate_input += int(usage["inputCount"])
+            estimate_produced += int(usage["producedCount"])
+        else:
+            actual_complete = False
+            saw_unknown = True
+
+    issue_reports = {
+        issue: {
+            "reviewFixPasses": sum(
+                1 for phase in phases
+                if phase["issue"] == issue and phase["invocation"] == "review-fix" and phase["counted"] is True
+            ),
+            "criticCorrectionAttempts": derive_corrections_spent(events, issue),
+            "completionEvidence": issue in completed,
+        }
+        for issue in sorted(issues)
+    }
+    return {
+        "phases": phases,
+        "invocations": {
+            "planning": counted("original", "Technical Plan"),
+            "replanning": counted("replan", "Technical Plan"),
+            "implementation": counted("implementation", "Implement"),
+            "corrections": counted("correction", "Implement"),
+        },
+        "reusedPlans": sum(1 for phase in phases if phase["invocation"] == "reuse"),
+        "reviewFixPasses": sum(item["reviewFixPasses"] for item in issue_reports.values()),
+        "criticCorrectionAttempts": {
+            issue: item["criticCorrectionAttempts"] for issue, item in issue_reports.items()
+        },
+        "issues": issue_reports,
+        "usage": {
+            "actual": {
+                "inputCount": actual_input if saw_actual and actual_complete and not saw_unknown else None,
+                "producedCount": actual_produced if saw_actual and actual_complete and not saw_unknown else None,
+                "complete": bool(saw_actual and actual_complete and not saw_unknown),
+            },
+            "estimate": {
+                "inputCount": estimate_input if saw_estimate else None,
+                "producedCount": estimate_produced if saw_estimate else None,
+                "present": saw_estimate,
+            },
+            "unknownPresent": not phases or saw_unknown or any(
+                phase["counted"] is not False and isinstance(phase["usage"], dict)
+                and phase["usage"]["classification"] == "unknown"
+                for phase in phases
+            ),
+        },
+        "claims": {"tokenSavings": None, "fasterDelivery": None, "fewerCorrections": None},
+        "limitations": [
+            "Missing token measurements stay unknown.",
+            "Estimates are not actual provider usage.",
+            "This report does not claim token savings, faster delivery, or fewer corrections.",
+        ],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -511,6 +730,11 @@ def main() -> int:
     corrections_parser.add_argument("issue", help="Issue reference such as sample#01")
     corrections_parser.add_argument("--state-root", help="override ~/.gantry/state")
     corrections_parser.add_argument("--json", action="store_true", help="emit machine-readable output")
+    report_parser = subparsers.add_parser("report", help="report phase duration, usage and corrections without savings claims")
+    report_parser.add_argument("unit_id", help="twelve-hex repository execution-unit ID")
+    report_parser.add_argument("run_id", help="the Run whose log to read")
+    report_parser.add_argument("--state-root", help="override ~/.gantry/state")
+    report_parser.add_argument("--json", action="store_true", help="emit machine-readable output")
     mark_parser = subparsers.add_parser("mark", help="record which Run is executing in this worktree")
     mark_parser.add_argument("run_id", help="the Run currently executing here")
     mark_parser.add_argument("--cwd", default=".", help="repository or worktree to mark")
@@ -610,6 +834,13 @@ def main() -> int:
                 "correctionsSpent": spent,
             }
             print(json.dumps(payload, sort_keys=True) if args.json else str(spent))
+            return 0
+        if args.command == "report":
+            path = run_log_path(root, args.unit_id, args.run_id)
+            if not path.exists():
+                raise EventError(f"no Run log for {args.run_id}")
+            payload = build_report(read_valid_events(path))
+            print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload["invocations"], sort_keys=True))
             return 0
         payload = {"unitId": args.unit_id, "inflight": inflight(root, args.unit_id)}
         print(json.dumps(payload, sort_keys=True) if args.json else "\n".join(

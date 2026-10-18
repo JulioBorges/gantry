@@ -1,7 +1,7 @@
 # Approve and open the pull request
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-cli#05`
 Spec: `.scratch/gantry-cli/spec.md`
 Created: 2026-10-17
@@ -17,11 +17,11 @@ A command separate from the Run that has already passed review and Critic. In th
 
 ## Acceptance criteria
 
-- [ ] Without the closing commit, the command records the Issue and roadmap as done, pushes, and opens the pull request against the target.
-- [ ] That closing commit is the latest commit on the branch, on top of the work already committed.
-- [ ] When the closing commit is already on the branch, the command only opens the pull request and creates no other commit.
-- [ ] The target stays without done until merge. The command writes nothing on the target.
-- [ ] The execute process that left the Run ready does not perform this push.
+- [x] Without the closing commit, the command records the Issue and roadmap as done, pushes, and opens the pull request against the target.
+- [x] That closing commit is the latest commit on the branch, on top of the work already committed.
+- [x] When the closing commit is already on the branch, the command only opens the pull request and creates no other commit.
+- [x] The target stays without done until merge. The command writes nothing on the target.
+- [x] The execute process that left the Run ready does not perform this push.
 
 ## Blocked by
 

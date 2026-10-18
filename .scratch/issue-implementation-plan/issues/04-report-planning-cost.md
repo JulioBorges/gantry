@@ -1,7 +1,7 @@
 # Report attributable technical-planning cost and correction outcomes
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `issue-implementation-plan#04`
 Spec: `.scratch/issue-implementation-plan/spec.md`
 Created: 2026-10-06
@@ -17,14 +17,14 @@ Deliver the observation path from Technical Plan and implementation invocation t
 
 ## Acceptance criteria
 
-- [ ] An end-to-end workflow fixture and public Run report distinguish Technical Plan from implementation and attribute their completed phase durations.
-- [ ] Provider-supplied usage is reported with provenance; unavailable token measurements remain unknown and estimates are explicitly distinguished from actual usage.
-- [ ] Totals count original planning, targeted replanning, implementation and correction calls once; reused plan artifacts do not count as new invocations or usage.
-- [ ] Review fix passes and Critic correction attempts are distinct report fields and agree with authoritative correction counting.
-- [ ] Run-log validation accepts sanitized phase/identity/measurement projections and refuses prompts, source excerpts, plan bodies and sensitive raw outputs.
-- [ ] Legacy Runs without Technical Plan or usage events remain readable without fabricating a checkpoint, zero usage or completion evidence.
-- [ ] Reports provide evidence for future comparisons without asserting token savings, faster delivery or fewer corrections from incomparable Runs.
-- [ ] Existing public report/data seams demonstrate the behavior without UI changes or weakening Review/Critic/gate completion authority.
+- [x] An end-to-end workflow fixture and public Run report distinguish Technical Plan from implementation and attribute their completed phase durations.
+- [x] Provider-supplied usage is reported with provenance; unavailable token measurements remain unknown and estimates are explicitly distinguished from actual usage.
+- [x] Totals count original planning, targeted replanning, implementation and correction calls once; reused plan artifacts do not count as new invocations or usage.
+- [x] Review fix passes and Critic correction attempts are distinct report fields and agree with authoritative correction counting.
+- [x] Run-log validation accepts sanitized phase/identity/measurement projections and refuses prompts, source excerpts, plan bodies and sensitive raw outputs.
+- [x] Legacy Runs without Technical Plan or usage events remain readable without fabricating a checkpoint, zero usage or completion evidence.
+- [x] Reports provide evidence for future comparisons without asserting token savings, faster delivery or fewer corrections from incomparable Runs.
+- [x] Existing public report/data seams demonstrate the behavior without UI changes or weakening Review/Critic/gate completion authority.
 
 ## Blocked by
 

@@ -570,6 +570,90 @@ class RunLogTests(unittest.TestCase):
             self.assertEqual(0, proc.returncode, proc.stderr)
 
 
+    def measurement(self, invocation: str, classification: str = "unknown", input_count: int | None = None, produced_count: int | None = None) -> dict:
+        counted = invocation != "reuse"
+        if classification == "actual":
+            usage = {"classification": "actual", "provenance": "provider", "inputCount": input_count, "producedCount": produced_count}
+        elif classification == "estimate":
+            usage = {"classification": "estimate", "provenance": "estimate", "inputCount": input_count, "producedCount": produced_count}
+        else:
+            usage = {"classification": "unknown", "provenance": "unavailable", "inputCount": None, "producedCount": None}
+        return {"invocation": invocation, "counted": counted, "usage": usage}
+
+    def test_report_attributes_usage_once_and_leaves_legacy_runs_unknown(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.init_repository(root)
+            state = root / "state"
+            unit = json.loads(self.run_script(root, "unit-id", "--cwd", str(root), "--json").stdout)["unitId"]
+            run_id = "cost-report"
+            events = [
+                self.started(run_id),
+                {"ts": "2026-09-13T12:00:00Z", "run": run_id, "event": "phase.started", "issue": "sample#01", "phase": "Technical Plan", "data": {}},
+                {"ts": "2026-09-13T12:00:02Z", "run": run_id, "event": "phase.finished", "issue": "sample#01", "phase": "Technical Plan",
+                 "data": {"measurement": self.measurement("original", "actual", 100, 20)}},
+                {"ts": "2026-09-13T12:00:03Z", "run": run_id, "event": "phase.started", "issue": "sample#01", "phase": "Implement", "data": {}},
+                {"ts": "2026-09-13T12:00:04Z", "run": run_id, "event": "phase.finished", "issue": "sample#01", "phase": "Implement",
+                 "data": {"measurement": self.measurement("implementation", "actual", 40, 10)}},
+                {"ts": "2026-09-13T12:00:05Z", "run": run_id, "event": "phase.started", "issue": "sample#01", "phase": "Technical Plan", "data": {}},
+                {"ts": "2026-09-13T12:00:05Z", "run": run_id, "event": "phase.finished", "issue": "sample#01", "phase": "Technical Plan",
+                 "data": {"measurement": self.measurement("reuse")}},
+                {"ts": "2026-09-13T12:00:06Z", "run": run_id, "event": "phase.started", "issue": "sample#01", "phase": "Implement", "data": {}},
+                {"ts": "2026-09-13T12:00:07Z", "run": run_id, "event": "phase.finished", "issue": "sample#01", "phase": "Implement",
+                 "data": {"measurement": self.measurement("review-fix", "estimate", 5, 1)}},
+                {"ts": "2026-09-13T12:00:08Z", "run": run_id, "event": "refutation", "issue": "sample#01", "phase": "Critic", "data": {"attempt": 1, "refutations": ["open"]}},
+                {"ts": "2026-09-13T12:00:09Z", "run": run_id, "event": "phase.started", "issue": "sample#01", "phase": "Implement", "data": {}},
+                {"ts": "2026-09-13T12:00:10Z", "run": run_id, "event": "phase.finished", "issue": "sample#01", "phase": "Implement",
+                 "data": {"measurement": self.measurement("correction", "actual", 30, 8)}},
+            ]
+            for event in events:
+                appended = self.run_script(root, "append", unit, "--state-root", str(state), event=event)
+                self.assertEqual(0, appended.returncode, appended.stderr)
+            refused = self.run_script(root, "append", unit, "--state-root", str(state), event={
+                "ts": "2026-09-13T12:00:11Z", "run": run_id, "event": "phase.finished", "issue": "sample#01", "phase": "Implement",
+                "data": {"prompt": "secret instructions", "planBody": "the whole plan", "measurement": self.measurement("implementation", "actual", 1, 1)},
+            })
+            self.assertEqual(1, refused.returncode, refused.stdout)
+            reported = self.run_script(root, "report", unit, run_id, "--state-root", str(state), "--json")
+            self.assertEqual(0, reported.returncode, reported.stderr)
+            report = json.loads(reported.stdout)
+            plan, implementation = report["phases"][0], report["phases"][1]
+            self.assertEqual(("Technical Plan", "Implement"), (plan["phase"], implementation["phase"]))
+            self.assertEqual(2.0, plan["durationSeconds"])
+            self.assertEqual(1.0, implementation["durationSeconds"])
+            self.assertIsNone(report["phases"][2]["durationSeconds"])
+            self.assertFalse(report["phases"][2]["completed"])
+            self.assertEqual({"planning": 1, "replanning": 0, "implementation": 1, "corrections": 1}, report["invocations"])
+            self.assertEqual(1, report["reusedPlans"])
+            self.assertEqual(1, report["reviewFixPasses"])
+            self.assertEqual(1, report["criticCorrectionAttempts"]["sample#01"])
+            self.assertEqual(1, report["issues"]["sample#01"]["criticCorrectionAttempts"])
+            corrections = self.run_script(root, "corrections", unit, run_id, "sample#01", "--state-root", str(state), "--json")
+            self.assertEqual(report["issues"]["sample#01"]["criticCorrectionAttempts"], json.loads(corrections.stdout)["correctionsSpent"])
+            self.assertEqual({"inputCount": 170, "producedCount": 38, "complete": True}, report["usage"]["actual"])
+            self.assertEqual({"inputCount": 5, "producedCount": 1, "present": True}, report["usage"]["estimate"])
+            self.assertEqual({"tokenSavings": None, "fasterDelivery": None, "fewerCorrections": None}, report["claims"])
+            self.assertNotIn("checkpoint", report)
+            self.assertTrue(any("does not claim" in item for item in report["limitations"]))
+
+            legacy_id = "legacy-report"
+            for event in (
+                self.started(legacy_id),
+                {"ts": "2026-09-13T12:00:00Z", "run": legacy_id, "event": "phase.started", "issue": "sample#02", "phase": "Implement", "data": {"worktree": str(root)}},
+                {"ts": "2026-09-13T12:00:03Z", "run": legacy_id, "event": "phase.finished", "issue": "sample#02", "phase": "Implement", "data": {}},
+            ):
+                self.assertEqual(0, self.run_script(root, "append", unit, "--state-root", str(state), event=event).returncode)
+            legacy = json.loads(self.run_script(root, "report", unit, legacy_id, "--state-root", str(state), "--json").stdout)
+            self.assertEqual(["Implement"], [phase["phase"] for phase in legacy["phases"]])
+            self.assertIsNone(legacy["phases"][0]["invocation"])
+            self.assertIsNone(legacy["phases"][0]["usage"]["inputCount"])
+            self.assertNotEqual(0, legacy["phases"][0]["usage"]["inputCount"])
+            self.assertFalse(legacy["issues"]["sample#02"]["completionEvidence"])
+            self.assertIsNone(legacy["usage"]["actual"]["inputCount"])
+            self.assertIsNone(legacy["claims"]["tokenSavings"])
+            self.assertNotIn("checkpoint", legacy)
+
+
 class CurrentRunMarkerTests(unittest.TestCase):
     """The per-worktree current-Run marker: how a hook that inherits no environment finds its Run."""
 
@@ -641,6 +725,7 @@ class CurrentRunMarkerTests(unittest.TestCase):
             self.assertEqual(0, self.run_script(second, "unmark", "--cwd", str(second)).returncode)
             self.assertEqual("run-main", self.run_script(root, "current", "--cwd", str(root)).stdout.strip())
             self.assertEqual(2, self.run_script(second, "current", "--cwd", str(second)).returncode)
+
 
 
 if __name__ == "__main__":

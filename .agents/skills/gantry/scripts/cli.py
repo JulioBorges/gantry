@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read the Gantry board, or execute one existing Issue, without pushing."""
+"""Read the Gantry board, execute one Run, or approve it by opening a pull request."""
 from __future__ import annotations
 
 import argparse
@@ -101,14 +101,19 @@ def run_checks(worktree: Path, policy: dict) -> bool:
     return True
 
 
-def invoke_role(command: Path, worktree: Path, role: str, diff_base: str, diff: str) -> subprocess.CompletedProcess[str]:
+def invoke_role(
+    command: Path, worktree: Path, role: str, diff_base: str, diff: str,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["GANTRY_ROLE"] = role
     env["GANTRY_DIFF_BASE"] = diff_base
+    if extra_env:
+        env.update(extra_env)
     return subprocess.run(
         [str(command), "--role", role, "--diff-base", diff_base],
         cwd=worktree, text=True, capture_output=True, check=False,
-        input=None if role == "implement" else diff, env=env,
+        input=None if role in {"implement", "plan"} else diff, env=env,
     )
 
 
@@ -120,6 +125,132 @@ def verdict_passed(completed: subprocess.CompletedProcess[str]) -> bool:
     except json.JSONDecodeError:
         return False
     return isinstance(body, dict) and body.get("verdict") == "pass"
+
+
+def pause(payload: dict[str, object]) -> str:
+    emit(payload)
+    return sys.stdin.readline().strip().lower()
+
+
+def correction_budget(policy: dict) -> int:
+    raw = policy.get("budget", {}).get("corrections", 2)
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+        return 2
+    return raw
+
+
+def render_branch(policy: dict, spec: str, number: int) -> str:
+    return policy["git"]["issueBranch"].format(
+        prefix=policy["git"]["prefix"], spec=spec, number=number,
+    )
+
+
+def worktree_path(root: Path, branch: str) -> Path:
+    return root / ".gantry" / "worktrees" / branch.replace("/", "-")
+
+
+def primary_checkout(root: Path) -> Path:
+    completed = git(root, "rev-parse", "--git-common-dir")
+    if completed.returncode != 0:
+        return root
+    path = Path(completed.stdout.strip())
+    if not path.is_absolute():
+        path = (root / path).resolve()
+    if path.name == ".git":
+        return path.parent
+    if path.parent.name == "worktrees" and path.parent.parent.name == ".git":
+        return path.parent.parent.parent
+    return root
+
+
+def tree_dirty(worktree: Path) -> bool:
+    return bool(git(worktree, "status", "--porcelain").stdout.strip())
+
+
+def create_worktree(root: Path, branch: str, target: str) -> Path | None:
+    worktree = worktree_path(root, branch)
+    if git(root, "rev-parse", "--verify", "--quiet", branch).returncode == 0 or worktree.exists():
+        return None
+    if git(root, "branch", branch, target).returncode != 0:
+        return None
+    worktree.parent.mkdir(parents=True, exist_ok=True)
+    added = git(root, "worktree", "add", "--quiet", str(worktree), branch)
+    if added.returncode != 0:
+        git(root, "branch", "-D", branch)
+        if worktree.exists():
+            git(root, "worktree", "remove", "--force", str(worktree))
+        return None
+    return worktree
+
+
+def discard_worktree(root: Path, worktree: Path, branch: str) -> None:
+    git(root, "worktree", "remove", "--force", str(worktree))
+    git(root, "branch", "-D", branch)
+
+
+def implement_failed(worktree: Path, target: str, completed: subprocess.CompletedProcess[str]) -> bool:
+    ahead = git(worktree, "rev-list", "--count", f"{target}..HEAD")
+    return completed.returncode != 0 or tree_dirty(worktree) or ahead.returncode != 0 or ahead.stdout.strip() in {"", "0"}
+
+
+def deliver(worktree: Path, branch: str, target: str, policy: dict, commands: dict[str, Path]) -> int:
+    granted = correction_budget(policy)
+    spent = 0
+    first = True
+    while True:
+        if not first and spent >= granted:
+            answer = pause({
+                "event": "pause", "reason": "corrections-exhausted", "choices": ["continue", "stop"],
+                "branch": branch, "worktree": str(worktree), "pushed": False,
+            })
+            if answer != "continue":
+                emit({"event": "stopped", "branch": branch, "worktree": str(worktree), "pushed": False})
+                return 1
+            granted += 1
+        first = False
+        implement = invoke_role(commands["implement"], worktree, "implement", target, "")
+        if implement_failed(worktree, target, implement):
+            spent += 1
+            continue
+        if not run_checks(worktree, policy):
+            spent += 1
+            continue
+        diff = git(worktree, "diff", f"{target}...HEAD").stdout
+        review = invoke_role(commands["review"], worktree, "review", target, diff)
+        if not verdict_passed(review):
+            spent += 1
+            continue
+        critic = invoke_role(commands["critic"], worktree, "critic", target, diff)
+        if not verdict_passed(critic):
+            spent += 1
+            continue
+        emit({"event": "ready-for-approval", "branch": branch, "worktree": str(worktree), "pushed": False})
+        return 0
+
+
+def execution_context(root: Path) -> tuple[dict, str] | int:
+    if not (root / ".git").exists():
+        return setup_error("not-a-repository")
+    if not (root / ".agents" / "skills" / "gantry").is_dir():
+        emit({"error": {"code": "pack-unreadable", "repository": str(root)}})
+        return 2
+    try:
+        policy = resolve_policy(root)
+    except ValueError as error:
+        return setup_error(f"policy-invalid: {error}")
+    if check_commands(policy):
+        return setup_error("checks-invalid")
+    target = policy["git"]["target"]
+    if git(root, "rev-parse", "--verify", "--quiet", target).returncode != 0:
+        return setup_error("target-missing")
+    return policy, target
+
+
+def require_commands(root: Path, policy: dict, roles: tuple[str, ...]) -> dict[str, Path] | int:
+    commands = {role: role_command(root, policy, role) for role in roles}
+    if any(path is None for path in commands.values()):
+        return setup_error("role-command-missing")
+    return commands  # type: ignore[return-value]
 
 
 def execute_issue(root: Path, ref: str) -> int:
@@ -166,39 +297,162 @@ def execute_issue(root: Path, ref: str) -> int:
             git(root, "worktree", "remove", "--force", str(worktree))
         return setup_error("worktree-create-failed")
     emit({"event": "worktree", "branch": branch, "worktree": str(worktree), "pushed": False})
-    implement = invoke_role(commands["implement"], worktree, "implement", target, "")
-    status = git(worktree, "status", "--porcelain")
-    ahead = git(worktree, "rev-list", "--count", f"{target}..HEAD")
-    if implement.returncode != 0 or status.stdout.strip() or ahead.returncode != 0 or ahead.stdout.strip() in {"", "0"}:
-        emit({"error": {"code": "implement-failed", "pushed": False}})
+    return deliver(worktree, branch, target, policy, commands)
+
+
+def next_issue_number(root: Path, policy: dict, slug: str) -> int:
+    directory = root / policy["artifacts"]["issues"].format(slug=slug)
+    numbers = [
+        int(match.group(1))
+        for path in directory.glob("*.md")
+        if directory.is_dir() and (match := re.match(r"^(\d{2,})-", path.name))
+    ]
+    return max(numbers, default=0) + 1
+
+
+def execute_plan(root: Path, slug: str) -> int:
+    prepared = execution_context(root)
+    if isinstance(prepared, int):
+        return prepared
+    policy, target = prepared
+    spec = artifact_path(root, "specs", slug)
+    issue_dir = root / policy["artifacts"]["issues"].format(slug=slug)
+    if spec.is_file() or any(issue_dir.glob("*.md")):
+        return setup_error("spec-or-issue-exists")
+    commands = require_commands(root, policy, ("plan", "implement", "review", "critic"))
+    if isinstance(commands, int):
+        return commands
+    number = next_issue_number(root, policy, slug)
+    branch = render_branch(policy, slug, number)
+    if git(root, "rev-parse", "--verify", "--quiet", branch).returncode == 0 or worktree_path(root, branch).exists():
+        return setup_error("branch-exists")
+    worktree = create_worktree(root, branch, target)
+    if worktree is None:
+        return setup_error("worktree-create-failed")
+    emit({"event": "worktree", "branch": branch, "worktree": str(worktree), "pushed": False})
+    spec_path = policy["artifacts"]["specs"].format(slug=slug)
+    issue_path = policy["artifacts"]["issues"].format(slug=slug).rstrip("/") + f"/{number:02d}-{slug}.md"
+    plan_env = {
+        "GANTRY_SLUG": slug,
+        "GANTRY_ISSUE_NUMBER": f"{number:02d}",
+        "GANTRY_SPEC_PATH": spec_path,
+        "GANTRY_ISSUE_PATH": issue_path,
+    }
+
+    def call_plan() -> subprocess.CompletedProcess[str]:
+        return invoke_role(commands["plan"], worktree, "plan", target, "", plan_env)
+
+    def plan_ready(completed: subprocess.CompletedProcess[str]) -> bool:
+        return completed.returncode == 0 and not tree_dirty(worktree)
+
+    completed = call_plan()
+    if not plan_ready(completed):
+        completed = call_plan()
+    while not plan_ready(completed):
+        answer = pause({
+            "event": "pause", "reason": "plan-dirty", "choices": ["try-again", "reject"],
+            "branch": branch, "worktree": str(worktree), "pushed": False,
+        })
+        if answer != "try-again":
+            discard_worktree(root, worktree, branch)
+            emit({"event": "rejected", "branch": branch, "pushed": False})
+            return 1
+        completed = call_plan()
+    answer = pause({
+        "event": "pause", "reason": "plan-approval", "choices": ["approve", "reject"],
+        "branch": branch, "worktree": str(worktree), "pushed": False,
+    })
+    if answer != "approve":
+        discard_worktree(root, worktree, branch)
+        emit({"event": "rejected", "branch": branch, "pushed": False})
         return 1
-    if not run_checks(worktree, policy):
-        emit({"error": {"code": "check-failed", "pushed": False}})
-        return 1
-    diff = git(worktree, "diff", f"{target}...HEAD").stdout
-    review = invoke_role(commands["review"], worktree, "review", target, diff)
-    if not verdict_passed(review):
-        emit({"error": {"code": "review-failed", "pushed": False}})
-        return 1
-    critic = invoke_role(commands["critic"], worktree, "critic", target, diff)
-    if not verdict_passed(critic):
-        emit({"error": {"code": "critic-failed", "pushed": False}})
-        return 1
-    emit({"event": "ready-for-approval", "branch": branch, "worktree": str(worktree), "pushed": False})
+    return deliver(worktree, branch, target, policy, commands)
+
+
+def issue_status(path: Path) -> str:
+    match = re.search(r"^Status:\s*(.+?)\s*$", path.read_text(encoding="utf-8"), re.MULTILINE)
+    return match.group(1) if match else ""
+
+
+def approve_issue(root: Path, ref: str) -> int:
+    checkout = primary_checkout(root)
+    if not (checkout / ".git").exists():
+        return setup_error("not-a-repository")
+    if not (checkout / ".agents" / "skills" / "gantry").is_dir():
+        emit({"error": {"code": "pack-unreadable", "repository": str(checkout)}})
+        return 2
+    try:
+        policy = resolve_policy(checkout)
+    except ValueError as error:
+        return setup_error(f"policy-invalid: {error}")
+    key = normalise_ref(ref) if ref else None
+    if key is None:
+        return setup_error("issue-missing")
+    spec, number_text = key.split("#")
+    branch = render_branch(policy, spec, int(number_text))
+    worktree = worktree_path(checkout, branch)
+    if not worktree.exists():
+        return setup_error("worktree-missing")
+    if tree_dirty(worktree):
+        return setup_error("worktree-dirty")
+    issues = load_policy_issues(worktree, policy)
+    issue = issues.get(key)
+    if issue is None:
+        return setup_error("issue-missing")
+    target = policy["git"]["target"]
+    before = git(worktree, "rev-parse", "HEAD").stdout.strip()
+    created = False
+    if issue.status != "done":
+        roadmap = Path(__file__).resolve().parent / "roadmap.py"
+        closed = subprocess.run(
+            [sys.executable, str(roadmap), "done", key],
+            cwd=worktree, text=True, capture_output=True, check=False,
+        )
+        if closed.returncode != 0:
+            return setup_error("close-failed")
+        relative = issue.path.relative_to(worktree).as_posix()
+        if git(worktree, "add", "--", "ROADMAP.md", relative).returncode != 0:
+            return setup_error("close-failed")
+        if git(worktree, "commit", "-qm", f"gantry: close {key}").returncode != 0:
+            return setup_error("close-failed")
+        created = git(worktree, "rev-parse", "HEAD").stdout.strip() != before
+    if "origin" not in git(worktree, "remote").stdout.split():
+        return setup_error("remote-missing")
+    pushed = git(worktree, "push", "-u", "origin", f"HEAD:refs/heads/{branch}")
+    if pushed.returncode != 0:
+        return setup_error("push-failed")
+    title = issue.title
+    body = f"Close {key}.\n\nThe closing commit marks the Issue and the roadmap done.\n"
+    pull = subprocess.run(
+        ["gh", "pr", "create", "--base", target, "--head", branch, "--title", title, "--body", body],
+        cwd=worktree, text=True, capture_output=True, check=False,
+    )
+    if pull.returncode != 0:
+        return setup_error("pull-request-failed")
+    emit({
+        "event": "pull-request", "branch": branch, "target": target, "worktree": str(worktree),
+        "pushed": True, "createdCommit": created, "url": pull.stdout.strip(),
+    })
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cwd", default=".", help="repository to inspect")
-    parser.add_argument("command", choices=("board", "issues", "specs", "frontier", "execute"), nargs="?", default="board")
+    parser.add_argument("command", choices=("board", "issues", "specs", "frontier", "execute", "approve"), nargs="?", default="board")
     parser.add_argument("issue", nargs="?")
     args = parser.parse_args(argv)
     root = repo_root(Path(args.cwd))
     if args.command == "execute":
         if not args.issue:
             return setup_error("issue-missing")
+        if "#" not in args.issue:
+            return execute_plan(root, args.issue)
         return execute_issue(root, args.issue)
+    if args.command == "approve":
+        if not args.issue:
+            return setup_error("issue-missing")
+        return approve_issue(root, args.issue)
     pack = root / ".agents" / "skills" / "gantry"
     if not pack.is_dir():
         print(json.dumps({"error": {"code": "pack-unreadable", "repository": str(root)}}))
