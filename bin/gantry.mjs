@@ -39,6 +39,14 @@ inside your coding harness. Runs execute in the harness, not this installer.`);
     console.error(`Gantry installation failed: ${result.error.message}`);
   }
   process.exitCode = result.status ?? 1;
+} else if (['board', 'issues', 'specs', 'frontier'].includes(command)) {
+  const result = spawnSync('python3', [
+    resolve(packageRoot, '.agents/skills/gantry/scripts/cli.py'), command, ...options,
+  ], { cwd: process.cwd(), stdio: 'inherit' });
+  if (result.error) {
+    console.error(`Gantry board failed: ${result.error.message}`);
+  }
+  process.exitCode = result.status ?? 1;
 } else {
   console.error(`Unknown command: ${command}. Use gantry --help.`);
   process.exitCode = 1;
