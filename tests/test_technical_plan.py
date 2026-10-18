@@ -601,3 +601,55 @@ print(json.dumps({{'type':'turn.completed'}}))
         self.assertIn('"effort":"high"', refresh_dispatch[0])
         self.assertNotEqual(invoked, revision)
         self.assertIn('Status: ready-for-agent', self.issue.read_text())
+
+    def test_public_report_separates_plan_duration_from_implementation_and_corrections(self):
+        unit = subprocess.check_output([sys.executable, str(SCRIPTS / 'runlog.py'), 'unit-id', '--cwd', str(self.root)], text=True).strip()
+        out = self.workflow(
+            runId='cost-report', unitId=unit, correctionBudget=2,
+            usageByLabel={
+                'technical-plan:ground#01': {'classification': 'actual', 'inputCount': 100, 'producedCount': 20},
+                'implement:ground#01': [
+                    {'classification': 'actual', 'inputCount': 50, 'producedCount': 10},
+                    {'classification': 'estimate', 'inputCount': 5, 'producedCount': 1},
+                    {'classification': 'actual', 'inputCount': 30, 'producedCount': 8},
+                ],
+            },
+            reviewerResult={'blocking': [{'finding': 'Gap', 'fix': 'Cover it'}], 'nonBlocking': [], 'summary': 'fix'},
+            criticResults=[
+                {'complete': False, 'criteria': [], 'gatesVerdict': 'fail', 'gateResult': {'verdict': 'fail'},
+                 'gateFailures': [], 'refutations': ['missing'], 'requiredFixes': ['add proof'], 'decisionsForOperator': []},
+                {'complete': True, 'criteria': self.fixture.critic_evidence(self.root, self.issue), 'gatesVerdict': 'pass',
+                 'gateResult': {'verdict': 'pass', 'requirements': []}, 'gateFailures': [], 'refutations': [], 'requiredFixes': [], 'decisionsForOperator': []},
+            ],
+        )
+        self.assertIsNone(out['error'], out.get('result'))
+        report = out['result']['report']
+        names = [(phase['phase'], phase['invocation']) for phase in report['phases'] if phase['phase'] in {'Technical Plan', 'Implement'}]
+        self.assertEqual([
+            ('Technical Plan', 'original'),
+            ('Implement', 'implementation'),
+            ('Technical Plan', 'reuse'),
+            ('Implement', 'review-fix'),
+            ('Technical Plan', 'reuse'),
+            ('Implement', 'correction'),
+        ], names)
+        self.assertIsInstance(report['phases'][0]['durationSeconds'], (int, float))
+        self.assertIsInstance(report['phases'][1]['durationSeconds'], (int, float))
+        self.assertIsNone(next(phase['durationSeconds'] for phase in report['phases'] if phase['invocation'] == 'reuse'))
+        self.assertEqual({'planning': 1, 'replanning': 0, 'implementation': 1, 'corrections': 1}, report['invocations'])
+        self.assertEqual(2, report['reusedPlans'])
+        self.assertEqual(1, report['reviewFixPasses'])
+        self.assertEqual(1, report['criticCorrectionAttempts']['ground#01'])
+        self.assertEqual({'inputCount': 180, 'producedCount': 38, 'complete': True}, report['usage']['actual'])
+        self.assertEqual({'inputCount': 5, 'producedCount': 1, 'present': True}, report['usage']['estimate'])
+        self.assertIsNone(report['claims']['tokenSavings'])
+        self.assertIsNone(report['claims']['fasterDelivery'])
+        self.assertIsNone(report['claims']['fewerCorrections'])
+        state = self.root.parent / 'state'
+        public = subprocess.run([sys.executable, str(SCRIPTS / 'runlog.py'), 'report', unit, 'cost-report',
+                                 '--state-root', str(state), '--json'], text=True, capture_output=True, check=False)
+        self.assertEqual(0, public.returncode, public.stderr)
+        self.assertEqual(report, json.loads(public.stdout))
+        log = (state / unit / 'runs' / 'cost-report.jsonl').read_text()
+        self.assertNotIn('existing() returns True', log)
+        self.assertNotIn('Research and plan', log)

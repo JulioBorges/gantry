@@ -221,6 +221,12 @@ let releaseFirstImplementation;
 const firstImplementation = new Promise(resolve => releaseFirstImplementation = resolve);
 const agent = async (prompt, options) => {{
   calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, model: options.model, effort: options.effort, effortPolicy: options.effortPolicy, selection: options.selection, sequence: sequence++ }});
+  const attachUsage = (label, value) => {{
+    const queued = args.usageByLabel && args.usageByLabel[label];
+    if (!queued || !value || typeof value !== 'object' || Array.isArray(value)) return value;
+    const usage = Array.isArray(queued) ? queued.shift() : queued;
+    return usage ? {{ ...value, usage }} : value;
+  }};
   if (options.label.startsWith('technical-plan')) {{
     if (options.label.includes('refresh') && args.technicalPlanRefreshResults && args.technicalPlanRefreshResults.length) return args.technicalPlanRefreshResults.shift();
     if (args.interleavePlans && options.issueRef.endsWith('#02')) await firstImplementation;
@@ -234,7 +240,7 @@ const agent = async (prompt, options) => {{
       adjustments: [], conflicts: args.technicalPlanConflicts || [] }};
     if (args.technicalPlanDefect === 'source') plan.findings[0].path = 'fabricated.py';
     if (args.technicalPlanDefect === 'coverage') plan.coverage = [];
-    return plan;
+    return attachUsage(options.label, plan);
   }}
   if (options.label.startsWith('research:')) return 'factual research';
   if (options.label.startsWith('requirement-critic')) {{
@@ -279,12 +285,12 @@ const agent = async (prompt, options) => {{
     }}
     const ref = options.label.split(':')[1];
     const assigned = (args.issueAssignments && args.issueAssignments[ref]) || {{}};
-    return {{
+    return attachUsage(options.label, {{
     worktree: assigned.worktree || defaultIssueWorktree, branch: assigned.branch || args.issueBranch || args.branch,
     commits: ['test commit'],
     summary: 'workflow execution', testsAdded: [], gatesResult: 'verdict: pass',
     decisions: [], blockers: [],
-    }};
+    }});
   }}
   if (options.label.startsWith('review:') && args.reviewerResult) return args.reviewerResult;
   if (options.label.startsWith('review:')) return {{

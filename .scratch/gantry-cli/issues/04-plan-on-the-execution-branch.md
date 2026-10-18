@@ -1,7 +1,7 @@
 # Plan on the execution branch
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-cli#04`
 Spec: `.scratch/gantry-cli/spec.md`
 Created: 2026-10-17
@@ -17,12 +17,12 @@ When there is no Spec and no Issue, execute reserves the supplied slug and the n
 
 ## Acceptance criteria
 
-- [ ] The branch is created with its final name before the plan agent, using the supplied slug and the next free number.
-- [ ] The agent writes the Spec and the single Issue at those paths.
-- [ ] Approval continues to implement in the same worktree, without another branch.
-- [ ] Rejection deletes the worktree and branch and publishes no commit.
-- [ ] A dirty plan tree returns to plan without spending `budget.corrections`.
-- [ ] A second return that is still dirty pauses. Try again calls plan once more. Reject deletes the branch.
+- [x] The branch is created with its final name before the plan agent, using the supplied slug and the next free number.
+- [x] The agent writes the Spec and the single Issue at those paths.
+- [x] Approval continues to implement in the same worktree, without another branch.
+- [x] Rejection deletes the worktree and branch and publishes no commit.
+- [x] A dirty plan tree returns to plan without spending `budget.corrections`.
+- [x] A second return that is still dirty pauses. Try again calls plan once more. Reject deletes the branch.
 
 ## Blocked by
 

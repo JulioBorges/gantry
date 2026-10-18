@@ -106,7 +106,11 @@ Ignored files, transient/reverted edits and changes outside the checkout are out
 Report these capability limits honestly. Conflicts pause affected work for the operator; accepted plans
 release fresh TDD implementation automatically. Each Issue progresses independently. Manual hosts
 follow the same checkpoint commands and dedicated contract (see `SKILL.md`); decomposition results
-cannot satisfy this checkpoint.
+cannot satisfy this checkpoint. Completed Technical Plan and implementation phases record
+sanitized durations and provider usage. `runlog.py report` is the public Run report: plan reuse is not a
+new invocation or usage, Review fix passes stay separate from Critic correction attempts, missing
+measurements stay unknown, and the report does not claim token savings, faster delivery or fewer
+corrections.
 
 **Implementer:** a fresh agent reads the complete Issue, parent Spec, settled decisions, context and ADRs.
 It follows red → green TDD at the approved CLI, script-interface and template-file seams, makes small
@@ -621,6 +625,37 @@ async function validRoleResult(role, result, options = {}, forceValidation = fal
   )
   return Boolean(validation && validation.exitCode === 0)
 }
+const observedUsage = new Map()
+function detachUsage(result, label) {
+  if (!result || typeof result !== 'object' || Array.isArray(result) || !Object.prototype.hasOwnProperty.call(result, 'usage')) return result
+  observedUsage.set(label, result.usage)
+  const clean = { ...result }
+  delete clean.usage
+  return clean
+}
+function rememberedUsage(label) {
+  return observedUsage.get(`${label}:retry`) || observedUsage.get(label) || null
+}
+function measurement(invocation, usage) {
+  const counted = invocation !== 'reuse'
+  const supplied = counted && usage && typeof usage === 'object' ? usage : null
+  const classification = supplied && (supplied.classification === 'actual' || supplied.classification === 'estimate')
+    ? supplied.classification : 'unknown'
+  const count = value => Number.isInteger(value) && value >= 0 ? value : null
+  const inputCount = supplied ? count(supplied.inputCount) : null
+  const producedCount = supplied ? count(supplied.producedCount) : null
+  if (classification === 'unknown' || inputCount === null || producedCount === null) {
+    return { invocation, counted, usage: { classification: 'unknown', provenance: 'unavailable', inputCount: null, producedCount: null } }
+  }
+  return {
+    invocation, counted,
+    usage: {
+      classification,
+      provenance: classification === 'actual' ? 'provider' : 'estimate',
+      inputCount, producedCount,
+    },
+  }
+}
 async function executeRole(role, prompt, options) {
   const issueRef = options && options.issueRef
   const selection = resolveRoleForIssue(issueRef, role, options)
@@ -650,7 +685,7 @@ async function executeRole(role, prompt, options) {
     const res = await runCommand(cmd, { cwd: A.repoRoot, input: agentPrompt })
     if (res && res.exitCode === 0) {
       try {
-        const externalResult = JSON.parse(res.stdout)
+        const externalResult = detachUsage(JSON.parse(res.stdout), options && options.label)
         return await validRoleResult(role, externalResult, options, true) ? externalResult : null
       } catch (e) {
         return null
@@ -673,7 +708,7 @@ async function executeRole(role, prompt, options) {
   }
   let result
   try {
-    result = await agent(agentPrompt, agentOptions)
+    result = detachUsage(await agent(agentPrompt, agentOptions), options && options.label)
   } catch (err) {
     return { executionUnavailable: true, error: String(err && err.message ? err.message : err) }
   }
@@ -688,7 +723,7 @@ async function executeRole(role, prompt, options) {
   }
   let retry
   try {
-    retry = await agent(retryPrompt, retryOptions)
+    retry = detachUsage(await agent(retryPrompt, retryOptions), options && options.label ? `${options.label}:retry` : undefined)
   } catch (err) {
     return { executionUnavailable: true, error: String(err && err.message ? err.message : err) }
   }
@@ -1050,6 +1085,9 @@ async function technicalPlan(issue, assigned, selection) {
   const evaluation = await loadPlanEvaluation(issue, assigned)
   if (evaluation.action === 'reuse' && evaluation.plan) {
     technicalPlans.set(issue.ref, evaluation.plan)
+    const reused = measurement('reuse', null)
+    await appendRunEvent('phase.started', issue.ref, 'Technical Plan', { worktree: assigned.worktree })
+    await appendRunEvent('phase.finished', issue.ref, 'Technical Plan', { worktree: assigned.worktree, measurement: reused })
     return null
   }
   if (evaluation.action === 'operator') {
@@ -1094,7 +1132,10 @@ A valid plan advances automatically to a separate fresh TDD Implementer; indepen
   try { checkpoint = JSON.parse(checked.stdout) } catch {}
   await appendRunEvent('subagent.stopped', issue.ref, 'Technical Plan', {
     role: 'technical-planner', status: checked && checked.exitCode === 0 ? 'validated' : 'failed' })
-  await appendRunEvent('phase.finished', issue.ref, 'Technical Plan', { worktree: assigned.worktree })
+  await appendRunEvent('phase.finished', issue.ref, 'Technical Plan', {
+    worktree: assigned.worktree,
+    measurement: measurement(refresh ? 'replan' : 'original', rememberedUsage(options.label)),
+  })
   if (plan && plan.executionUnavailable) return failure(plan.error)
   if (!checked || checked.exitCode !== 0 || !checkpoint) return failure(checkpoint && checkpoint.error || 'Technical Plan Protocol Failure; handoff refused', checkpoint && checkpoint.reason || 'protocol_failure')
   if (!checkpoint.accepted) return { ...failure('Technical Plan scope/contract conflict requires operator decision; see retained artifact ' + checkpoint.artifact, 'needs_operator'), decisionsForOperator: checkpoint.conflicts, artifact: checkpoint.artifact }
@@ -1103,6 +1144,7 @@ A valid plan advances automatically to a separate fresh TDD Implementer; indepen
 }
 
 async function implement(issue, feedback, previous) {
+  const invocation = feedback && feedback.kind === 'review' ? 'review-fix' : feedback && feedback.kind === 'critic' ? 'correction' : 'implementation'
   const assigned = await implementationLocation(issue, previous)
   if (!assigned) return null
   const selection = resolveRoleForIssue(issue.ref, 'implementer', null)
@@ -1136,7 +1178,10 @@ async function implement(issue, feedback, previous) {
   }
   if (started) {
     await appendRunEvent('subagent.stopped', issue.ref, 'Implement', { role: 'implementer', result })
-    await appendRunEvent('phase.finished', issue.ref, 'Implement', { worktree: assigned.worktree })
+    await appendRunEvent('phase.finished', issue.ref, 'Implement', {
+      worktree: assigned.worktree,
+      measurement: measurement(invocation, rememberedUsage(`implement:${issue.ref}`)),
+    })
   }
   return result && result.worktree === assigned.worktree && result.branch === assigned.branch ? result : null
 }
@@ -1659,6 +1704,15 @@ if (!integrationStopped && A.isLastRound && !hasPaused) {
     }
   }
 }
+let report = null
+if (runLogEnabled) {
+  try {
+    const reported = await runWorkflowCommand(`python3 "${scripts}/runlog.py" report ${shellQuote(A.unitId)} ${shellQuote(A.runId)}${stateRootFlag} --json`)
+    report = JSON.parse(reported.stdout)
+  } catch {
+    report = null
+  }
+}
 return {
   runId: A.runId,
   hostResolution,
@@ -1671,6 +1725,7 @@ return {
   nextRoundBlocked: hasPaused || integrationStopped,
   ...(hasPaused ? { pausedIssues: deliveries.filter(d => d.outcome === 'paused') } : {}),
   ...(A.isLastRound && !hasPaused ? { candidates, prOffer } : {}),
+  ...(report ? { report } : {}),
 }
 ```
 

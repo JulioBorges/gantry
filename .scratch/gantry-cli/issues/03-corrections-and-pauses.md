@@ -1,7 +1,7 @@
 # Spend corrections and pause
 
 Type: issue
-Status: ready-for-agent
+Status: done
 Slice: `gantry-cli#03`
 Spec: `.scratch/gantry-cli/spec.md`
 Created: 2026-10-17
@@ -17,12 +17,12 @@ Execute treats a failed check, a dirty implement tree, a review fail and a Criti
 
 ## Acceptance criteria
 
-- [ ] A failed check does not call review or Critic, spends one correction, and returns to implement.
-- [ ] A dirty tree at the end of implement spends one correction and returns to implement.
-- [ ] A review fail returns to implement and does not call Critic.
-- [ ] A Critic fail returns to implement, then review and Critic run again.
-- [ ] At zero budget the process pauses until it receives continue or stop.
-- [ ] Continue grants one more correction for this Run only. Stop does not merge and keeps the worktree.
+- [x] A failed check does not call review or Critic, spends one correction, and returns to implement.
+- [x] A dirty tree at the end of implement spends one correction and returns to implement.
+- [x] A review fail returns to implement and does not call Critic.
+- [x] A Critic fail returns to implement, then review and Critic run again.
+- [x] At zero budget the process pauses until it receives continue or stop.
+- [x] Continue grants one more correction for this Run only. Stop does not merge and keeps the worktree.
 
 ## Blocked by
 

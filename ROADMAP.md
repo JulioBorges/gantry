@@ -39,8 +39,8 @@ acceptance criteria are not all met. A partially delivered slice stays unticked.
 
 | | Count |
 |---|---|
-| Issues completed | **63 / 68** |
-| Specs completed | **11 / 13** |
+| Issues completed | **67 / 68** |
+| Specs completed | **12 / 13** |
 | Execution waves | **38** |
 
 ## Specs
@@ -142,8 +142,8 @@ Spec 02 (`opencode-tier`) remains a separate future planning candidate.
 | 17 | `host-harness-resolution` | 4/4 | 27–29 |
 | 18 | `run-execution-reliability` | 5/5 | 30–33 |
 | 19 | `operator-harness-profile` | 1/1 | 31 |
-| 20 | `issue-implementation-plan` | 3/4 | 34–36 |
-| 21 | `gantry-cli` | 2/6 | 34–37 |
+| 20 | `issue-implementation-plan` | 4/4 | 34–36 |
+| 21 | `gantry-cli` | 5/6 | 34–37 |
 
 <!-- END GENERATED: spec progress -->
 
@@ -378,15 +378,15 @@ of the others, and an issue never waits on anything in its own wave or a later o
 - [x] **`gantry-cli#02`** — Execute an Issue that already exists
   <br>↳ blocked by: gantry-cli#01
 
-### Wave 36 — 0/4 done
+### Wave 36 — 4/4 done
 
-- [ ] **`issue-implementation-plan#04`** — Report attributable technical-planning cost and correction outcomes
+- [x] **`issue-implementation-plan#04`** — Report attributable technical-planning cost and correction outcomes
   <br>↳ blocked by: issue-implementation-plan#02, issue-implementation-plan#03
-- [ ] **`gantry-cli#03`** — Spend corrections and pause
+- [x] **`gantry-cli#03`** — Spend corrections and pause
   <br>↳ blocked by: gantry-cli#02
-- [ ] **`gantry-cli#04`** — Plan on the execution branch
+- [x] **`gantry-cli#04`** — Plan on the execution branch
   <br>↳ blocked by: gantry-cli#02
-- [ ] **`gantry-cli#05`** — Approve and open the pull request
+- [x] **`gantry-cli#05`** — Approve and open the pull request
   <br>↳ blocked by: gantry-cli#02
 
 ### Wave 37 — 0/1 done
