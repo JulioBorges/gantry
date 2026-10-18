@@ -538,6 +538,31 @@ def handle_compaction_event(payload: dict, args: argparse.Namespace) -> None:
     )
 
 
+def pre_tool_json(allow: bool, rule: str | None = None, path: str | None = None, *, include_decision: bool = False) -> str:
+    """One PreToolUse object both harnesses accept.
+
+    Cursor reads `permission` (and, on deny, `user_message` / `agent_message`).
+    Claude Code reads `hookSpecificOutput.permissionDecision`. Extra fields are
+    ignored by both validators, so the same stdout works without a harness flag.
+    `--json` also keeps `decision` for callers that already parse that key.
+    """
+    permission = "allow" if allow else "deny"
+    specific: dict = {"hookEventName": "PreToolUse", "permissionDecision": permission}
+    body: dict = {"permission": permission, "hookSpecificOutput": specific}
+    if include_decision:
+        body["decision"] = permission
+    if not allow:
+        message = f"deny: {rule} {path}"
+        specific["permissionDecisionReason"] = message
+        body["user_message"] = message
+        body["agent_message"] = message
+        if include_decision:
+            body["rule"] = rule
+            body["path"] = path
+            body["reason"] = message
+    return json.dumps(body, separators=(",", ":"))
+
+
 def read_payload() -> dict | None:
     """Parse standard input; `None` means empty, undecodable, or not a JSON object.
 
@@ -567,7 +592,7 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="emit the decision as a compact JSON object")
     parser.add_argument(
         "--format", choices=["claude-code"],
-        help="emit Claude Code hook JSON (also accepted by Cursor's Claude hook imports)",
+        help="kept for existing Claude wiring; PreToolUse always emits JSON both harnesses accept",
     )
     args = parser.parse_args()
 
@@ -577,14 +602,12 @@ def main() -> int:
     normalized_name = re.sub(r"[^a-z]", "", name)
 
     def allow() -> int:
+        if args.event == "PreToolUse":
+            print(pre_tool_json(True, include_decision=bool(args.json)))
+            return 0
         if args.format == "claude-code":
-            if args.event == "PreToolUse":
-                print(json.dumps({"hookSpecificOutput": {
-                    "hookEventName": "PreToolUse", "permissionDecision": "allow",
-                }}, separators=(",", ":")))
-            else:
-                # Recording events have no permission decision or follow-up request.
-                print("{}")
+            # Recording events have no permission decision or follow-up request.
+            print("{}")
             return 0
         if args.event == "PostToolUse" and (not args.run_id or normalized_name != "invokesubagent"):
             if args.json:
@@ -618,6 +641,12 @@ def main() -> int:
                 record_invoke_subagent_event(payload, args, cwd, "subagent.started")
             return allow()
         message = f"deny: {decision.rule} {decision.path}"
+        if args.event == "PreToolUse":
+            print(pre_tool_json(False, decision.rule, decision.path, include_decision=bool(args.json)))
+            if args.format == "claude-code" or args.json:
+                return 0
+            print(message, file=sys.stderr)
+            return 2
         if args.format == "claude-code":
             print(json.dumps({"hookSpecificOutput": {
                 "hookEventName": "PreToolUse", "permissionDecision": "deny",
