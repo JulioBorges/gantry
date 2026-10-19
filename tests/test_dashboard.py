@@ -437,50 +437,31 @@ class DashboardHttpServerTests(unittest.TestCase):
         self.assertEqual("unit-proj0001", payload["projects"][0]["unitId"])
         self.assertEqual("MyProject", payload["runs"][0]["issues"][0]["project"])
 
-    def test_transcript_endpoint_and_live_activity_from_harness(self) -> None:
+    def test_planted_transcript_file_is_not_attached(self) -> None:
         unit = "unit-trans0001"
         run = "run-trans"
         issue = "issue#02"
         log_path = self.state_root / unit / "runs" / f"{run}.jsonl"
         write_event(log_path, started_event(run, 900, iso(20), "/repo/trans"))
-
-        # Setup transcript file in ~/.gantry/state/<unit>/transcripts/<run>/<issue>/transcript.jsonl
         transcript_dir = self.state_root / unit / "transcripts" / run / issue
         transcript_dir.mkdir(parents=True, exist_ok=True)
-        transcript_file = transcript_dir / "transcript.jsonl"
-        with transcript_file.open("w", encoding="utf-8") as f:
-            f.write(json.dumps({"step_index": 0, "type": "USER_INPUT", "content": "Start work"}) + "\n")
-            f.write(json.dumps({"step_index": 1, "type": "PLANNER_RESPONSE", "thinking": "Analyzing requirements carefully...", "tool_calls": [{"name": "run_command", "args": {"CommandLine": "git status"}}]}) + "\n")
-            f.write(json.dumps({"step_index": 2, "type": "GENERIC", "content": "git diff content\n+added line\n-removed line"}) + "\n")
-
-        # Query state to check live activity derived from latest step
+        (transcript_dir / "transcript.jsonl").write_text(
+            json.dumps({"tool_calls": [{"name": "run_command"}]}) + "\n",
+            encoding="utf-8",
+        )
         write_event(log_path, {
             "ts": iso(10), "run": run, "event": "phase.started",
             "issue": issue, "phase": "Implement", "data": {},
         })
 
         quoted_issue = urllib.parse.quote(issue, safe="")
-        status, body = self.get(f"/api/runs/{unit}/{run}/issues/{quoted_issue}/transcript")
-        self.assertEqual(200, status)
-        data = json.loads(body)
-        self.assertIn("steps", data)
-        self.assertEqual(3, len(data["steps"]))
-        self.assertEqual("Analyzing requirements carefully...", data["steps"][1]["thinking"])
-        self.assertEqual("run_command", data["steps"][1]["tool_calls"][0]["name"])
+        status, _ = self.get(f"/api/runs/{unit}/{run}/issues/{quoted_issue}/transcript")
+        self.assertEqual(404, status)
 
-        # Check /api/state reflects live activity badge
         status, body = self.get("/api/state")
         self.assertEqual(200, status)
-        state_data = json.loads(body)
-        matched_issue = state_data["runs"][0]["issues"][0]
-        self.assertEqual("Tool: run_command", matched_issue.get("liveActivity"))
-
-    def test_transcript_endpoint_returns_empty_when_missing(self) -> None:
-        quoted_issue = urllib.parse.quote("none#01", safe="")
-        status, body = self.get(f"/api/runs/unit-none/run-none/issues/{quoted_issue}/transcript")
-        self.assertEqual(200, status)
-        data = json.loads(body)
-        self.assertEqual({"steps": []}, data)
+        matched_issue = json.loads(body)["runs"][0]["issues"][0]
+        self.assertNotIn("liveActivity", matched_issue)
 
     def test_post_approve_creates_marker_and_appends_runlog(self) -> None:
         unit = "111122223333"
@@ -519,6 +500,21 @@ class DashboardHttpServerTests(unittest.TestCase):
         self.assertFalse(matched_issue.get("operatorWaiting", False))
         self.assertTrue(matched_issue.get("operatorApproved", False))
 
+    def test_post_approve_reports_run_log_append_failure(self) -> None:
+        unit = "111122223333"
+        run = "run-appr-02"
+        issue = "sample#01"
+        log_path = self.state_root / unit / "runs" / f"{run}.jsonl"
+        write_event(log_path, started_event(run, 900, iso(30), "/repo/appr"))
+        log_path.chmod(0o444)
+
+        status, body = self.post(f"/api/runs/{unit}/{run}/issues/{urllib.parse.quote(issue, safe='')}/approve")
+        self.assertEqual(500, status)
+        data = json.loads(body)
+        self.assertIn("error", data)
+        events = [json.loads(line)["event"] for line in log_path.read_text(encoding="utf-8").splitlines()]
+        self.assertNotIn("operator.approved", events)
+
     def test_post_approve_rejects_invalid_identifiers(self) -> None:
         # Invalid unit
         status, _ = self.post(f"/api/runs/bad-unit/run-01/issues/{urllib.parse.quote('sample#01', safe='')}/approve")
@@ -528,37 +524,45 @@ class DashboardHttpServerTests(unittest.TestCase):
         status, _ = self.post(f"/api/runs/111122223333/run-01/issues/{urllib.parse.quote('bad-issue', safe='')}/approve")
         self.assertEqual(400, status)
 
-    def test_gates_endpoint_returns_structured_verdicts(self) -> None:
+    def test_gates_endpoint_reads_run_log_not_artifact_files(self) -> None:
         unit = "unit-gate000001"
         run = "run-gate-01"
         issue = "sample#02"
         log_path = self.state_root / unit / "runs" / f"{run}.jsonl"
         write_event(log_path, started_event(run, 900, iso(50), "/repo/gate"))
+        write_event(log_path, {
+            "ts": iso(40), "run": run, "event": "subagent.stopped", "issue": issue,
+            "data": {
+                "role": "planner",
+                "result": {"verdict": "accepted", "criteria": ["Criterion 1"], "scope": ["Slice 1"]},
+            },
+        })
+        write_event(log_path, {
+            "ts": iso(30), "run": run, "event": "phase.finished", "issue": issue,
+            "phase": "Implement", "data": {"attempt": 2},
+        })
+        write_event(log_path, {
+            "ts": iso(20), "run": run, "event": "subagent.stopped", "issue": issue,
+            "data": {"role": "critic", "result": {"complete": True, "evidence": ["Tests green"]}},
+        })
 
-        # Persist structured artifacts under ~/.gantry/state/<unit>/artifacts/<run>/<issue>/gate-<phase>.json
         artifacts_dir = self.state_root / unit / "artifacts" / run / issue
         artifacts_dir.mkdir(parents=True, exist_ok=True)
-        (artifacts_dir / "gate-plan.json").write_text(json.dumps({
-            "verdict": "accepted",
-            "criteria": ["Criterion 1", "Criterion 2"],
-            "scope": ["Slice 1"],
-        }), encoding="utf-8")
-        (artifacts_dir / "gate-critic.json").write_text(json.dumps({
-            "complete": True,
-            "verdict": "complete",
-            "criteria": ["Criterion 1", "Criterion 2"],
-            "evidence": ["Tests green", "Build clean"],
-        }), encoding="utf-8")
+        (artifacts_dir / "gate-plan.json").write_text(
+            json.dumps({"verdict": "from-artifact"}),
+            encoding="utf-8",
+        )
 
         quoted_issue = urllib.parse.quote(issue, safe="")
         status, body = self.get(f"/api/runs/{unit}/{run}/issues/{quoted_issue}/gates")
         self.assertEqual(200, status)
-        data = json.loads(body)
-        self.assertIn("gates", data)
-        self.assertIn("plan", data["gates"])
-        self.assertEqual("accepted", data["gates"]["plan"]["verdict"])
-        self.assertIn("critic", data["gates"])
-        self.assertTrue(data["gates"]["critic"]["complete"])
+        gates = json.loads(body)["gates"]
+        self.assertEqual("accepted", gates["plan"]["verdict"])
+        self.assertEqual(["Slice 1"], gates["plan"]["scope"])
+        self.assertEqual("tests_passed", gates["implement"]["verdict"])
+        self.assertEqual(2, gates["implement"]["attempt"])
+        self.assertTrue(gates["critic"]["complete"])
+        self.assertNotIn("from-artifact", json.dumps(gates))
 
     def test_gates_endpoint_returns_integrate_strategy_from_done_event(self) -> None:
         unit = "unit-gate-int01"
@@ -922,20 +926,6 @@ class AttributableTimingAndWaitingStateTests(unittest.TestCase):
             runs = dashboard.collect_runs(root, now=time.time())
             issue = runs[0]["issues"][0]
             self.assertEqual("incomplete", issue["timingEvidence"])
-
-    def test_heartbeat_is_not_labelled_as_model_reasoning_or_progress(self) -> None:
-        """Steps containing only heartbeats return None from derive_live_activity."""
-        heartbeat_steps = [
-            {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "heartbeat"}]},
-            {"type": "PLANNER_RESPONSE", "thinking": "heartbeat check"},
-        ]
-        self.assertIsNone(dashboard.derive_live_activity(heartbeat_steps))
-
-        normal_steps = [
-            {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "run_command"}]},
-        ]
-        self.assertEqual("Tool: run_command", dashboard.derive_live_activity(normal_steps))
-
 
 if __name__ == "__main__":
     unittest.main()
