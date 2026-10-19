@@ -1,7 +1,7 @@
 # Spec: Gantry marketing and showcase site
 
 Type: spec
-Status: approved
+Status: done
 Map: `ROADMAP.md` (spec 13)
 Source: Product requirements, grilling session 2026-09-17, `PRD.md`, `README.md`, ADR-0004
 Created: 2026-09-17

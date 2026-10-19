@@ -1,7 +1,7 @@
 # Spec: Invoke Gantry Runs from a repository command
 
 Type: spec
-Status: approved
+Status: done
 Map: `ROADMAP.md` (spec 21)
 Source: Operator-approved design from the 2026-10-17 grilling conversation
 Created: 2026-10-17

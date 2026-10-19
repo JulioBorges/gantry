@@ -1,7 +1,7 @@
 # Spec: Resolve the active Host Harness without replacing role selections
 
 Type: spec
-Status: approved
+Status: done
 Map: `ROADMAP.md` (spec 17)
 Source: Host Harness planning handoff, 2026-09-30; PRD; ADR-0004; ADR-0006
 Created: 2026-09-30
