@@ -325,17 +325,10 @@ def require_commands(root: Path, policy: dict, roles: tuple[str, ...]) -> dict[s
 
 
 def execute_issue(root: Path, ref: str) -> int:
-    if not (root / ".git").exists():
-        return setup_error("not-a-repository")
-    if not (root / ".agents" / "skills" / "gantry").is_dir():
-        emit({"error": {"code": "pack-unreadable", "repository": str(root)}})
-        return 2
-    try:
-        policy = resolve_policy(root)
-    except ValueError as error:
-        return setup_error(f"policy-invalid: {error}")
-    if check_commands(policy):
-        return setup_error("checks-invalid")
+    prepared = execution_context(root)
+    if isinstance(prepared, int):
+        return prepared
+    policy, target = prepared
     key = normalise_ref(ref) if ref else None
     issues = load_policy_issues(root, policy)
     issue = issues.get(key) if key else None
@@ -344,28 +337,18 @@ def execute_issue(root: Path, ref: str) -> int:
     spec = artifact_path(root, "specs", issue.spec)
     if not spec.is_file():
         return setup_error("spec-missing")
-    commands = {role: role_command(root, policy, role) for role in ("implement", "review", "critic")}
-    if any(path is None for path in commands.values()):
-        return setup_error("role-command-missing")
-    target = policy["git"]["target"]
-    if git(root, "rev-parse", "--verify", "--quiet", target).returncode != 0:
-        return setup_error("target-missing")
+    commands = require_commands(root, policy, ("implement", "review", "critic"))
+    if isinstance(commands, int):
+        return commands
     branch = issue_branch(policy, issue)
-    worktree = root / ".gantry" / "worktrees" / branch.replace("/", "-")
-    if git(root, "rev-parse", "--verify", "--quiet", branch).returncode == 0 or worktree.exists():
+    if git(root, "rev-parse", "--verify", "--quiet", branch).returncode == 0 or worktree_path(root, branch).exists():
         return setup_error("branch-exists")
     open_blockers = [blocker for blocker in issue.blocked_by if blocker not in issues or not issues[blocker].done]
     if open_blockers:
         emit({"error": {"code": "open-blocker", "openBlockers": open_blockers}})
         return 1
-    if git(root, "branch", branch, target).returncode != 0:
-        return setup_error("branch-create-failed")
-    worktree.parent.mkdir(parents=True, exist_ok=True)
-    added = git(root, "worktree", "add", "--quiet", str(worktree), branch)
-    if added.returncode != 0:
-        git(root, "branch", "-D", branch)
-        if worktree.exists():
-            git(root, "worktree", "remove", "--force", str(worktree))
+    worktree = create_worktree(root, branch, target)
+    if worktree is None:
         return setup_error("worktree-create-failed")
     record = {
         "ref": issue.ref,
@@ -538,11 +521,6 @@ def discard_issue(root: Path, ref: str) -> int:
     delete_run(checkout, key)
     emit({"event": "discarded", "branch": branch, "pushed": False})
     return 0
-
-
-def issue_status(path: Path) -> str:
-    match = re.search(r"^Status:\s*(.+?)\s*$", path.read_text(encoding="utf-8"), re.MULTILINE)
-    return match.group(1) if match else ""
 
 
 def approve_issue(root: Path, ref: str) -> int:

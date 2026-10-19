@@ -25,7 +25,8 @@ List bundled skills without installing:
   npx @julioborges/gantry add --list
 
 Options are passed to the skills CLI. After installation, invoke gantry-setup
-inside your coding harness. Runs execute in the harness, not this installer.`);
+inside your coding harness. This installer forwards execute and the other
+board commands to the pack CLI.`);
 } else if (['--version', '-v'].includes(command)) {
   console.log(JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')).version);
 } else if (command === 'add') {
