@@ -1,7 +1,7 @@
 # Spec: Keep each operator's harness outside tracked policy
 
 Type: spec
-Status: draft
+Status: done
 Map: `ROADMAP.md` (spec 19)
 Source: Personal-project adoption, 2026-10-03; ADR-0004; ADR-0006; spec 17
 Created: 2026-10-03

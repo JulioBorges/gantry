@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Serve a read-only, loopback-only, multi-Run kanban dashboard.
+"""Serve a loopback-only, multi-Run kanban dashboard.
 
-The dashboard never writes to an Issue, a policy, a Run log, a branch or a worktree: every
-HTTP endpoint is a GET that renders data already produced by ``runlog.py``. Staleness is
-always derived from the ``staleAfterSeconds`` snapshot recorded on each Run's ``run.started``
-event, never from the current policy or a mutable dashboard action.
+``GET`` routes render data ``runlog.py`` already recorded. ``POST /api/runs/<unit>/<run>/issues/<issue>/approve``
+writes an approval marker and appends ``operator.approved``. ``POST /api/shutdown`` stops the server.
+Staleness is always derived from the ``staleAfterSeconds`` snapshot recorded on each Run's
+``run.started`` event, never from the current policy.
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from runlog import ISSUE_RE, RUN_ID_RE, UNIT_ID_RE, append_event, read_valid_events, run_log_path
+from runlog import ISSUE_RE, RUN_ID_RE, UNIT_ID_RE, EventError, append_event, read_valid_events, run_log_path
 from runlog import state_root as default_state_root
 
 COLUMNS = ["Ready", "Plan", "Implement", "Review", "Critic", "Integrate", "Done", "Blocked"]
@@ -428,94 +428,6 @@ def collect_projects(root: Path, runs: list[dict] | None = None) -> list[dict]:
     return sorted(projects_by_unit.values(), key=lambda p: p["name"].lower())
 
 
-def find_transcript_file(state_root: Path, unit_id: str, run_id: str, issue_ref: str, worktree: str | None = None) -> Path | None:
-    """Find transcript.jsonl under state root, worktree, or harness session logs."""
-    # 1. State root transcripts location: ~/.gantry/state/<unit>/transcripts/<run>/<issue>/transcript.jsonl
-    p1 = state_root / unit_id / "transcripts" / run_id / issue_ref / "transcript.jsonl"
-    if p1.exists():
-        return p1
-
-    # 2. State root artifact/session location
-    p2 = state_root / unit_id / "runs" / f"{run_id}.transcript.jsonl"
-    if p2.exists():
-        return p2
-
-    # 3. State root issue transcript: ~/.gantry/state/<unit>/transcripts/<issue>/transcript.jsonl
-    p3 = state_root / unit_id / "transcripts" / issue_ref / "transcript.jsonl"
-    if p3.exists():
-        return p3
-
-    # 4. Worktree-local logs: <worktree>/.system_generated/logs/transcript.jsonl
-    if worktree:
-        wt_path = Path(worktree)
-        p4 = wt_path / ".system_generated" / "logs" / "transcript.jsonl"
-        if p4.exists():
-            return p4
-        p5 = wt_path / ".gantry" / "transcripts" / f"{issue_ref}.jsonl"
-        if p5.exists():
-            return p5
-
-    # 5. Check if active marker in repo/worktree matches this run
-    if worktree:
-        marker_file = Path(worktree) / ".git" / "gantry" / "current-run.json"
-        if marker_file.exists():
-            try:
-                mdata = json.loads(marker_file.read_text(encoding="utf-8"))
-                if mdata.get("run") == run_id:
-                    brain_root = Path.home() / ".gemini" / "antigravity-cli" / "brain"
-                    if brain_root.exists():
-                        candidates = sorted(brain_root.glob("*/.system_generated/logs/transcript.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
-                        if candidates:
-                            return candidates[0]
-            except (OSError, json.JSONDecodeError):
-                pass
-
-    return None
-
-
-def read_transcript_steps(transcript_path: Path | None) -> list[dict]:
-    """Read transcript steps safely without throwing."""
-    if not transcript_path or not transcript_path.exists():
-        return []
-    steps: list[dict] = []
-    try:
-        with transcript_path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    steps.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-    except OSError:
-        return []
-    return steps
-
-
-def derive_live_activity(steps: list[dict], operator_waiting: bool = False) -> str | None:
-    """Derive live activity status badge from latest transcript steps."""
-    if operator_waiting:
-        return "Awaiting Operator"
-    if not steps:
-        return None
-    for step in reversed(steps):
-        tool_calls = step.get("tool_calls")
-        if tool_calls and isinstance(tool_calls, list) and len(tool_calls) > 0:
-            tool_name = tool_calls[-1].get("name", "tool")
-            if tool_name and tool_name.lower() in ("heartbeat", "ping", "keepalive"):
-                continue
-            return f"Tool: {tool_name}"
-        thinking = step.get("thinking")
-        if thinking and isinstance(thinking, str) and thinking.strip():
-            if "heartbeat" in thinking.lower():
-                continue
-            return "Thinking..."
-        if step.get("type") == "PLANNER_RESPONSE":
-            return "Thinking..."
-    return None
-
-
 def collect_runs(root: Path, now: float | None = None) -> list[dict]:
     """Read every Run log under every execution unit's state root."""
     now = time.time() if now is None else now
@@ -531,37 +443,21 @@ def collect_runs(root: Path, now: float | None = None) -> list[dict]:
             if not events or events[0]["event"] != "run.started":
                 continue
             run_data = build_run(unit_dir.name, events, now)
-            # Enrich issues with liveActivity if transcript is found
             for issue in run_data.get("issues", []):
                 approval_file = root / run_data["unitId"] / "approvals" / f"{issue['issue']}.json"
                 if approval_file.exists():
                     issue["operatorWaiting"] = False
                     issue["operatorApproved"] = True
 
-                t_file = find_transcript_file(root, run_data["unitId"], run_data["run"], issue["issue"], issue.get("worktree"))
-                if t_file:
-                    steps = read_transcript_steps(t_file)
-                    activity = derive_live_activity(steps, issue.get("operatorWaiting", False))
-                    if activity:
-                        issue["liveActivity"] = activity
-                elif issue.get("operatorWaiting"):
+                if issue.get("operatorWaiting"):
                     issue["liveActivity"] = "Awaiting Operator"
             runs.append(run_data)
     return runs
 
 
 def read_gates_for_issue(state_root: Path, unit_id: str, run_id: str, issue_ref: str) -> dict[str, dict]:
-    """Read structured gate artifacts from ~/.gantry/state/<unit>/artifacts/<run>/<issue>/gate-<phase>.json."""
+    """Project gate cards for one Issue from its Run log."""
     gates: dict[str, dict] = {}
-    artifact_dir = state_root / unit_id / "artifacts" / run_id / issue_ref
-    if artifact_dir.exists():
-        for path in sorted(artifact_dir.glob("gate-*.json")):
-            phase_name = path.stem.removeprefix("gate-").lower()
-            try:
-                gates[phase_name] = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-
     log_path = run_log_path(state_root, unit_id, run_id)
     if log_path.exists():
         events = read_valid_events(log_path)
@@ -667,12 +563,7 @@ def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
                 run_id = parts[3]
                 issue_ref = parts[5]
                 action = parts[6]
-                if action == "transcript":
-                    t_file = find_transcript_file(state_root, unit_id, run_id, issue_ref)
-                    steps = read_transcript_steps(t_file) if t_file else []
-                    self._send_json(200, {"steps": steps})
-                    return
-                elif action == "gates":
+                if action == "gates":
                     gates = read_gates_for_issue(state_root, unit_id, run_id, issue_ref)
                     self._send_json(200, {"gates": gates})
                     return
@@ -742,8 +633,9 @@ def make_handler(state_root: Path) -> type[BaseHTTPRequestHandler]:
                                 },
                             },
                         )
-                    except Exception:
-                        pass
+                    except (EventError, OSError) as error:
+                        self._send_json(500, {"error": str(error)})
+                        return
 
                 self._send_json(200, {"status": "ok", "issue": issue_ref, "approved": True, "approvedAt": approved_at})
                 return
@@ -990,7 +882,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    serve_parser = subparsers.add_parser("serve", help="serve the read-only kanban dashboard")
+    serve_parser = subparsers.add_parser("serve", help="serve the kanban dashboard")
     serve_parser.add_argument("--host", default="127.0.0.1", help="must be 127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=4600, help="TCP port, 0 for an ephemeral port")
     serve_parser.add_argument("--state-root", help="override ~/.gantry/state")

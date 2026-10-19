@@ -1,7 +1,7 @@
 # Spec: Ground implementation in a short per-Issue technical plan
 
 Type: spec
-Status: ready-for-agent
+Status: done
 Map: `ROADMAP.md` (spec 20)
 Source: Operator-approved design from the 2026-10-06 grilling conversation
 Created: 2026-10-06

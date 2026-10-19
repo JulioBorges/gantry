@@ -24,7 +24,6 @@ export function setStoredLocale(locale: Locale): void {
     window.dispatchEvent(
       new CustomEvent(LOCALE_CHANGE_EVENT, { detail: { locale } })
     );
-    updateDomTranslations(locale);
   } catch {
     // ignore
   }
@@ -45,25 +44,15 @@ export function updateDomTranslations(locale: Locale): void {
   const dict = translations[locale];
   if (!dict) return;
 
-  // Update elements with data-i18n (plain text)
   const elements = document.querySelectorAll<HTMLElement>('[data-i18n]');
   elements.forEach((el) => {
     const key = el.getAttribute('data-i18n');
     if (!key) return;
+    // textContent would delete element children, such as a nested code tag.
+    if (el.children.length > 0) return;
     const text = getNestedTranslation(dict, key);
     if (text !== undefined) {
       el.textContent = text;
-    }
-  });
-
-  // Update elements with data-i18n-html (HTML markup preserved)
-  const htmlElements = document.querySelectorAll<HTMLElement>('[data-i18n-html]');
-  htmlElements.forEach((el) => {
-    const key = el.getAttribute('data-i18n-html');
-    if (!key) return;
-    const html = getNestedTranslation(dict, key);
-    if (html !== undefined) {
-      el.innerHTML = html;
     }
   });
 }
