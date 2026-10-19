@@ -8,7 +8,6 @@ const t = translations.en;
   data-testid="harness-matrix-section"
   class="space-y-6 scroll-mt-20"
 >
-  <!-- Section Header -->
   <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-obsidian-700 pb-4">
     <div>
       <div class="text-xs font-mono text-amber-accent flex items-center space-x-2">
@@ -24,12 +23,10 @@ const t = translations.en;
 
   <p class="text-xs text-slate-400 font-mono max-w-3xl leading-relaxed" data-i18n="matrix.subtitle">{t.matrix.subtitle}</p>
 
-  <!-- Tier Definitions Industrial Panel -->
   <div
     data-testid="tier-definitions"
     class="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs"
   >
-    <!-- Reference Tier -->
     <div class="border border-obsidian-700 bg-obsidian-950 p-4 space-y-2 border-l-2 border-l-amber-glow">
       <div class="flex items-center justify-between">
         <span class="font-bold text-amber-glow uppercase tracking-wider" data-i18n="matrix.tierRefTitle">{t.matrix.tierRefTitle}</span>
@@ -38,7 +35,6 @@ const t = translations.en;
       <p class="text-slate-300 text-[11px] leading-relaxed" data-i18n="matrix.tierRefDesc">{t.matrix.tierRefDesc}</p>
     </div>
 
-    <!-- Supported Tier -->
     <div class="border border-obsidian-700 bg-obsidian-950 p-4 space-y-2 border-l-2 border-l-amber-accent">
       <div class="flex items-center justify-between">
         <span class="font-bold text-amber-accent uppercase tracking-wider" data-i18n="matrix.tierSupTitle">{t.matrix.tierSupTitle}</span>
@@ -47,7 +43,6 @@ const t = translations.en;
       <p class="text-slate-300 text-[11px] leading-relaxed" data-i18n="matrix.tierSupDesc">{t.matrix.tierSupDesc}</p>
     </div>
 
-    <!-- Compatible Tier -->
     <div class="border border-obsidian-700 bg-obsidian-950 p-4 space-y-2 border-l-2 border-l-slate-400">
       <div class="flex items-center justify-between">
         <span class="font-bold text-slate-300 uppercase tracking-wider" data-i18n="matrix.tierCompTitle">{t.matrix.tierCompTitle}</span>
@@ -57,7 +52,6 @@ const t = translations.en;
     </div>
   </div>
 
-  <!-- Detailed Matrix Table Container -->
   <div class="border border-obsidian-700 bg-obsidian-900/80 overflow-hidden font-mono">
     <div
       tabindex="0"
@@ -141,7 +135,6 @@ const t = translations.en;
     </div>
   </div>
 
-  <!-- Honest Disclaimer Callout -->
   <div
     data-testid="honest-disclaimer-callout"
     class="border border-obsidian-700 bg-obsidian-950 p-4 font-mono text-xs flex items-start space-x-3 text-slate-400"

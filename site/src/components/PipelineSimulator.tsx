@@ -2,15 +2,21 @@ import { useState, type KeyboardEvent } from 'react';
 import { translations, type Locale } from '../i18n/translations';
 import { useLocale } from '../i18n/useLocale';
 
-export type StageId = 'setup' | 'plan' | 'approve' | 'implement' | 'verify' | 'handoff';
+const STAGE_IDS = ['setup', 'plan', 'approve', 'implement', 'verify', 'handoff'] as const;
 
-export interface StageData {
+type StageId = (typeof STAGE_IDS)[number];
+
+type TerminalLine = {
+  type: 'info' | 'success' | 'warn' | 'dim';
+  text: string;
+};
+
+interface StageData {
   id: StageId;
   index: number;
   number: string;
   name: string;
   deterministicScript: {
-    command: string;
     description: string;
     invariants: string[];
   };
@@ -23,195 +29,83 @@ export interface StageData {
   terminal: {
     prompt: string;
     command: string;
-    lines: Array<{
-      type: 'cmd' | 'info' | 'success' | 'warn' | 'dim' | 'json';
-      text: string;
-    }>;
+    lines: TerminalLine[];
     jsonEvent: Record<string, unknown>;
   };
 }
 
-const STAGE_IDS: StageId[] = ['setup', 'plan', 'approve', 'implement', 'verify', 'handoff'];
+const JSON_EVENTS: Record<StageId, Record<string, unknown>> = {
+  setup: {
+    event: 'setup.completed',
+    repository: 'otp-service',
+    policy: '.gantry/config.json',
+    status: 'ready-for-planning',
+    timestamp: '2026-09-17T18:00:00Z',
+  },
+  plan: {
+    event: 'plan.ready-for-approval',
+    spec: 'login-otp',
+    issues: 3,
+    waves: 2,
+    status: 'awaiting-operator',
+  },
+  approve: {
+    event: 'plan.approved',
+    spec: 'login-otp',
+    issues: ['login-otp#01', 'login-otp#02', 'login-otp#03'],
+    status: 'ready-for-agent',
+  },
+  implement: {
+    event: 'run.started',
+    spec: 'login-otp',
+    scope: 'all-approved-issues',
+    status: 'implementing',
+  },
+  verify: {
+    event: 'critic.accepted',
+    spec: 'login-otp',
+    issue: 'login-otp#02',
+    role: 'critic',
+    verdict: 'ACCEPTED',
+    criteria: '5/5',
+  },
+  handoff: {
+    event: 'run.finished',
+    spec: 'login-otp',
+    issues_done: 3,
+    gates: 'passed',
+    handoff: 'ready',
+  },
+};
 
 function buildStages(locale: Locale): StageData[] {
   const dict = translations[locale]?.simulator ?? translations.en.simulator;
-  const stagesDict = dict.stages;
 
-  return [
-    {
-      id: 'setup',
-      index: 0,
-      number: '01',
-      name: stagesDict.setup.name,
+  return STAGE_IDS.map((id, index) => {
+    const stage = dict.stages[id];
+    return {
+      id,
+      index,
+      number: String(index + 1).padStart(2, '0'),
+      name: stage.name,
       deterministicScript: {
-        command: stagesDict.setup.terminalCommand,
-        description: stagesDict.setup.scriptDescription,
-        invariants: stagesDict.setup.scriptInvariants,
+        description: stage.scriptDescription,
+        invariants: stage.scriptInvariants,
       },
       agentRole: {
-        name: stagesDict.setup.agentName,
-        model: stagesDict.setup.agentModel,
-        responsibilities: stagesDict.setup.agentResponsibilities,
-        adversarial: false,
+        name: stage.agentName,
+        model: stage.agentModel,
+        responsibilities: stage.agentResponsibilities,
+        adversarial: id === 'verify',
       },
       terminal: {
-        prompt: stagesDict.setup.terminalPrompt,
-        command: stagesDict.setup.terminalCommand,
-        lines: stagesDict.setup.terminalLines,
-        jsonEvent: {
-          event: 'setup.completed',
-          repository: 'otp-service',
-          policy: '.gantry/config.json',
-          status: 'ready-for-planning',
-          timestamp: '2026-09-17T18:00:00Z',
-        },
+        prompt: stage.terminalPrompt,
+        command: stage.terminalCommand,
+        lines: stage.terminalLines,
+        jsonEvent: JSON_EVENTS[id],
       },
-    },
-    {
-      id: 'plan',
-      index: 1,
-      number: '02',
-      name: stagesDict.plan.name,
-      deterministicScript: {
-        command: stagesDict.plan.terminalCommand,
-        description: stagesDict.plan.scriptDescription,
-        invariants: stagesDict.plan.scriptInvariants,
-      },
-      agentRole: {
-        name: stagesDict.plan.agentName,
-        model: stagesDict.plan.agentModel,
-        responsibilities: stagesDict.plan.agentResponsibilities,
-        adversarial: false,
-      },
-      terminal: {
-        prompt: stagesDict.plan.terminalPrompt,
-        command: stagesDict.plan.terminalCommand,
-        lines: stagesDict.plan.terminalLines,
-        jsonEvent: {
-          event: 'plan.ready-for-approval',
-          spec: 'login-otp',
-          issues: 3,
-          waves: 2,
-          status: 'awaiting-operator',
-        },
-      },
-    },
-    {
-      id: 'approve',
-      index: 2,
-      number: '03',
-      name: stagesDict.approve.name,
-      deterministicScript: {
-        command: stagesDict.approve.terminalCommand,
-        description: stagesDict.approve.scriptDescription,
-        invariants: stagesDict.approve.scriptInvariants,
-      },
-      agentRole: {
-        name: stagesDict.approve.agentName,
-        model: stagesDict.approve.agentModel,
-        responsibilities: stagesDict.approve.agentResponsibilities,
-        adversarial: false,
-      },
-      terminal: {
-        prompt: stagesDict.approve.terminalPrompt,
-        command: stagesDict.approve.terminalCommand,
-        lines: stagesDict.approve.terminalLines,
-        jsonEvent: {
-          event: 'plan.approved',
-          spec: 'login-otp',
-          issues: ['login-otp#01', 'login-otp#02', 'login-otp#03'],
-          status: 'ready-for-agent',
-        },
-      },
-    },
-    {
-      id: 'implement',
-      index: 3,
-      number: '04',
-      name: stagesDict.implement.name,
-      deterministicScript: {
-        command: stagesDict.implement.terminalCommand,
-        description: stagesDict.implement.scriptDescription,
-        invariants: stagesDict.implement.scriptInvariants,
-      },
-      agentRole: {
-        name: stagesDict.implement.agentName,
-        model: stagesDict.implement.agentModel,
-        responsibilities: stagesDict.implement.agentResponsibilities,
-        adversarial: false,
-      },
-      terminal: {
-        prompt: stagesDict.implement.terminalPrompt,
-        command: stagesDict.implement.terminalCommand,
-        lines: stagesDict.implement.terminalLines,
-        jsonEvent: {
-          event: 'run.started',
-          spec: 'login-otp',
-          scope: 'all-approved-issues',
-          status: 'implementing',
-        },
-      },
-    },
-    {
-      id: 'verify',
-      index: 4,
-      number: '05',
-      name: stagesDict.verify.name,
-      deterministicScript: {
-        command: stagesDict.verify.terminalCommand,
-        description: stagesDict.verify.scriptDescription,
-        invariants: stagesDict.verify.scriptInvariants,
-      },
-      agentRole: {
-        name: stagesDict.verify.agentName,
-        model: stagesDict.verify.agentModel,
-        responsibilities: stagesDict.verify.agentResponsibilities,
-        adversarial: true,
-      },
-      terminal: {
-        prompt: stagesDict.verify.terminalPrompt,
-        command: stagesDict.verify.terminalCommand,
-        lines: stagesDict.verify.terminalLines,
-        jsonEvent: {
-          event: 'critic.accepted',
-          spec: 'login-otp',
-          issue: 'login-otp#02',
-          role: 'critic',
-          verdict: 'ACCEPTED',
-          criteria: '5/5',
-        },
-      },
-    },
-    {
-      id: 'handoff',
-      index: 5,
-      number: '06',
-      name: stagesDict.handoff.name,
-      deterministicScript: {
-        command: stagesDict.handoff.terminalCommand,
-        description: stagesDict.handoff.scriptDescription,
-        invariants: stagesDict.handoff.scriptInvariants,
-      },
-      agentRole: {
-        name: stagesDict.handoff.agentName,
-        model: stagesDict.handoff.agentModel,
-        responsibilities: stagesDict.handoff.agentResponsibilities,
-        adversarial: false,
-      },
-      terminal: {
-        prompt: stagesDict.handoff.terminalPrompt,
-        command: stagesDict.handoff.terminalCommand,
-        lines: stagesDict.handoff.terminalLines,
-        jsonEvent: {
-          event: 'run.finished',
-          spec: 'login-otp',
-          issues_done: 3,
-          gates: 'passed',
-          handoff: 'ready',
-        },
-      },
-    },
-  ];
+    };
+  });
 }
 
 export function PipelineSimulator() {
@@ -389,7 +283,7 @@ export function PipelineSimulator() {
                 aria-label="Recommended Gantry skill invocation"
                 className="text-amber-accent bg-obsidian-900 border border-obsidian-800 px-2 py-1 block text-xs whitespace-pre-wrap break-words focus:outline-none focus:ring-1 focus:ring-amber-glow"
               >
-                {activeStage.deterministicScript.command}
+                {activeStage.terminal.command}
               </code>
             </div>
 

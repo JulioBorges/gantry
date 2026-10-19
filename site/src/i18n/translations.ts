@@ -19,7 +19,7 @@ export interface StageTranslation {
   terminalPrompt: string;
   terminalCommand: string;
   terminalLines: Array<{
-    type: 'cmd' | 'info' | 'success' | 'warn' | 'dim' | 'json';
+    type: 'info' | 'success' | 'warn' | 'dim';
     text: string;
   }>;
 }
