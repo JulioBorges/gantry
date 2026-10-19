@@ -6,9 +6,9 @@ description: Opens a read-only, loopback-only kanban dashboard that shows every 
 # Gantry Dashboard
 
 A local HTTP server that renders the Run log `runlog.py` already writes. It never decides
-anything and never writes anything: every route is a `GET`, and the page polls
-`GET /api/state` to redraw itself. No Issue, policy, Run log, branch or worktree can be
-changed from the dashboard.
+Issue status. The page polls `GET /api/state`. `POST /api/runs/<unit>/<run>/issues/<issue>/approve`
+writes an approval marker and appends `operator.approved` to that Run log. `POST /api/shutdown`
+stops the server. No Issue file, policy, branch, or worktree is changed from the dashboard.
 
 ## Open the dashboard
 
