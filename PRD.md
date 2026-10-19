@@ -2,7 +2,7 @@
 
 **What it is:** a harness-neutral skill pack that runs an agentic software development life cycle inside the operator's coding harness. Deterministic scripts decide which work is ready and whether a delivery is done; agents plan, build, review and refute; the operator decides, in the conversation.
 
-**Status:** requirements agreed on 2026-09-12 (see [ADR-0004](docs/adr/0004-skill-pack-instead-of-an-engine.md)). The pack evolves the existing `asdlc` skill in this repository; nothing described here is claimed to exist until the fixture exercises it (§13). Vocabulary is defined in [`CONTEXT.md`](CONTEXT.md) and is used here without redefinition.
+**Status:** requirements agreed on 2026-09-12 (see [ADR-0004](docs/adr/0004-skill-pack-instead-of-an-engine.md)). The pack evolved from the `asdlc` skill in this repository (§14). A harness tier is announced only after the fixture exercises it (§13). Vocabulary is defined in [`CONTEXT.md`](CONTEXT.md) and is used here without redefinition.
 
 ---
 
@@ -196,4 +196,4 @@ Support is declared per harness in `capabilities/<harness>.json` — `hooks`, `s
 
 ## 14. From `asdlc` to Gantry
 
-The migration of the `asdlc` skill (in this repository) is the first spec of this repository and is executed by `asdlc` itself: rename and split into the four skills, remove repository-specific hardcoding (`slice-index`, this repository's name) in favour of the repository policy, add the new scripts and schemas, port the structural spec check, add the Requirement Critic and Learner phases to the templates, write the capability files and hook wiring, and build the fixture. Each step is a vertical slice demonstrable on the fixture.
+The migration of the `asdlc` skill (in this repository) was the first spec of this repository and was executed by `asdlc` itself. It renamed and split that skill into the four skills, removed repository-specific hardcoding (`slice-index`, this repository's name) in favour of the repository policy, added the new scripts and schemas, ported the structural spec check, added the Requirement Critic and Learner phases to the templates, wrote the capability files and hook wiring, and built the fixture. Each step was a vertical slice demonstrable on the fixture.

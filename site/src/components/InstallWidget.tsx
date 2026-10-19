@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { getStoredLocale, LOCALE_CHANGE_EVENT } from '../i18n/client';
-import { translations, type Locale } from '../i18n/translations';
+import { useState } from 'react';
+import { translations } from '../i18n/translations';
+import { useLocale } from '../i18n/useLocale';
 
 export type HarnessId = 'claude' | 'opencode' | 'codex' | 'antigravity' | 'cursor';
 
@@ -59,21 +59,7 @@ export const HARNESSES: HarnessConfig[] = [
 export function InstallWidget() {
   const [selectedHarnessId, setSelectedHarnessId] = useState<HarnessId>('claude');
   const [copied, setCopied] = useState<boolean>(false);
-  const [locale, setLocale] = useState<Locale>('en');
-
-  useEffect(() => {
-    setLocale(getStoredLocale());
-
-    const handleLocaleChange = (e: Event) => {
-      const customEvent = e as CustomEvent<{ locale: Locale }>;
-      if (customEvent.detail?.locale) {
-        setLocale(customEvent.detail.locale);
-      }
-    };
-
-    window.addEventListener(LOCALE_CHANGE_EVENT, handleLocaleChange);
-    return () => window.removeEventListener(LOCALE_CHANGE_EVENT, handleLocaleChange);
-  }, []);
+  const locale = useLocale();
 
   const activeHarness = HARNESSES.find((h) => h.id === selectedHarnessId) ?? HARNESSES[0];
   const dict = translations[locale]?.install ?? translations.en.install;

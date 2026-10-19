@@ -78,4 +78,4 @@ desktop.ini
 # Notes
 # This file deliberately does NOT ignore `**/[Bb]in/*`. The previous Visual Studio / .NET
 # template did, which silently ignored `src/bin/gantry.ts` — the package's binary entry
-# point. See `.scratch/release-engineering/issues/01-repository-bootstrap.md`.
+# point.

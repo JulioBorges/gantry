@@ -1,7 +1,7 @@
 # Spec: Dashboard Lifecycle Controls and ASDLC Round Automation
 
 Type: spec
-Status: ready-for-agent
+Status: done
 Map: `ROADMAP.md` (spec 15)
 Source: `/grill-me` session; PRD.md §3; ADR-0004
 Created: 2026-09-19

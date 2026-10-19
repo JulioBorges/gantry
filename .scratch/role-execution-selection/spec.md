@@ -1,7 +1,7 @@
 # Spec: Role execution selection
 
 Type: spec
-Status: approved
+Status: done
 Map: `ROADMAP.md` (spec 12)
 Source: `PRD.md` §6.1 and §12; `grilling.md`; ADR-0006
 Created: 2026-09-15
