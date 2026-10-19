@@ -504,8 +504,7 @@ See the [maintainer release runbook](docs/maintainers/releases.md) for versionin
 authorization, npm trusted publisher setup, and recovery after partial failures.
 The package includes only the installer, four skill directories, README and
 license; project Issues, fixtures, caches, local configuration and runtime state
-are excluded. Local `make release` retains its npm account check, but GitHub
-Actions is the normal publication path.
+are excluded.
 
 ## License
 

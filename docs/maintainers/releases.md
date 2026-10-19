@@ -65,9 +65,9 @@ Dependabot proposes updates for manual review.
 
 Publication uses `npm publish <verified-tarball> --ignore-scripts`: the workflow
 has already executed the test gates explicitly, and OIDC identifies the trusted
-workflow rather than an npm user session. This avoids the local `npm whoami`
-hook, which is retained for manual `make release` and source publication.
-Do not use local publication for the normal release process.
+workflow rather than an npm user session. A source `npm publish` still runs
+the local `npm whoami` hook. Do not use local publication for the normal
+release process.
 
 ## Recovery
 
