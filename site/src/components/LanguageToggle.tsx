@@ -1,29 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { getStoredLocale, setStoredLocale, LOCALE_CHANGE_EVENT } from '../i18n/client';
+import { setStoredLocale } from '../i18n/client';
+import { useLocale } from '../i18n/useLocale';
 import type { Locale } from '../i18n/translations';
 
 export function LanguageToggle() {
-  const [locale, setLocale] = useState<Locale>('en');
-
-  useEffect(() => {
-    // Initial load from storage
-    const stored = getStoredLocale();
-    setLocale(stored);
-
-    const handleLocaleChange = (e: Event) => {
-      const customEvent = e as CustomEvent<{ locale: Locale }>;
-      if (customEvent.detail?.locale) {
-        setLocale(customEvent.detail.locale);
-      }
-    };
-
-    window.addEventListener(LOCALE_CHANGE_EVENT, handleLocaleChange);
-    return () => window.removeEventListener(LOCALE_CHANGE_EVENT, handleLocaleChange);
-  }, []);
+  const locale = useLocale();
 
   const handleSelect = (newLocale: Locale) => {
     if (newLocale !== locale) {
-      setLocale(newLocale);
       setStoredLocale(newLocale);
     }
   };
