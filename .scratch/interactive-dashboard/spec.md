@@ -1,7 +1,7 @@
 # Spec: Interactive ASDLC Observability Dashboard and Human Gates
 
 Type: spec
-Status: ready-for-agent
+Status: done
 Map: `ROADMAP.md` (spec 14)
 Source: `/grill-me` session; PRD.md §3; ADR-0001, ADR-0003, ADR-0004
 Created: 2026-09-18

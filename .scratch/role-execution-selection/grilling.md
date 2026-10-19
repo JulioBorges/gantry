@@ -16,17 +16,6 @@ Status: approved
 10. A runtime execution failure pauses only the affected Issue. Other Issues in the current round may finish and approved deliveries may be integrated; the Run stops at the round boundary while the execution failure remains unresolved.
 11. Replace the PRD's mandatory relative-strength restriction for Plan and Critic versus Implement with advisory guidance. Do not block selections using an assumed cross-family ranking; the operator retains the final choice and execution capability validation remains mandatory.
 
-## Observed current limitations
-
-- The shipped Codex capability declaration lists only `gpt-5.2-codex` and sets `per_role_model` to false.
-- `budget.py` accepts only model IDs in the shipped capability declarations.
-- The round workflow passes a model to the host-provided agent invocation but does not express a per-role harness selection.
-- These observations do not establish the runtime model catalog or prove cross-harness execution support.
-
-## Remaining confirmation
-
-- The operator confirmed shared understanding and authorized preparation of the Spec and proposed Issues. The operator approved the Spec and five-Issue breakdown. After approval, create a branch, push it to the remote and open a PR targeting main; do not merge it.
-
 ## Investigation required for implementation planning
 
 - Discover and verify actual model and effort availability for each supported execution environment without treating the shipped shortlist as authoritative.
