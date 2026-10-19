@@ -1,7 +1,7 @@
 # Spec: Reliable Run execution and truthful timing
 
 Type: spec
-Status: ready-for-agent
+Status: done
 Map: `ROADMAP.md` (spec 18)
 Source: Operator request and revised Run audit of 2026-10-02
 Created: 2026-10-03
@@ -194,7 +194,7 @@ The empirical audit is attached separately. Its examples justify the selected fa
 
 On 2026-10-03 the operator accepted the proposed direction and testing seams and requested publication of the Spec, vertical Issues and roadmap update. The Spec is published with ready-for-agent triage. The operator subsequently approved the five-Issue breakdown and its dependencies through to-issues; the canonical Issues are ready for agent selection. Neither Spec triage nor breakdown approval starts an implementation Run.
 
-See [audit evidence](evidence.md) and [proposed breakdown](breakdown.md) for the historical basis and delivery coverage.
+See [audit evidence](evidence.md) for the historical basis.
 
 ## Changelog
 

@@ -1,8 +1,16 @@
 export type Locale = 'en' | 'pt-br';
 
+export interface MatrixRow {
+  name: string;
+  tier: string;
+  hooks: string;
+  roles: string;
+  worktrees: string;
+  structured: string;
+}
+
 export interface StageTranslation {
   name: string;
-  shortName: string;
   scriptDescription: string;
   scriptInvariants: string[];
   agentName: string;
@@ -22,7 +30,6 @@ export interface Dictionary {
     skills: string;
     harnesses: string;
     github: string;
-    version: string;
   };
   hero: {
     systemStrip: string;
@@ -48,7 +55,6 @@ export interface Dictionary {
   };
   install: {
     quickInstallTitle: string;
-    statusVerified: string;
     copy: string;
     copied: string;
     altSetupLabel: string;
@@ -65,6 +71,15 @@ export interface Dictionary {
     progressLabel: string;
     stageLabel: string;
     ofStages: string;
+    ofWord: string;
+    demoKicker: string;
+    demoTitle: string;
+    demoDesc: string;
+    statusPending: string;
+    statusActive: string;
+    statusVerified: string;
+    agentAsideAdversarial: string;
+    agentAsideCooperative: string;
     phaseDetails: string;
     scriptInvariantsTitle: string;
     interfaceLabel: string;
@@ -122,7 +137,6 @@ export interface Dictionary {
     subtitle: string;
     triggersLabel: string;
     viewSpec: string;
-    gantryTitle: string;
     gantryBadge: string;
     gantryDesc: string;
     gantryBullet1Title: string;
@@ -131,7 +145,6 @@ export interface Dictionary {
     gantryBullet2Desc: string;
     gantryBullet3Title: string;
     gantryBullet3Desc: string;
-    setupTitle: string;
     setupBadge: string;
     setupDesc: string;
     setupBullet1Title: string;
@@ -140,7 +153,6 @@ export interface Dictionary {
     setupBullet2Desc: string;
     setupBullet3Title: string;
     setupBullet3Desc: string;
-    planTitle: string;
     planBadge: string;
     planDesc: string;
     planBullet1Title: string;
@@ -149,7 +161,6 @@ export interface Dictionary {
     planBullet2Desc: string;
     planBullet3Title: string;
     planBullet3Desc: string;
-    dashboardTitle: string;
     dashboardBadge: string;
     dashboardDesc: string;
     dashboardBullet1Title: string;
@@ -185,6 +196,15 @@ export interface Dictionary {
     codexNotes: string;
     antigravityNotes: string;
     cursorNotes: string;
+    disclaimerTitle: string;
+    disclaimerBody: string;
+    rows: {
+      claude: MatrixRow;
+      antigravity: MatrixRow;
+      codex: MatrixRow;
+      opencode: MatrixRow;
+      cursor: MatrixRow;
+    };
   };
   footer: {
     rigTitle: string;
@@ -201,7 +221,6 @@ export const translations: Record<Locale, Dictionary> = {
       skills: 'SKILLS',
       harnesses: 'HARNESSES',
       github: 'GITHUB',
-      version: 'v1.1.0 [STANDBY]',
     },
     hero: {
       systemStrip: 'SYSTEM RIG // GANTRY CORE ONLINE',
@@ -228,7 +247,6 @@ export const translations: Record<Locale, Dictionary> = {
     },
     install: {
       quickInstallTitle: 'QUICK INSTALL // HARNESS RUNTIME',
-      statusVerified: 'STATUS: VERIFIED',
       copy: 'COPY',
       copied: 'COPIED!',
       altSetupLabel: 'Alternative CLI setup:',
@@ -245,6 +263,16 @@ export const translations: Record<Locale, Dictionary> = {
       progressLabel: 'PROGRESS:',
       stageLabel: 'STAGE',
       ofStages: '06',
+      ofWord: 'OF',
+      demoKicker: 'INTERACTIVE DEMO // SDLC PHASES',
+      demoTitle: 'Pipeline Simulator',
+      demoDesc:
+        'Explore the 6 deterministic execution phases from Spec verification to serial gate integration.',
+      statusPending: 'PENDING',
+      statusActive: 'ACTIVE',
+      statusVerified: 'VERIFIED',
+      agentAsideAdversarial: 'Fresh independent agent verification',
+      agentAsideCooperative: 'Isolated worktree implementation',
       phaseDetails: 'PHASE DETAILS',
       scriptInvariantsTitle: 'WORKFLOW ACTION & GUARANTEES',
       interfaceLabel: 'CONTROL: OPERATOR + GANTRY',
@@ -262,7 +290,6 @@ export const translations: Record<Locale, Dictionary> = {
       stages: {
         setup: {
           name: 'One-Time Repository Setup',
-          shortName: '01. Setup Once',
           scriptDescription: 'Adapts the repository to Gantry once, before any feature planning or implementation Run.',
           scriptInvariants: [
             'Runs once per repository, then remains versioned as repository policy.',
@@ -288,7 +315,6 @@ export const translations: Record<Locale, Dictionary> = {
         },
         plan: {
           name: 'Plan Goal into Spec & Issues',
-          shortName: '02. Plan Goal',
           scriptDescription: 'Turns a free-text goal into a verified Spec and tracer-bullet Issues, then stops for approval.',
           scriptInvariants: [
             'Socratic discovery resolves scope, seams, non-goals, and verifiable scenarios.',
@@ -314,7 +340,6 @@ export const translations: Record<Locale, Dictionary> = {
         },
         implement: {
           name: 'Execute Approved Spec',
-          shortName: '04. Execute Spec',
           scriptDescription: 'Starts the implementation Run for the approved login-otp Spec; subsequent phases are coordinated automatically.',
           scriptInvariants: [
             'Preflight validates a clean baseline, role selections, roadmap integrity, and in-flight work.',
@@ -340,7 +365,6 @@ export const translations: Record<Locale, Dictionary> = {
         },
         approve: {
           name: 'Approve Spec & Issues',
-          shortName: '03. Human Approval',
           scriptDescription: 'The operator approves the concrete Spec and Issue breakdown produced by /gantry-plan.',
           scriptInvariants: [
             'Approval names the exact login-otp Spec and proposed Issues.',
@@ -365,7 +389,6 @@ export const translations: Record<Locale, Dictionary> = {
         },
         verify: {
           name: 'Automatic Review & Critic',
-          shortName: '05. Review + Critic',
           scriptDescription: 'The active /gantry Run performs two-axis review and fresh adversarial verification without another user command.',
           scriptInvariants: [
             'Fresh subagent instance with zero shared memory from implementer.',
@@ -391,7 +414,6 @@ export const translations: Record<Locale, Dictionary> = {
         },
         handoff: {
           name: 'Gates, Integration & Handoff',
-          shortName: '06. Gates + Handoff',
           scriptDescription: 'The same /gantry Run raises deterministic or human gates, integrates accepted work, and prepares the handoff.',
           scriptInvariants: [
             'Merges one issue at a time to keep git history linear and bisectable.',
@@ -470,7 +492,6 @@ export const translations: Record<Locale, Dictionary> = {
         'Gantry ships four focused skills: one-time repository setup, standalone planning, automatic implementation, and read-only Run visibility.',
       triggersLabel: 'INVOCATION TRIGGERS:',
       viewSpec: 'VIEW SPEC',
-      gantryTitle: 'gantry',
       gantryBadge: 'Core Workflow',
       gantryDesc:
         'The orchestrator executing the full SDLC loop: spec validation, context budget checks, TDD implementation loops, two-axis reviews (standards + spec), and adversarial verification.',
@@ -480,7 +501,6 @@ export const translations: Record<Locale, Dictionary> = {
       gantryBullet2Desc: 'Fresh agent disproves claims before integration.',
       gantryBullet3Title: 'Quality Gates:',
       gantryBullet3Desc: 'Differential gates.py run serially.',
-      setupTitle: 'gantry-setup',
       setupBadge: 'Policy & Governance',
       setupDesc:
         'Conversational repository setup and governance assistant. The sole authorized writer of repository policy (.gantry/config.json) and marked AGENTS.md policy sections.',
@@ -490,7 +510,6 @@ export const translations: Record<Locale, Dictionary> = {
       setupBullet2Desc: 'Inspects active IDE harness and configures hooks.',
       setupBullet3Title: 'Drift Protection:',
       setupBullet3Desc: 'Never writes unvalidated or conflicting settings.',
-      planTitle: 'gantry-plan',
       planBadge: 'Planning',
       planDesc:
         'Transforms a free-text goal or existing Spec into a verified Spec, tracer-bullet Issues, a budgeted breakdown, and an explicit operator approval gate.',
@@ -500,7 +519,6 @@ export const translations: Record<Locale, Dictionary> = {
       planBullet2Desc: 'Writes the Spec and vertical Issue breakdown.',
       planBullet3Title: 'Approval Stop:',
       planBullet3Desc: 'Never starts implementation before operator approval.',
-      dashboardTitle: 'gantry-dashboard',
       dashboardBadge: 'Observability',
       dashboardDesc:
         'Zero-dependency, read-only multi-run kanban observer. Binds locally to loopback (localhost:4600) with strict zero-mutation guarantees.',
@@ -546,6 +564,51 @@ export const translations: Record<Locale, Dictionary> = {
         'Supported tier. Hook guard integration via .agents/hooks.json and agy execution verified in local test suite.',
       cursorNotes:
         'Compatible tier. Rules and commands integration for Cursor composer workflows with manual operator gates.',
+      disclaimerTitle: 'AUDIT POLICY & HONEST CAPABILITIES // PRD §13',
+      disclaimerBody:
+        'A declared tier does not prove every harness version has been exercised. Gantry tests specific integrations against reproducible fixture suites and logs the active tier in every Run report. No unearned claims, no marketing hyperbole.',
+      rows: {
+        claude: {
+          name: 'Claude Code',
+          tier: 'Reference',
+          hooks: 'Native Pre/PostToolUse hooks',
+          roles: 'Full Multi-Role (Subagents)',
+          worktrees: 'Native Git Worktrees',
+          structured: 'JSON Schema (result.py)',
+        },
+        antigravity: {
+          name: 'Gemini / Antigravity',
+          tier: 'Supported',
+          hooks: '.agents/hooks.json guard',
+          roles: 'Subagents & agy --print',
+          worktrees: 'Dedicated Worktrees',
+          structured: 'JSON Schema (result.py)',
+        },
+        codex: {
+          name: 'Codex CLI',
+          tier: 'Supported',
+          hooks: 'Direct Process Runner Guard',
+          roles: 'Independent Critic & Roles',
+          worktrees: 'Worktree Supported',
+          structured: 'CLI JSON Contract',
+        },
+        opencode: {
+          name: 'OpenCode',
+          tier: 'Compatible',
+          hooks: 'Plugin Hooks Wiring (opencode.json)',
+          roles: 'Per-role subagents',
+          worktrees: 'Host Worktree',
+          structured: 'Contract Verified',
+        },
+        cursor: {
+          name: 'Cursor',
+          tier: 'Compatible',
+          hooks: 'Rules & Commands Policy',
+          roles: 'Composer Workflows',
+          worktrees: 'Shared Worktree',
+          structured: 'Text Protocol Output',
+        },
+      },
     },
     footer: {
       rigTitle: 'GANTRY AGENTIC SDLC',
@@ -560,7 +623,6 @@ export const translations: Record<Locale, Dictionary> = {
       skills: 'SKILLS',
       harnesses: 'HARNESSES',
       github: 'GITHUB',
-      version: 'v1.1.0 [STANDBY]',
     },
     hero: {
       systemStrip: 'RIG DO SISTEMA // NÚCLEO GANTRY ONLINE',
@@ -569,8 +631,8 @@ export const translations: Record<Locale, Dictionary> = {
       badgeLicense: 'APACHE-2.0',
       badgeAiSlop: 'ZERO ENROLAÇÃO DE IA',
       kicker: 'O PACOTE DE SKILLS PARA SDLC AGÊNTICO',
-      titleHarness: 'SDLC Agêntico',
-      titleAgentic: 'Neutro a Harness',
+      titleHarness: 'Neutro a Harness',
+      titleAgentic: 'SDLC Agêntico',
       tagline: 'Transforme uma Spec aprovada em entregas de software verificadas dentro do seu coding harness.',
       valueProp:
         'O Gantry é um pacote de skills, não um motor de execução. Scripts de fluxo determinam prontidão, aceite, gates e estado do roadmap; agentes planejam, implementam, revisam e refutam; o operador retém autoridade de aprovação.',
@@ -587,7 +649,6 @@ export const translations: Record<Locale, Dictionary> = {
     },
     install: {
       quickInstallTitle: 'INSTALAÇÃO RÁPIDA // RUNTIME DO HARNESS',
-      statusVerified: 'STATUS: VERIFICADO',
       copy: 'COPIAR',
       copied: 'COPIADO!',
       altSetupLabel: 'Configuração CLI alternativa:',
@@ -604,6 +665,16 @@ export const translations: Record<Locale, Dictionary> = {
       progressLabel: 'PROGRESSO:',
       stageLabel: 'ETAPA',
       ofStages: '06',
+      ofWord: 'DE',
+      demoKicker: 'DEMO INTERATIVA // FASES DO SDLC',
+      demoTitle: 'Simulador de Pipeline',
+      demoDesc:
+        'Explore as 6 fases determinísticas de execução, da verificação da Spec à integração serial dos gates.',
+      statusPending: 'PENDENTE',
+      statusActive: 'ATIVO',
+      statusVerified: 'VERIFICADO',
+      agentAsideAdversarial: 'Verificação por agente independente e limpo',
+      agentAsideCooperative: 'Implementação em worktree isolada',
       phaseDetails: 'DETALHES DA FASE',
       scriptInvariantsTitle: 'AÇÃO DO WORKFLOW & GARANTIAS',
       interfaceLabel: 'CONTROLE: OPERADOR + GANTRY',
@@ -621,7 +692,6 @@ export const translations: Record<Locale, Dictionary> = {
       stages: {
         setup: {
           name: 'Configuração Única do Repositório',
-          shortName: '01. Configuração Única',
           scriptDescription: 'Adapta o repositório ao Gantry uma única vez, antes de qualquer planejamento ou Run de implementação.',
           scriptInvariants: [
             'Executa uma vez por repositório e mantém a política versionada.',
@@ -647,7 +717,6 @@ export const translations: Record<Locale, Dictionary> = {
         },
         plan: {
           name: 'Planejar Objetivo em Spec & Issues',
-          shortName: '02. Planejar Objetivo',
           scriptDescription: 'Transforma um objetivo livre em Spec verificada e Issues verticais, parando para aprovação.',
           scriptInvariants: [
             'Descoberta socrática resolve escopo, seams, não-objetivos e cenários verificáveis.',
@@ -673,7 +742,6 @@ export const translations: Record<Locale, Dictionary> = {
         },
         implement: {
           name: 'Executar Spec Aprovada',
-          shortName: '04. Executar Spec',
           scriptDescription: 'Inicia o Run da Spec login-otp aprovada; as fases seguintes são coordenadas automaticamente.',
           scriptInvariants: [
             'Preflight valida baseline limpa, funções, roadmap e trabalhos em andamento.',
@@ -699,7 +767,6 @@ export const translations: Record<Locale, Dictionary> = {
         },
         approve: {
           name: 'Aprovar Spec & Issues',
-          shortName: '03. Aprovação Humana',
           scriptDescription: 'O operador aprova a Spec e o conjunto de Issues concretos produzidos por /gantry-plan.',
           scriptInvariants: [
             'A aprovação nomeia a Spec login-otp e as Issues exatas.',
@@ -724,7 +791,6 @@ export const translations: Record<Locale, Dictionary> = {
         },
         verify: {
           name: 'Revisão & Crítico Automáticos',
-          shortName: '05. Revisão + Crítico',
           scriptDescription: 'O Run /gantry ativo executa revisão em dois eixos e verificação adversarial sem outro comando do usuário.',
           scriptInvariants: [
             'Instância limpa de subagente com zero memória compartilhada do implementador.',
@@ -750,7 +816,6 @@ export const translations: Record<Locale, Dictionary> = {
         },
         handoff: {
           name: 'Gates, Integração & Handoff',
-          shortName: '06. Gates + Handoff',
           scriptDescription: 'O mesmo Run /gantry levanta gates determinísticos ou humanos, integra o trabalho aceito e prepara o handoff.',
           scriptInvariants: [
             'Integra uma issue por vez para manter histórico git linear e bisseccionável.',
@@ -829,7 +894,6 @@ export const translations: Record<Locale, Dictionary> = {
         'O Gantry oferece quatro skills focadas: configuração única do repositório, planejamento standalone, implementação automática e visibilidade read-only dos Runs.',
       triggersLabel: 'GATILHOS DE INVOCAÇÃO:',
       viewSpec: 'VER ESPECIFICAÇÃO',
-      gantryTitle: 'gantry',
       gantryBadge: 'Fluxo Central',
       gantryDesc:
         'O orquestrador que executa o loop completo de SDLC: validação de spec, checagens de orçamento de contexto, loops TDD, revisões em dois eixos (padrões + spec) e verificação adversarial.',
@@ -839,7 +903,6 @@ export const translations: Record<Locale, Dictionary> = {
       gantryBullet2Desc: 'Agente independente refuta afirmações antes do merge.',
       gantryBullet3Title: 'Gates de Qualidade:',
       gantryBullet3Desc: 'Diferencial gates.py executado em série.',
-      setupTitle: 'gantry-setup',
       setupBadge: 'Política & Governança',
       setupDesc:
         'Assistente de configuração e governança conversacional. O único escritor autorizado da política do repositório (.gantry/config.json) e das seções marcadas em AGENTS.md.',
@@ -849,7 +912,6 @@ export const translations: Record<Locale, Dictionary> = {
       setupBullet2Desc: 'Inspeciona o ambiente da IDE ativa e configura hooks.',
       setupBullet3Title: 'Proteção contra Desvios:',
       setupBullet3Desc: 'Nunca escreve configurações inválidas ou em conflito.',
-      planTitle: 'gantry-plan',
       planBadge: 'Planejamento',
       planDesc:
         'Transforma um objetivo livre ou uma Spec existente em Spec verificada, Issues verticais, uma decomposição orçada e um gate explícito de aprovação do operador.',
@@ -859,7 +921,6 @@ export const translations: Record<Locale, Dictionary> = {
       planBullet2Desc: 'Escreve a Spec e o conjunto de Issues verticais.',
       planBullet3Title: 'Parada para Aprovação:',
       planBullet3Desc: 'Nunca inicia implementação antes da aprovação do operador.',
-      dashboardTitle: 'gantry-dashboard',
       dashboardBadge: 'Telemetria em Tempo Real',
       dashboardDesc:
         'Painel kanban multi-run em modo somente leitura e loopback local. Exibe execuções ativas e históricas com raias de fases, transições e falhas de gates mapeadas por RFC 6901.',
@@ -905,6 +966,51 @@ export const translations: Record<Locale, Dictionary> = {
         'Tier Suportado. Integração de hooks via .agents/hooks.json e execução agy verificada na suite de testes local.',
       cursorNotes:
         'Tier Compatível. Integração de regras e comandos para fluxos no Cursor composer com gates manuais pelo operador.',
+      disclaimerTitle: 'AUDITORIA DE POLÍTICA E CAPACIDADES HONESTAS // PRD §13',
+      disclaimerBody:
+        'Um tier declarado não prova que toda versão de harness foi exercitada. O Gantry testa integrações específicas contra suítes de fixture reproduzíveis e registra o tier ativo em cada relatório de Run. Sem afirmações imerecidas e sem hipérbole de marketing.',
+      rows: {
+        claude: {
+          name: 'Claude Code',
+          tier: 'Referência',
+          hooks: 'Hooks nativos Pre/PostToolUse',
+          roles: 'Multi-função completo (subagentes)',
+          worktrees: 'Worktrees Git nativas',
+          structured: 'Esquema JSON (result.py)',
+        },
+        antigravity: {
+          name: 'Gemini / Antigravity',
+          tier: 'Suportado',
+          hooks: 'Guard via .agents/hooks.json',
+          roles: 'Subagentes e agy --print',
+          worktrees: 'Worktrees dedicadas',
+          structured: 'Esquema JSON (result.py)',
+        },
+        codex: {
+          name: 'Codex CLI',
+          tier: 'Suportado',
+          hooks: 'Guard por executor direto de processos',
+          roles: 'Crítico independente e funções',
+          worktrees: 'Worktree suportada',
+          structured: 'Contrato JSON via CLI',
+        },
+        opencode: {
+          name: 'OpenCode',
+          tier: 'Compatível',
+          hooks: 'Integração de hooks via plugin (opencode.json)',
+          roles: 'Subagentes por função',
+          worktrees: 'Worktree do host',
+          structured: 'Contrato verificado',
+        },
+        cursor: {
+          name: 'Cursor',
+          tier: 'Compatível',
+          hooks: 'Política de regras e comandos',
+          roles: 'Fluxos do Composer',
+          worktrees: 'Worktree compartilhada',
+          structured: 'Saída em protocolo de texto',
+        },
+      },
     },
     footer: {
       rigTitle: 'SDLC AGÊNTICO GANTRY',

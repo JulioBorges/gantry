@@ -1,7 +1,7 @@
 # Spec: Optional environment-installed Caveman skill
 
 Type: spec
-Status: approved
+Status: done
 Map: `ROADMAP.md` (spec 11)
 Source: Operator-approved grilling decisions, 2026-09-15; PRD.md; CONTEXT.md; ADR-0004
 Created: 2026-09-15

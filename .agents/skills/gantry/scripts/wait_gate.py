@@ -14,10 +14,6 @@ from pathlib import Path
 from runlog import ISSUE_RE, RUN_ID_RE, UNIT_ID_RE, append_event, read_marker, resolve_hook_run, run_log_path, state_root as default_state_root, unit_id as derive_unit_id
 
 
-class WaitGateError(ValueError):
-    """The gate check cannot execute safely with the provided arguments."""
-
-
 def approval_marker_path(root: Path, unit: str, issue: str) -> Path:
     return root / unit / "approvals" / f"{issue}.json"
 
