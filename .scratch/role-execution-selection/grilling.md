@@ -22,5 +22,3 @@ Status: approved
 - Identify native cross-harness execution mechanisms and their authentication, working-directory, result-contract and independent-gate support.
 - Define how execution selections are represented in repository policy and Run Log events while retaining `gantry-setup` as the sole repository-policy writer.
 - Validate the design against ADR-0004's skill-pack boundary; cross-harness role execution must not silently introduce an independent engine.
-
-The Spec and five-Issue breakdown are approved. Issues are ready-for-agent; no implementation completion is claimed.
