@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Smoke coverage for the portable legacy planning and round paths."""
+"""Smoke coverage for the live planning and round workflow paths."""
 from __future__ import annotations
 
 import ast
 import json
-from tests.preflight_fixture import VERIFIED_PREFLIGHT
-from tests.technical_plan_fixture import COMMAND_REPLIES, AGENT_REPLY
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from tests import test_canonical_gantry_workflow as canonical
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = REPO_ROOT / ".agents" / "skills" / "gantry"
@@ -283,101 +283,20 @@ Slice: `portable#01`
         ]
 
     def run_workflow(self, filename: str, args: dict, research_format: dict | None = None) -> dict:
-        if filename == "round-workflow.md":
-            args.setdefault("effortCapabilities", {"*": {"configurable": True, "supportedEfforts": ["low", "medium", "high"]}})
-        source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
-        source = source.replace("export const meta", "const meta", 1)
-        driver = f"""
-import {{ spawnSync }} from 'node:child_process';
-const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
-const source = {json.dumps(source)};
-const args = {json.dumps(args)};
-// Explicit fixture invocation selection; repository preference is not host proof.
-args.hostHarness ??= 'claude-code';
-const researchFormat = {json.dumps(research_format)};
-const calls = [];
-const commandCalls = [];
-const runCommand = async (command, options = {{}}) => {{
-{COMMAND_REPLIES}
-  // Readiness is simulated here; selected-profile proof has its own public tests.
-  if (command.includes('/execution.py" preflight ')) return {{exitCode:0,stdout:{json.dumps(json.dumps(VERIFIED_PREFLIGHT))},stderr:''}};
-  if (command.includes('/execution.py" host ')) {{
-    const host = spawnSync(command, {{ shell: true, encoding: 'utf8' }});
-    return {{ exitCode: host.status ?? 1, stdout: host.stdout || '', stderr: host.stderr || '' }};
-  }}
-  commandCalls.push({{ command, cwd: options.cwd || args.repoRoot }});
-  if (command.includes('/spec.py')) return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
-  if (command.includes('/result.py')) return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
-  if (command.includes('/common.py')) return {{ exitCode: 0, stdout: JSON.stringify({{ issueBranch: args.issueBranch || args.branch }}) }};
-  if (command === 'git branch --show-current') return {{ exitCode: 0, stdout: args.issueBranch || args.branch }};
-  if (command.includes('/acceptance.py')) {{
-    return {{
-      exitCode: 0,
-      stdout: JSON.stringify({{
-        complete: true,
-        criteria: [{{ index: 1, text: 'criterion', checked: false }}],
-      }}),
-    }};
-  }}
-  if (command.includes('/gates.py')) return {{ exitCode: 0, stdout: JSON.stringify({{ verdict: 'pass', requirements: [] }}) }};
-  if (command.includes('/roadmap.py')) return {{ exitCode: 0, stdout: '{{"verdict":"pass"}}' }};
-  if (command.includes('/runlog.py')) return {{ exitCode: 0, stdout: '' }};
-  return {{ exitCode: 0, stdout: '' }};
-}};
-const prompt = async () => 'no';
-const agent = async (promptText, options) => {{
-  calls.push({{ prompt: promptText, label: options.label }});
-  if (options.label.startsWith('requirement-critic')) return {{ blocking: [], findings: [] }};
-  if (options.label === 'plan') return {{ filesWritten: [], issues: [], roadmapAdditions: [], openDecisions: [] }};
-  if (options.label.startsWith('critique')) return {{ acceptable: true, problems: [], frontierErrors: [] }};
-  if (options.label === 'research:format') return JSON.stringify(researchFormat);
-  if (options.label.startsWith('research:')) return 'research brief';
-{AGENT_REPLY}
-  if (options.label.startsWith('implement:')) return {{
-    worktree: args.repoRoot, branch: args.branch, commits: ['test commit'],
-    summary: 'stubbed rendered workflow', testsAdded: [], gatesResult: 'verdict: pass',
-    decisions: [], blockers: [],
-  }};
-  if (options.label.startsWith('review:')) return {{ blocking: [], nonBlocking: [], summary: 'no findings' }};
-  if (options.label.startsWith('critic:')) return {{
-    complete: true,
-    criteria: [{{ index: 1, text: 'criterion', met: true, evidence: 'ok' }}],
-    gatesVerdict: 'pass', gateResult: {{ verdict: 'pass' }}, gateFailures: [],
-    refutations: [], requiredFixes: [], decisionsForOperator: [],
-  }};
-  return null;
-}};
-const parallel = async (tasks) => Promise.all(tasks.map((task) => task()));
-const pipeline = async (items, ...steps) => {{
-  const results = [];
-  for (const item of items) {{
-    let value = await steps[0](item);
-    for (const step of steps.slice(1)) value = await step(value, item);
-    results.push(value);
-  }}
-  return results;
-}};
-const phase = () => {{}};
-const log = () => {{}};
-let result = null;
-let error = null;
-try {{
-  result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'runCommand', 'prompt', source)(
-    args, agent, parallel, pipeline, phase, log, runCommand, prompt,
-  );
-}} catch (err) {{
-  error = err && err.message ? err.message : String(err);
-}}
-process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
-"""
-        result = subprocess.run(
-            ["node", "--input-type=module", "--eval", driver],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        self.assertEqual(0, result.returncode, result.stderr)
-        data = json.loads(result.stdout)
+        workflow_args = {
+            **args,
+            "technicalPlanFixture": True,
+            "passIntegrationGate": True,
+            "criticResult": {
+                "complete": True,
+                "criteria": [{"index": 1, "text": "criterion", "met": True, "evidence": "ok"}],
+                "gatesVerdict": "pass",
+                "gateResult": {"verdict": "pass"},
+            },
+        }
+        if research_format is not None:
+            workflow_args["researchFormat"] = research_format
+        data = canonical.CanonicalGantryWorkflowTests().run_workflow(filename, workflow_args)
         if data.get("error"):
             self.fail(f"workflow threw error: {data['error']}")
         return data

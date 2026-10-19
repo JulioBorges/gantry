@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-from tests.preflight_fixture import VERIFIED_PREFLIGHT
-from tests.technical_plan_fixture import AGENT_REPLY
 import os
 import subprocess
 import sys
@@ -12,6 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+from tests import test_canonical_gantry_workflow as canonical
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = REPO_ROOT / ".agents" / "skills" / "gantry"
@@ -493,161 +493,14 @@ Preserve the portable workflow contract.
         )
         return roadmap
 
-    def critic_evidence(self, root: Path, issue: Path) -> list[dict[str, object]]:
-        accepted = self.run_script(root, "acceptance.py", str(issue), "--json")
-        self.assertEqual(0, accepted.returncode, accepted.stderr)
-        return [
-            {
-                "index": criterion["index"],
-                "met": True,
-                "evidence": f"real test evidence for criterion {criterion['index']}",
-            }
-            for criterion in json.loads(accepted.stdout)["criteria"]
-        ]
-
-    def read_run_log_events(self, state_root: Path, unit_id: str, run_id: str) -> list[dict]:
-        path = state_root / unit_id / "runs" / f"{run_id}.jsonl"
-        if not path.is_file():
-            return []
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    critic_evidence = canonical.CanonicalGantryWorkflowTests.critic_evidence
+    read_run_log_events = canonical.CanonicalGantryWorkflowTests.read_run_log_events
+    run_workflow = canonical.CanonicalGantryWorkflowTests.run_workflow
 
     def init_repo(self, root: Path) -> None:
         subprocess.run(["git", "init", "--quiet", str(root)], check=True)
         subprocess.run(["git", "config", "user.email", "gantry@example.test"], cwd=root, check=True)
         subprocess.run(["git", "config", "user.name", "Gantry Test"], cwd=root, check=True)
-
-    def run_workflow(self, filename: str, args: dict) -> dict:
-        if filename == "round-workflow.md":
-            args.setdefault("effortCapabilities", {"*": {"configurable": True, "supportedEfforts": ["low", "medium", "high"]}})
-        source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
-        source = source.replace("export const meta", "const meta", 1)
-        driver = f"""
-import {{ mkdirSync, writeFileSync }} from 'node:fs';
-import {{ dirname }} from 'node:path';
-import {{ spawnSync }} from 'node:child_process';
-const AsyncFunction = Object.getPrototypeOf(async function () {{}}).constructor;
-const source = {json.dumps(source)};
-const args = {json.dumps(args)};
-// Explicit fixture invocation selection; repository preference is not host proof.
-args.hostHarness ??= 'claude-code';
-const calls = [];
-const commandCalls = [];
-let sequence = 0;
-const defaultIssueWorktree = args.issueWorktree || (
-  args.isolate && args.issues && args.issues[0]
-    ? `${{args.repoRoot}}.gantry-${{args.issues[0].ref.replace('#', '-') }}`
-    : args.repoRoot
-);
-const runCommand = async (command, options = {{}}) => {{
-  // Readiness is simulated here; selected-profile proof has its own public tests.
-  if (command.includes('/execution.py" preflight ')) return {{exitCode:0,stdout:{json.dumps(json.dumps(VERIFIED_PREFLIGHT))},stderr:''}};
-  if (command.includes('/execution.py" host ')) {{
-    const host = spawnSync(command, {{ shell: true, encoding: 'utf8' }});
-    return {{ exitCode: host.status ?? 1, stdout: host.stdout || '', stderr: host.stderr || '' }};
-  }}
-  commandCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});
-  if (command.includes('/spec.py') && args.stubSpecCheck !== false) {{
-    return {{ exitCode: 0, stdout: '{{"valid":true}}', stderr: '' }};
-  }}
-  if (args.commandMode === 'real') {{
-    const completed = spawnSync(command, {{
-      cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8', input: options.input,
-    }});
-    return {{
-      exitCode: completed.status ?? 1, stdout: completed.stdout || '',
-      stderr: completed.stderr || '',
-    }};
-  }}
-  if (args.commandResults && args.commandResults.length) return args.commandResults.shift();
-  if (command.includes('/common.py')) return {{ exitCode: 0, stdout: JSON.stringify({{ issueBranch: args.issueBranch || args.branch }}) }};
-  if (command === 'git branch --show-current') return {{ exitCode: 0, stdout: args.issueBranch || args.branch }};
-  return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}'
-    : command.includes('/spec.py') ? '{{"valid":true}}' : '' }};
-}};
-const agent = async (prompt, options) => {{
-  calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, sequence: sequence++ }});
-{AGENT_REPLY}
-  if (options.label.startsWith('research:')) return 'factual research';
-  if (options.label.startsWith('requirement-critic')) {{
-    if (args.requirementCriticRawResults && args.requirementCriticRawResults.length) {{
-      return args.requirementCriticRawResults.shift();
-    }}
-    if (args.requirementCriticResult) return args.requirementCriticResult;
-    return {{ blocking: [], findings: [] }};
-  }}
-  if (options.label.startsWith('plan')) {{
-    if (args.plannerRawResults && args.plannerRawResults.length) {{
-      return args.plannerRawResults.shift();
-    }}
-    if (args.plannerResult) return args.plannerResult;
-    return {{ filesWritten: [], issues: [], roadmapAdditions: [], openDecisions: [] }};
-  }}
-  if (options.label.startsWith('critique')) {{
-    return {{ acceptable: true, problems: [], frontierErrors: [] }};
-  }}
-  if (options.label.startsWith('implement:')) {{
-    if (args.implementerRawResults && args.implementerRawResults.length) {{
-      return args.implementerRawResults.shift();
-    }}
-    if (args.implementerCommitText) {{
-      writeFileSync(`${{options.cwd}}/delivery.txt`, args.implementerCommitText);
-      const added = spawnSync('git', ['add', 'delivery.txt'], {{ cwd: options.cwd, encoding: 'utf8' }});
-      const committed = spawnSync('git', ['commit', '--quiet', '-m', 'delivery'], {{ cwd: options.cwd, encoding: 'utf8' }});
-      if (added.status !== 0 || committed.status !== 0) throw new Error(added.stderr || committed.stderr);
-    }}
-    const ref = options.label.split(':')[1];
-    const assigned = (args.issueAssignments && args.issueAssignments[ref]) || {{}};
-    return {{
-      worktree: assigned.worktree || defaultIssueWorktree, branch: assigned.branch || args.issueBranch || args.branch,
-      commits: ['test commit'],
-      summary: 'workflow execution', testsAdded: [], gatesResult: 'verdict: pass',
-      decisions: [], blockers: [],
-    }};
-  }}
-  if (options.label.startsWith('review:')) return {{
-    blocking: [], nonBlocking: [], summary: 'no findings',
-  }};
-  if (options.label.startsWith('critic:') && args.criticRawResults && args.criticRawResults.length) {{
-    return args.criticRawResults.shift();
-  }}
-  if (options.label.startsWith('critic:')) return {{
-    complete: true, criteria: [], gatesVerdict: 'pass', gateResult: {{ verdict: 'pass' }}, gateFailures: [],
-    refutations: [], requiredFixes: [], decisionsForOperator: [],
-    ...(args.criticResults && args.criticResults.length ? args.criticResults.shift() : (args.criticResult || {{}})),
-  }};
-  return null;
-}};
-const parallel = async (tasks) => Promise.all(tasks.map((task) => task()));
-const pipeline = async (items, ...steps) => {{
-  const results = [];
-  for (const item of items) {{
-    let value = await steps[0](item);
-    for (const step of steps.slice(1)) value = await step(value, item);
-    results.push(value);
-  }}
-  return results;
-}};
-const phase = () => {{}};
-const log = () => {{}};
-let result = null;
-let error = null;
-try {{
-  result = await new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'runCommand', source)(
-    args, agent, parallel, pipeline, phase, log, runCommand,
-  );
-}} catch (err) {{
-  error = err && err.message ? err.message : String(err);
-}}
-process.stdout.write(JSON.stringify({{ result, calls, commandCalls, error }}));
-"""
-        result = subprocess.run(
-            ["node", "--input-type=module", "--eval", driver],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        self.assertEqual(0, result.returncode, result.stderr)
-        return json.loads(result.stdout)
 
 
 class RoleExecutionRecoveryAndPauseContractTests(WorkflowTestBase):

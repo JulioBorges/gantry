@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import ast
 import json
-from tests.preflight_fixture import VERIFIED_PREFLIGHT
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+
+from tests.preflight_fixture import VERIFIED_PREFLIGHT
+from tests.technical_plan_fixture import AGENT_REPLY, COMMAND_REPLIES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = REPO_ROOT / ".agents" / "skills" / "gantry"
@@ -130,8 +132,12 @@ Preserve the portable workflow contract.
                 subprocess.run(["git", "commit", "--quiet", "-m", "assigned fixture baseline"], cwd=root, check=True)
         source = (SKILL_DIR / "reference" / filename).read_text(encoding="utf-8").split("```js\n", 1)[1].split("\n```", 1)[0]
         source = source.replace("export const meta", "const meta", 1)
+        # Opt-in only. Real Technical Plan tests run the scripts; these snippets exist for drivers
+        # whose checkout cannot, and they must not replace that real path.
+        plan_command_stub = COMMAND_REPLIES if args.get("technicalPlanFixture") else ""
+        plan_agent_stub = AGENT_REPLY if args.get("technicalPlanFixture") else ""
         driver = f"""
-import {{ mkdirSync, writeFileSync }} from 'node:fs';
+import {{ existsSync, mkdirSync, writeFileSync }} from 'node:fs';
 import {{ dirname }} from 'node:path';
 import {{ spawn, spawnSync }} from 'node:child_process';
 process.env.GANTRY_SKIP_WAIT_GATE = '1';
@@ -161,17 +167,26 @@ args.hostControl = {{
   }},
 }};
 
-const prompt = async message => {{ prompts.push(message); return (args.promptAnswers || []).shift() || "no"; }};
+const prompt = async message => {{
+  prompts.push(message);
+  if (args.recordPromptCalls) calls.push({{ kind: 'prompt', message }});
+  return (args.promptAnswers || []).shift() || "no";
+}};
 let sequence = 0;
+let dashboardStatusCount = 0;
+let failedInitialRole = false;
 const defaultIssueWorktree = args.issueWorktree || (
   args.isolate && args.issues && args.issues[0]
     ? `${{args.repoRoot}}.gantry-${{args.issues[0].ref.replace('#', '-') }}`
     : args.repoRoot
 );
 const runCommand = async (command, options = {{}}) => {{
+{plan_command_stub}
   if (command.includes('/execution.py" host ')) {{
-    hostCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});
-    const completed = spawnSync(command, {{ cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8' }});
+    const hostCwd = options.cwd || args.repoRoot;
+    hostCalls.push({{ command, cwd: hostCwd, sequence: sequence++ }});
+    // `--cwd` is already on the command. A missing checkout cannot be the process cwd.
+    const completed = spawnSync(command, {{ ...(hostCwd && existsSync(hostCwd) ? {{ cwd: hostCwd }} : {{}}), shell: true, encoding: 'utf8' }});
     return {{ exitCode: completed.status ?? 1, stdout: completed.stdout || '', stderr: completed.stderr || '' }};
   }}
   if (command.includes('/execution.py" preflight ')) {{
@@ -180,6 +195,17 @@ const runCommand = async (command, options = {{}}) => {{
     return {{exitCode:readiness.valid ? 0 : 1,stdout:JSON.stringify(readiness),stderr:''}};
   }}
   commandCalls.push({{ command, cwd: options.cwd || args.repoRoot, sequence: sequence++ }});
+  if (args.stubDashboard && command.includes('dashboard.py" status --json')) {{
+    dashboardStatusCount += 1;
+    const running = dashboardStatusCount === 1 ? Boolean(args.dashboardFirstRunning) : Boolean(args.dashboardLaterRunning);
+    return {{ exitCode: 0, stdout: JSON.stringify({{ running, host: '127.0.0.1', port: 4600, pid: running ? 1234 : null, url: running ? 'http://127.0.0.1:4600' : null }}) }};
+  }}
+  if (args.stubDashboard && command.includes('dashboard.py" start --daemon')) {{
+    return {{ exitCode: 0, stdout: 'Dashboard started on http://127.0.0.1:4600' }};
+  }}
+  if (args.stubDashboard && command.includes('dashboard.py" stop')) {{
+    return {{ exitCode: 0, stdout: 'Dashboard stopped.' }};
+  }}
   if (command.includes('planning-effort') || (command.includes('technical_plan.py') && command.includes(' evaluate '))) {{
     const completed = spawnSync(command, {{ cwd: options.cwd || args.repoRoot, shell: true, encoding: 'utf8', input: options.input }});
     return {{ exitCode: completed.status ?? 1, stdout: completed.stdout || '', stderr: completed.stderr || '' }};
@@ -210,23 +236,35 @@ const runCommand = async (command, options = {{}}) => {{
   if (command.includes('/technical_plan.py')) return {{exitCode:0, stdout:JSON.stringify(command.includes(' capture ')
     ? {{input:{{worktree:options.cwd,revision:'fixture-head',issue:args.issues[0].path,spec:args.issues[0].specPath}}}}
     : {{accepted:true,artifact:'/fixture/technical-plan.json',conflicts:[]}})}};
-  if (command.includes('/acceptance.py')) return {{exitCode:0,stdout:JSON.stringify({{criteria:[{{index:1}}]}})}};
+  if (command.includes('/acceptance.py')) return {{exitCode:0,stdout:JSON.stringify(args.acceptanceResult || {{criteria:[{{index:1}}]}})}};
+  if (args.learnerResult && command.includes('/learner.py')) return {{ exitCode: 0, stdout: JSON.stringify(args.learnerResult) }};
+  if (typeof args.ghVersionExitCode === 'number' && command.startsWith('gh ')) {{
+    return {{ exitCode: command.startsWith('gh --version') ? args.ghVersionExitCode : 0, stdout: '', stderr: '' }};
+  }}
   if (args.commandResults && args.commandResults.length) return args.commandResults.shift();
   if (command.includes('/common.py')) return {{ exitCode: 0, stdout: JSON.stringify({{ issueBranch: args.issueBranch || args.branch }}) }};
   if (command === 'git branch --show-current') return {{ exitCode: 0, stdout: args.issueBranch || args.branch }};
-  return {{ exitCode: 0, stdout: command.includes('/gates.py') ? '{{"verdict":"pass"}}'
+  const gatesStdout = args.passIntegrationGate ? '{{"verdict":"pass","requirements":[]}}' : '{{"verdict":"pass"}}';
+  return {{ exitCode: 0, stdout: command.includes('/gates.py') ? gatesStdout
     : command.includes('/spec.py') ? '{{"valid":true}}' : '' }};
 }};
 let releaseFirstImplementation;
 const firstImplementation = new Promise(resolve => releaseFirstImplementation = resolve);
 const agent = async (prompt, options) => {{
-  calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, model: options.model, effort: options.effort, effortPolicy: options.effortPolicy, selection: options.selection, sequence: sequence++ }});
+  calls.push({{ label: options.label, prompt, schema: options.schema, cwd: options.cwd, model: options.model, effort: options.effort, effortPolicy: options.effortPolicy, selection: options.selection, sequence: sequence++, ...(args.recordAgentOptions ? {{ options }} : {{}}) }});
+  // One null result is the workflow's invalid-role signal; the next call is the retry.
+  if (args.failInitialRole && !failedInitialRole && String(options.label || '').startsWith(args.failInitialRole)) {{
+    failedInitialRole = true;
+    return null;
+  }}
+{plan_agent_stub}
   const attachUsage = (label, value) => {{
     const queued = args.usageByLabel && args.usageByLabel[label];
     if (!queued || !value || typeof value !== 'object' || Array.isArray(value)) return value;
     const usage = Array.isArray(queued) ? queued.shift() : queued;
     return usage ? {{ ...value, usage }} : value;
   }};
+  if (options.label === 'research:format' && args.researchFormat != null) return JSON.stringify(args.researchFormat);
   if (options.label.startsWith('technical-plan')) {{
     if (options.label.includes('refresh') && args.technicalPlanRefreshResults && args.technicalPlanRefreshResults.length) return args.technicalPlanRefreshResults.shift();
     if (args.interleavePlans && options.issueRef.endsWith('#02')) await firstImplementation;
