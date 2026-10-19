@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { getStoredLocale, LOCALE_CHANGE_EVENT } from '../i18n/client';
+import { useState, type KeyboardEvent } from 'react';
 import { translations, type Locale } from '../i18n/translations';
+import { useLocale } from '../i18n/useLocale';
 
 export type StageId = 'setup' | 'plan' | 'approve' | 'implement' | 'verify' | 'handoff';
 
@@ -9,7 +9,6 @@ export interface StageData {
   index: number;
   number: string;
   name: string;
-  shortName: string;
   deterministicScript: {
     command: string;
     description: string;
@@ -44,7 +43,6 @@ function buildStages(locale: Locale): StageData[] {
       index: 0,
       number: '01',
       name: stagesDict.setup.name,
-      shortName: stagesDict.setup.shortName,
       deterministicScript: {
         command: stagesDict.setup.terminalCommand,
         description: stagesDict.setup.scriptDescription,
@@ -74,7 +72,6 @@ function buildStages(locale: Locale): StageData[] {
       index: 1,
       number: '02',
       name: stagesDict.plan.name,
-      shortName: stagesDict.plan.shortName,
       deterministicScript: {
         command: stagesDict.plan.terminalCommand,
         description: stagesDict.plan.scriptDescription,
@@ -104,7 +101,6 @@ function buildStages(locale: Locale): StageData[] {
       index: 2,
       number: '03',
       name: stagesDict.approve.name,
-      shortName: stagesDict.approve.shortName,
       deterministicScript: {
         command: stagesDict.approve.terminalCommand,
         description: stagesDict.approve.scriptDescription,
@@ -133,7 +129,6 @@ function buildStages(locale: Locale): StageData[] {
       index: 3,
       number: '04',
       name: stagesDict.implement.name,
-      shortName: stagesDict.implement.shortName,
       deterministicScript: {
         command: stagesDict.implement.terminalCommand,
         description: stagesDict.implement.scriptDescription,
@@ -162,7 +157,6 @@ function buildStages(locale: Locale): StageData[] {
       index: 4,
       number: '05',
       name: stagesDict.verify.name,
-      shortName: stagesDict.verify.shortName,
       deterministicScript: {
         command: stagesDict.verify.terminalCommand,
         description: stagesDict.verify.scriptDescription,
@@ -193,7 +187,6 @@ function buildStages(locale: Locale): StageData[] {
       index: 5,
       number: '06',
       name: stagesDict.handoff.name,
-      shortName: stagesDict.handoff.shortName,
       deterministicScript: {
         command: stagesDict.handoff.terminalCommand,
         description: stagesDict.handoff.scriptDescription,
@@ -222,29 +215,15 @@ function buildStages(locale: Locale): StageData[] {
 }
 
 export function PipelineSimulator() {
-  const [locale, setLocale] = useState<Locale>('en');
+  const locale = useLocale();
   const [activeStageIndex, setActiveStageIndex] = useState<number>(0);
-
-  useEffect(() => {
-    setLocale(getStoredLocale());
-
-    const handleLocaleChange = (e: Event) => {
-      const customEvent = e as CustomEvent<{ locale: Locale }>;
-      if (customEvent.detail?.locale) {
-        setLocale(customEvent.detail.locale);
-      }
-    };
-
-    window.addEventListener(LOCALE_CHANGE_EVENT, handleLocaleChange);
-    return () => window.removeEventListener(LOCALE_CHANGE_EVENT, handleLocaleChange);
-  }, []);
 
   const stages = buildStages(locale);
   const activeStage = stages[activeStageIndex] ?? stages[0];
   const dict = translations[locale]?.simulator ?? translations.en.simulator;
 
   // Keyboard navigation for accessibility and rapid exploration
-  const handleTabKeyDown = (e: React.KeyboardEvent, index: number) => {
+  const handleTabKeyDown = (e: KeyboardEvent, index: number) => {
     if (e.key === 'ArrowRight') {
       e.preventDefault();
       e.stopPropagation();
@@ -316,14 +295,14 @@ export function PipelineSimulator() {
           const isActive = idx === activeStageIndex;
           const isCompleted = idx < activeStageIndex;
 
-          let statusBadge = locale === 'pt-br' ? 'PENDENTE' : 'PENDING';
+          let statusBadge = dict.statusPending;
           let statusBadgeClass = 'text-slate-400 bg-obsidian-900/50 border-obsidian-800';
 
           if (isActive) {
-            statusBadge = locale === 'pt-br' ? 'ATIVO' : 'ACTIVE';
+            statusBadge = dict.statusActive;
             statusBadgeClass = 'text-amber-glow bg-amber-glow/10 border-amber-glow/60 font-bold';
           } else if (isCompleted) {
-            statusBadge = locale === 'pt-br' ? 'VERIFICADO' : 'VERIFIED';
+            statusBadge = dict.statusVerified;
             statusBadgeClass = 'text-emerald-400 bg-emerald-950/40 border-emerald-800/60';
           }
 
@@ -449,8 +428,8 @@ export function PipelineSimulator() {
               </div>
               <span className="text-[10px] text-slate-400">
                 {activeStage.agentRole.adversarial
-                  ? 'Fresh independent agent verification'
-                  : 'Isolated worktree implementation'}
+                  ? dict.agentAsideAdversarial
+                  : dict.agentAsideCooperative}
               </span>
             </div>
 
@@ -551,7 +530,7 @@ export function PipelineSimulator() {
             </button>
 
             <div className="text-[11px] text-slate-400 font-mono">
-              STAGE {activeStage.number} OF 06
+              {dict.stageLabel} {activeStage.number} {dict.ofWord} {dict.ofStages}
             </div>
 
             <button

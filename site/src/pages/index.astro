@@ -5,11 +5,14 @@ import { PipelineSimulator } from '../components/PipelineSimulator';
 import ProblemSolution from '../components/ProblemSolution.astro';
 import SkillsSection from '../components/SkillsSection.astro';
 import HarnessMatrix from '../components/HarnessMatrix.astro';
+import { translations } from '../i18n/translations';
+
+const t = translations.en;
 ---
 
 <BaseLayout
   title="Gantry // Harness-Neutral Agentic SDLC"
-  description="Deterministic agentic SDLC skill pack. Turning living specs into verified software deliveries inside your coding harness."
+  description="Deterministic agentic SDLC skill pack. Turning an approved Spec into verified software deliveries inside your coding harness."
 >
   <div class="space-y-16 py-4">
     <!-- Hero Section with Crane Motif and Multi-Harness Install Widget -->
@@ -21,14 +24,14 @@ import HarnessMatrix from '../components/HarnessMatrix.astro';
         <div>
           <div class="text-xs font-mono text-amber-accent flex items-center space-x-2">
             <span class="w-2 h-2 bg-amber-glow"></span>
-            <span class="uppercase tracking-widest">INTERACTIVE DEMO // SDLC PHASES</span>
+            <span class="uppercase tracking-widest" data-i18n="simulator.demoKicker">{t.simulator.demoKicker}</span>
           </div>
-          <h2 class="text-xl sm:text-3xl font-extrabold text-slate-100 uppercase font-mono mt-1">
-            Pipeline Simulator
+          <h2 class="text-xl sm:text-3xl font-extrabold text-slate-100 uppercase font-mono mt-1" data-i18n="simulator.demoTitle">
+            {t.simulator.demoTitle}
           </h2>
         </div>
-        <p class="text-xs text-slate-400 font-mono max-w-md">
-          Explore the 6 deterministic execution phases from Spec verification to serial gate integration.
+        <p class="text-xs text-slate-400 font-mono max-w-md" data-i18n="simulator.demoDesc">
+          {t.simulator.demoDesc}
         </p>
       </div>
 
