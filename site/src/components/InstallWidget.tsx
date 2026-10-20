@@ -2,22 +2,20 @@ import { useState } from 'react';
 import { translations } from '../i18n/translations';
 import { useLocale } from '../i18n/useLocale';
 
-export type HarnessId = 'claude' | 'opencode' | 'codex' | 'antigravity' | 'cursor';
+type HarnessId = 'claude' | 'opencode' | 'codex' | 'antigravity' | 'cursor';
 
-export interface HarnessConfig {
+interface HarnessConfig {
   id: HarnessId;
   name: string;
-  badge: string;
   command: string;
   altCommand?: string;
   tier: 'Reference' | 'Supported' | 'Compatible';
 }
 
-export const HARNESSES: HarnessConfig[] = [
+const HARNESSES: HarnessConfig[] = [
   {
     id: 'claude',
     name: 'Claude Code',
-    badge: 'REFERENCE',
     command: 'npx skills add JulioBorges/gantry',
     altCommand: 'npx @julioborges/gantry setup --harness claude',
     tier: 'Reference',
@@ -25,7 +23,6 @@ export const HARNESSES: HarnessConfig[] = [
   {
     id: 'opencode',
     name: 'OpenCode',
-    badge: 'COMPATIBLE',
     command: 'npx skills add JulioBorges/gantry',
     altCommand: 'npx @julioborges/gantry setup --harness opencode',
     tier: 'Compatible',
@@ -33,7 +30,6 @@ export const HARNESSES: HarnessConfig[] = [
   {
     id: 'codex',
     name: 'Codex',
-    badge: 'SUPPORTED',
     command: 'npx skills add JulioBorges/gantry',
     altCommand: 'npx @julioborges/gantry setup --harness codex',
     tier: 'Supported',
@@ -41,7 +37,6 @@ export const HARNESSES: HarnessConfig[] = [
   {
     id: 'antigravity',
     name: 'Gemini / Antigravity',
-    badge: 'SUPPORTED',
     command: 'npx skills add JulioBorges/gantry',
     altCommand: 'npx @julioborges/gantry setup --harness antigravity',
     tier: 'Supported',
@@ -49,7 +44,6 @@ export const HARNESSES: HarnessConfig[] = [
   {
     id: 'cursor',
     name: 'Cursor',
-    badge: 'COMPATIBLE',
     command: 'npx skills add JulioBorges/gantry',
     altCommand: 'npx @julioborges/gantry setup --harness cursor',
     tier: 'Compatible',
@@ -66,27 +60,13 @@ export function InstallWidget() {
   const description = dict.harnessDescriptions[activeHarness.id];
 
   const handleCopy = async () => {
-    const textToCopy = activeHarness.command;
     try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(textToCopy);
-      } else {
-        const textArea = document.createElement('textarea');
-        textArea.value = textToCopy;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-999999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        document.execCommand('copy');
-        textArea.remove();
-      }
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(activeHarness.command);
     } catch {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      return;
     }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -113,7 +93,7 @@ export function InstallWidget() {
       <div
         role="tablist"
         aria-label="Target Coding Harness"
-        className="flex overflow-x-auto border-b border-obsidian-700 bg-obsidian-900 scrollbar-none text-xs font-mono"
+        className="flex overflow-x-auto border-b border-obsidian-700 bg-obsidian-900 text-xs font-mono"
       >
         {HARNESSES.map((harness) => {
           const isSelected = harness.id === selectedHarnessId;

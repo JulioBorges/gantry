@@ -8,7 +8,6 @@ const t = translations.en;
   data-testid="skills-section"
   class="space-y-6 scroll-mt-20"
 >
-  <!-- Section Header -->
   <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-obsidian-700 pb-4">
     <div>
       <div class="text-xs font-mono text-amber-accent flex items-center space-x-2">
@@ -24,15 +23,12 @@ const t = translations.en;
 
   <p class="text-xs text-slate-400 font-mono max-w-3xl leading-relaxed" data-i18n="skills.subtitle">{t.skills.subtitle}</p>
 
-  <!-- Skills 4-Card Industrial Grid -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 font-mono">
-    <!-- Skill 3: gantry (Core Workflow) -->
     <div
       data-testid="skill-card-gantry"
       class="order-3 border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-5 hover:border-amber-glow/50 transition-all group"
     >
       <div class="space-y-4">
-        <!-- Card Header -->
         <div class="flex items-center justify-between border-b border-obsidian-800 pb-3">
           <div class="flex items-center space-x-2">
             <span class="w-2.5 h-2.5 bg-amber-glow rotate-45 group-hover:scale-110 transition-transform"></span>
@@ -41,7 +37,6 @@ const t = translations.en;
           <span class="text-[10px] px-2 py-0.5 bg-amber-glow/10 border border-amber-glow/40 text-amber-glow font-bold uppercase" data-i18n="skills.gantryBadge">{t.skills.gantryBadge}</span>
         </div>
 
-        <!-- Triggers & Invocations -->
         <div class="space-y-1 text-xs">
           <span class="text-[11px] text-slate-400 uppercase tracking-wider block" data-i18n="skills.triggersLabel">{t.skills.triggersLabel}</span>
           <div class="p-2 bg-obsidian-950 border border-obsidian-800 text-amber-accent/90 text-xs break-all">
@@ -49,7 +44,6 @@ const t = translations.en;
           </div>
         </div>
 
-        <!-- Role & Narrative -->
         <div class="space-y-2 text-xs text-slate-300 leading-relaxed">
           <p data-i18n="skills.gantryDesc">{t.skills.gantryDesc}</p>
           <ul class="space-y-1.5 text-slate-400 pt-1 text-[11px]">
@@ -69,7 +63,6 @@ const t = translations.en;
         </div>
       </div>
 
-      <!-- Action / Documentation Link -->
       <div class="border-t border-obsidian-800 pt-4 mt-auto">
         <a
           href="https://github.com/JulioBorges/gantry/tree/main/.agents/skills/gantry"
@@ -83,13 +76,11 @@ const t = translations.en;
       </div>
     </div>
 
-    <!-- Skill 1: gantry-setup (Policy & Governance) -->
     <div
       data-testid="skill-card-gantry-setup"
       class="order-1 border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-5 hover:border-amber-glow/50 transition-all group"
     >
       <div class="space-y-4">
-        <!-- Card Header -->
         <div class="flex items-center justify-between border-b border-obsidian-800 pb-3">
           <div class="flex items-center space-x-2">
             <span class="w-2.5 h-2.5 bg-cyan-400 rotate-45 group-hover:scale-110 transition-transform"></span>
@@ -98,7 +89,6 @@ const t = translations.en;
           <span class="text-[10px] px-2 py-0.5 bg-cyan-950/40 border border-cyan-700/50 text-cyan-400 font-bold uppercase" data-i18n="skills.setupBadge">{t.skills.setupBadge}</span>
         </div>
 
-        <!-- Triggers & Invocations -->
         <div class="space-y-1 text-xs">
           <span class="text-[11px] text-slate-400 uppercase tracking-wider block" data-i18n="skills.triggersLabel">{t.skills.triggersLabel}</span>
           <div class="p-2 bg-obsidian-950 border border-obsidian-800 text-cyan-300 text-xs break-all">
@@ -106,7 +96,6 @@ const t = translations.en;
           </div>
         </div>
 
-        <!-- Role & Narrative -->
         <div class="space-y-2 text-xs text-slate-300 leading-relaxed">
           <p data-i18n="skills.setupDesc">{t.skills.setupDesc}</p>
           <ul class="space-y-1.5 text-slate-400 pt-1 text-[11px]">
@@ -126,7 +115,6 @@ const t = translations.en;
         </div>
       </div>
 
-      <!-- Action / Documentation Link -->
       <div class="border-t border-obsidian-800 pt-4 mt-auto">
         <a
           href="https://github.com/JulioBorges/gantry/tree/main/.agents/skills/gantry-setup"
@@ -140,7 +128,6 @@ const t = translations.en;
       </div>
     </div>
 
-    <!-- Skill 2: gantry-plan (Standalone Planning) -->
     <div
       data-testid="skill-card-gantry-plan"
       class="order-2 border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-5 hover:border-amber-glow/50 transition-all group"
@@ -193,13 +180,11 @@ const t = translations.en;
       </div>
     </div>
 
-    <!-- Skill 4: gantry-dashboard (Local Observability) -->
     <div
       data-testid="skill-card-gantry-dashboard"
       class="order-4 border border-obsidian-700 bg-obsidian-900/90 p-5 sm:p-6 flex flex-col justify-between space-y-5 hover:border-amber-glow/50 transition-all group"
     >
       <div class="space-y-4">
-        <!-- Card Header -->
         <div class="flex items-center justify-between border-b border-obsidian-800 pb-3">
           <div class="flex items-center space-x-2">
             <span class="w-2.5 h-2.5 bg-amber-accent rotate-45 group-hover:scale-110 transition-transform"></span>
@@ -208,7 +193,6 @@ const t = translations.en;
           <span class="text-[10px] px-2 py-0.5 bg-amber-950/40 border border-amber-800/50 text-amber-accent font-bold uppercase" data-i18n="skills.dashboardBadge">{t.skills.dashboardBadge}</span>
         </div>
 
-        <!-- Triggers & Invocations -->
         <div class="space-y-1 text-xs">
           <span class="text-[11px] text-slate-400 uppercase tracking-wider block" data-i18n="skills.triggersLabel">{t.skills.triggersLabel}</span>
           <div class="p-2 bg-obsidian-950 border border-obsidian-800 text-amber-accent text-xs break-all">
@@ -216,7 +200,6 @@ const t = translations.en;
           </div>
         </div>
 
-        <!-- Role & Narrative -->
         <div class="space-y-2 text-xs text-slate-300 leading-relaxed">
           <p data-i18n="skills.dashboardDesc">{t.skills.dashboardDesc}</p>
           <ul class="space-y-1.5 text-slate-400 pt-1 text-[11px]">
@@ -236,7 +219,6 @@ const t = translations.en;
         </div>
       </div>
 
-      <!-- Action / Documentation Link -->
       <div class="border-t border-obsidian-800 pt-4 mt-auto">
         <a
           href="https://github.com/JulioBorges/gantry/tree/main/.agents/skills/gantry-dashboard"
