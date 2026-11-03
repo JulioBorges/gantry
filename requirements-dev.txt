@@ -1,2 +1,2 @@
 # Fixture tests invoke pytest; Gantry's runtime remains standard-library only.
-pytest==9.1.1
+pytest==9.2.0
