@@ -6,11 +6,24 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import re
 import unittest
 
 REPO_ROOT = Path(__file__).parent.parent
 SKILLS = REPO_ROOT / ".agents" / "skills"
 PLAN_SKILL = SKILLS / "gantry-plan" / "SKILL.md"
+GANTRY_SKILL = SKILLS / "gantry" / "SKILL.md"
+SCRIPTS_DIR = SKILLS / "gantry" / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+import execution  # noqa: E402
+
+
+def host_gate_block(skill: Path) -> str:
+    text = skill.read_text(encoding="utf-8")
+    start = text.index("<!-- host-gate-protocol:start -->")
+    end = text.index("<!-- host-gate-protocol:end -->")
+    return text[start:end]
 
 
 class GantryPlanExistingProjectTests(unittest.TestCase):
@@ -73,18 +86,35 @@ class GantryPlanExistingProjectTests(unittest.TestCase):
         self.assertEqual("invalid", data["status"])
         self.assertIn("Unsupported explicit host", " ".join(data["diagnostics"]))
 
-    def test_skill_turns_unknown_host_into_operator_question_not_silent_stop(self):
-        content = PLAN_SKILL.read_text(encoding="utf-8")
-        section = content[content.index("## Resolve the invocation host first"):content.index("## Dual Entry Modes")]
-        self.assertIn("ask the operator which Host Harness", section)
-        self.assertIn("--host <host>", section)
-        self.assertIn("Never stop silently", section)
-        self.assertIn("next step", section)
-        self.assertIn("without Gantry history", section)
-        self.assertNotIn("Unknown, ambiguous or unsupported\nidentity stops planning entry", content)
+    def test_host_gate_protocol_is_identical_in_gantry_and_gantry_plan(self):
+        canonical = host_gate_block(GANTRY_SKILL)
+        self.assertEqual(canonical, host_gate_block(PLAN_SKILL),
+                         "gantry-plan must carry the same host gate protocol block as gantry/SKILL.md")
 
-    def test_without_operator_the_host_is_never_guessed(self):
-        # Non-interactive run (no TTY on stdin) with environment and saved-preference hints present.
+    def test_host_gate_protocol_covers_every_status(self):
+        flat = " ".join(host_gate_block(GANTRY_SKILL).split())
+        self.assertIn("`unknown` or `ambiguous`: ask the operator", flat)
+        self.assertIn("`--host` comes only from that explicit operator confirmation", flat)
+        self.assertIn("never guess or assume the host", flat)
+        self.assertIn("No operator can answer", flat)
+        self.assertIn("the same channels `wait_gate.py` accepts", flat)
+        self.assertIn("`invalid`", flat)
+        self.assertIn("Never stop silently", flat)
+        self.assertNotIn("Ovis", flat)
+
+    def test_resume_follows_the_host_gate_protocol(self):
+        flat = " ".join(GANTRY_SKILL.read_text(encoding="utf-8").split())
+        self.assertIn("any role work, following the host gate protocol above", flat)
+
+    def test_skill_host_list_matches_supported_harnesses(self):
+        flat = " ".join(host_gate_block(GANTRY_SKILL).split())
+        match = re.search(r"that `execution\.py` supports \(([^)]*)\)", flat)
+        self.assertIsNotNone(match, "host list not found in the host gate protocol")
+        listed = set(re.findall(r"`([^`]+)`", match.group(1)))
+        self.assertEqual(set(execution.SUPPORTED_HARNESSES), listed)
+
+    def test_hints_never_select_host_without_explicit_flag(self):
+        # Saved preference and environment hints are present; without --host nothing selects a host.
         (self.repo / ".gantry").mkdir()
         (self.repo / ".gantry" / "config.json").write_text(
             json.dumps({"execution": {"hostHarness": "codex"}}), encoding="utf-8")
@@ -99,20 +129,21 @@ class GantryPlanExistingProjectTests(unittest.TestCase):
         self.assertNotIn("capabilities", data)
         self.assertTrue(data["diagnostics"])
 
-    def test_skill_stops_with_diagnostic_when_no_operator_can_answer(self):
-        content = PLAN_SKILL.read_text(encoding="utf-8")
-        section = content[content.index("## Resolve the invocation host first"):content.index("## Dual Entry Modes")]
-        flat = " ".join(section.split())
-        self.assertIn("only after explicit operator confirmation", flat)
-        self.assertIn("When no operator can answer (no interactive TTY and no Ovis", flat)
-        self.assertIn("Never guess or assume the host", flat)
-        self.assertIn("the step, the command, its `status` and the next step", flat)
+    def test_host_gate_is_the_first_section_of_gantry_plan(self):
+        """The host gate must be read before any other step of /gantry-plan (gantry-harness#27).
 
-    def test_host_gate_is_inside_the_first_120_lines(self):
-        lines = PLAN_SKILL.read_text(encoding="utf-8").splitlines()
-        head = "\n".join(lines[:120])
-        self.assertIn("Never stop silently", head)
-        self.assertIn("ask the operator which Host Harness", head)
+        Agents act on the first instructions they read, so the gate is the first `##` section and comes
+        before the entry modes. This checks section order instead of a line count.
+        """
+        headings = [line for line in PLAN_SKILL.read_text(encoding="utf-8").splitlines() if line.startswith("## ")]
+        self.assertEqual("## Resolve the invocation host first", headings[0])
+        self.assertLess(headings.index("## Resolve the invocation host first"), headings.index("## Dual Entry Modes"))
+
+    def test_plan_skill_reports_failures_and_accepts_repo_without_gantry_history(self):
+        flat = " ".join(PLAN_SKILL.read_text(encoding="utf-8").split())
+        self.assertIn("## Failure reporting and optional context", flat)
+        self.assertIn("without Gantry history", flat)
+        self.assertNotIn("Unknown, ambiguous or unsupported identity stops planning entry", flat)
 
 
 if __name__ == "__main__":

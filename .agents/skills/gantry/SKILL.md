@@ -30,6 +30,28 @@ repository policy unchanged. Keep role resolution, role availability, repository
 checks independent; this host choice never supplies role presets or approves work. Recorded new Runs
 include only sanitized host identity/provenance in `run.started.data.host`.
 
+<!-- host-gate-protocol:start -->
+Host gate protocol. Without `--host`, `execution.py host --require-resolved` returns `unknown` (or
+`ambiguous` when several harness hints exist) and exits 1 in every repository, because no integration
+verifies the current invocation. Act on its `status`:
+
+1. `unknown` or `ambiguous`: ask the operator which Host Harness runs this session, offering the hosts
+   that `execution.py` supports (`antigravity`, `claude-code`, `codex`, `opencode`), then rerun the same
+   command with `--host <host>`. Continue only on `status: "resolved"` and exit 0. `--host` comes only
+   from that explicit operator confirmation: never guess or assume the host, and never pick one from
+   saved preferences or installation/environment hints.
+2. No operator can answer (no interactive TTY on stdin and no Dashboard or host chat that can ask the
+   operator, the same channels `wait_gate.py` accepts): stop entry with the diagnostic message below;
+   the next step is "rerun interactively and confirm the host".
+3. `invalid` (unsupported `--host`, invalid `.gantry/config.json`, invalid operator profile or unreadable
+   Run host metadata) or a declined confirmation: stop entry with the diagnostic message below.
+
+Never stop silently. Every stop shows the operator the failed step, the command, its `status` and
+`diagnostics` (or stderr), and the next step, for example: "Stopped at host preflight: status invalid,
+Unsupported explicit host; choose antigravity, claude-code, codex or opencode. Next step: rerun from a
+supported host harness and confirm it when asked."
+<!-- host-gate-protocol:end -->
+
 Then resolve these values once and pass them as `args` to every reference workflow:
 
 1. `skillDir` is this `gantry` directory as an absolute real path. A harness-specific symlink resolves
@@ -112,7 +134,7 @@ Every script provides `--help`, and data-producing paths support `--json`.
   --run-id <existing-run> --unit-id <unit-id> --issue <issue-ref> --json --cwd <repoRoot>`
   (and `--state-root` when configured). This is read-only: another Run or worktree's marker cannot
   prove current host identity. Unknown, ambiguous, unsupported, absent or finished Runs stop before
-  any role work. The CLI reports `resume.previousHost`, `effectiveHost`, `decision` and the existing
+  any role work, following the host gate protocol above (ask, or stop with the diagnostic message). The CLI reports `resume.previousHost`, `effectiveHost`, `decision` and the existing
   Issue's authoritative `correctionsSpent`. For a changed host, the workflow presents old/new identity,
   new capabilities/routing and preservation effects, then requires an explicit `yes`; missing older
   host metadata likewise requires explicit establishment. No prompt facility means no continuation.

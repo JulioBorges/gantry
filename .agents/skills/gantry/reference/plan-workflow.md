@@ -12,7 +12,7 @@ or any other value leaves the plan awaiting approval.
 Entry runs `execution.py host --require-resolved --json` once before any host-dependent
 initialization or agent scheduling. `args.hostHarness`, when present, is the operator-confirmed
 current invocation selection; never fill it from repository policy or installed-tool hints.
-Unknown, ambiguous and unsupported identities stop entry. The returned capability declaration
+Unknown, ambiguous and unsupported identities stop entry. The skill asks the operator, or stops with a diagnostic, before calling this workflow (host gate protocol in `gantry/SKILL.md`). The returned capability declaration
 controls native structured output and reports the actual support tier. A mismatch is logged,
 without changing policy, models, efforts or role defaults. Pass independently resolved/validated
 roles and readiness through the existing preflight; host resolution grants no execution approval.
