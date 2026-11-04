@@ -20,6 +20,7 @@ Goal or Spec → [Socratic Gate / Spec Validation] → Tracer-Bullet Slicing
 
 Before context exploration, telemetry, host-dependent initialization or role scheduling, follow
 `gantry/SKILL.md` host preflight: run `execution.py host --require-resolved --json --cwd <repoRoot>`.
+Add `--host <host>` only after explicit operator confirmation of that host in this session.
 Saved preference and installation/environment hints cannot select the host. Pass the confirmed
 `args.hostHarness` to `plan-workflow.md`; it binds actual capabilities and reports mismatches without
 writing policy or replacing role selections. Keep repository readiness, role availability, Result
@@ -31,7 +32,10 @@ operator, not the end of planning:
 
 1. `unknown` or `ambiguous`: ask the operator which Host Harness is running this session (`antigravity`,
    `claude-code`, `codex` or `opencode`), then rerun the same command with `--host <host>`. Continue only
-   when it returns `status: "resolved"` and exit 0.
+   when it returns `status: "resolved"` and exit 0. When no operator can answer (no interactive TTY
+   and no Ovis or other prompt channel), stop planning entry and show the diagnostic message below with
+   the step, the command, its `status` and the next step ("rerun /gantry-plan interactively and confirm
+   the host"). Never guess or assume the host, and never pick one from preferences or hints.
 2. `invalid` (including an unsupported `--host`, an invalid `.gantry/config.json` or an invalid operator
    profile) or a declined confirmation: stop planning entry and tell the operator.
 

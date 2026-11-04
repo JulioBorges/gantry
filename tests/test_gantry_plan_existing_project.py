@@ -83,6 +83,31 @@ class GantryPlanExistingProjectTests(unittest.TestCase):
         self.assertIn("without Gantry history", section)
         self.assertNotIn("Unknown, ambiguous or unsupported\nidentity stops planning entry", content)
 
+    def test_without_operator_the_host_is_never_guessed(self):
+        # Non-interactive run (no TTY on stdin) with environment and saved-preference hints present.
+        (self.repo / ".gantry").mkdir()
+        (self.repo / ".gantry" / "config.json").write_text(
+            json.dumps({"execution": {"hostHarness": "codex"}}), encoding="utf-8")
+        self.env["CODEX_THREAD_ID"] = "hint-only"
+        res = subprocess.run([sys.executable, str(self.scripts / "execution.py"), "host", "--require-resolved",
+                              "--json", "--cwd", str(self.repo)], cwd=self.repo, env=self.env,
+                             stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+        self.assertEqual(1, res.returncode, res.stderr)
+        data = json.loads(res.stdout)
+        self.assertIn(data["status"], {"unknown", "ambiguous"})
+        self.assertIsNone(data["effectiveHost"])
+        self.assertNotIn("capabilities", data)
+        self.assertTrue(data["diagnostics"])
+
+    def test_skill_stops_with_diagnostic_when_no_operator_can_answer(self):
+        content = PLAN_SKILL.read_text(encoding="utf-8")
+        section = content[content.index("## Resolve the invocation host first"):content.index("## Dual Entry Modes")]
+        flat = " ".join(section.split())
+        self.assertIn("only after explicit operator confirmation", flat)
+        self.assertIn("When no operator can answer (no interactive TTY and no Ovis", flat)
+        self.assertIn("Never guess or assume the host", flat)
+        self.assertIn("the step, the command, its `status` and the next step", flat)
+
     def test_host_gate_is_inside_the_first_120_lines(self):
         lines = PLAN_SKILL.read_text(encoding="utf-8").splitlines()
         head = "\n".join(lines[:120])
