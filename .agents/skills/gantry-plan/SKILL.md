@@ -19,12 +19,29 @@ Goal or Spec → [Socratic Gate / Spec Validation] → Tracer-Bullet Slicing
 ## Resolve the invocation host first
 
 Before context exploration, telemetry, host-dependent initialization or role scheduling, follow
-`gantry/SKILL.md` host preflight: run `execution.py host --require-resolved --json --cwd <repoRoot>`
-with `--host <host>` only after explicit operator confirmation. Unknown, ambiguous or unsupported
-identity stops planning entry. Saved preference and installation/environment hints cannot select the
-host. Pass the confirmed `args.hostHarness` to `plan-workflow.md`; it binds actual capabilities and
-reports mismatches without writing policy or replacing role selections. Keep repository readiness,
-role availability, Result Contracts and planning approval independent.
+`gantry/SKILL.md` host preflight: run `execution.py host --require-resolved --json --cwd <repoRoot>`.
+Saved preference and installation/environment hints cannot select the host. Pass the confirmed
+`args.hostHarness` to `plan-workflow.md`; it binds actual capabilities and reports mismatches without
+writing policy or replacing role selections. Keep repository readiness, role availability, Result
+Contracts and planning approval independent.
+
+The first check without `--host` normally returns `status: "unknown"` and exits 1, in every repository,
+because no integration verifies the current invocation automatically. That result is a question for the
+operator, not the end of planning:
+
+1. `unknown` or `ambiguous`: ask the operator which Host Harness is running this session (`antigravity`,
+   `claude-code`, `codex` or `opencode`), then rerun the same command with `--host <host>`. Continue only
+   when it returns `status: "resolved"` and exit 0.
+2. `invalid` (including an unsupported `--host`, an invalid `.gantry/config.json` or an invalid operator
+   profile) or a declined confirmation: stop planning entry and tell the operator.
+
+Never stop silently. Whenever planning entry stops, or any command in this skill exits non-zero, show the
+operator a message with the failed step, the command, its `status` and `diagnostics` (or stderr), and the
+next step, for example: "Planning stopped at host preflight: status invalid, Unsupported explicit host;
+choose antigravity, claude-code, codex or opencode. Next step: rerun /gantry-plan from a supported host
+harness and confirm it when asked." A repository without Gantry history (no `.gantry/config.json`,
+`CONTEXT.md`, `PRD.md`, `docs/adr/` or `.scratch/`) is valid: missing optional context is reported as
+absent and planning continues.
 
 ## Dual Entry Modes
 
