@@ -47,7 +47,8 @@ class GantryPlanExistingProjectTests(unittest.TestCase):
         res = self.run_script(self.scripts / "execution.py", "host", "--require-resolved", "--json", "--cwd", self.repo)
         self.assertEqual(1, res.returncode, res.stderr)
         data = json.loads(res.stdout)
-        self.assertEqual("unknown", data["status"])
+        # Installed harness CLIs are hints only; several of them make the result ambiguous.
+        self.assertIn(data["status"], {"unknown", "ambiguous"})
         self.assertTrue(any("--host" in line for line in data["diagnostics"]))
 
     def test_confirmed_host_resolves_and_free_text_plan_starts_in_existing_project(self):
