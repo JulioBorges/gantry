@@ -19,12 +19,44 @@ Goal or Spec → [Socratic Gate / Spec Validation] → Tracer-Bullet Slicing
 ## Resolve the invocation host first
 
 Before context exploration, telemetry, host-dependent initialization or role scheduling, follow
-`gantry/SKILL.md` host preflight: run `execution.py host --require-resolved --json --cwd <repoRoot>`
-with `--host <host>` only after explicit operator confirmation. Unknown, ambiguous or unsupported
-identity stops planning entry. Saved preference and installation/environment hints cannot select the
-host. Pass the confirmed `args.hostHarness` to `plan-workflow.md`; it binds actual capabilities and
-reports mismatches without writing policy or replacing role selections. Keep repository readiness,
-role availability, Result Contracts and planning approval independent.
+`gantry/SKILL.md` host preflight: run `execution.py host --require-resolved --json --cwd <repoRoot>`.
+Add `--host <host>` only after explicit operator confirmation of that host in this session. Pass the
+confirmed `args.hostHarness` to `plan-workflow.md`; it binds actual capabilities and reports mismatches
+without writing policy or replacing role selections. Keep repository readiness, role availability,
+Result Contracts and planning approval independent.
+
+The block below is duplicated on purpose from `gantry/SKILL.md` so that this skill works when the agent
+reads only this file; keep both copies identical (a test enforces it). For planning, "entry" means
+before context exploration, and the next step names `/gantry-plan`.
+
+<!-- host-gate-protocol:start -->
+Host gate protocol. Without `--host`, `execution.py host --require-resolved` returns `unknown` (or
+`ambiguous` when several harness hints exist) and exits 1 in every repository, because no integration
+verifies the current invocation. Act on its `status`:
+
+1. `unknown` or `ambiguous`: ask the operator which Host Harness runs this session, offering the hosts
+   that `execution.py` supports (`antigravity`, `claude-code`, `codex`, `opencode`), then rerun the same
+   command with `--host <host>`. Continue only on `status: "resolved"` and exit 0. `--host` comes only
+   from that explicit operator confirmation: never guess or assume the host, and never pick one from
+   saved preferences or installation/environment hints.
+2. No operator can answer (no interactive TTY on stdin and no Dashboard or host chat that can ask the
+   operator, the same channels `wait_gate.py` accepts): stop entry with the diagnostic message below;
+   the next step is "rerun interactively and confirm the host".
+3. `invalid` (unsupported `--host`, invalid `.gantry/config.json`, invalid operator profile or unreadable
+   Run host metadata) or a declined confirmation: stop entry with the diagnostic message below.
+
+Never stop silently. Every stop shows the operator the failed step, the command, its `status` and
+`diagnostics` (or stderr), and the next step, for example: "Stopped at host preflight: status invalid,
+Unsupported explicit host; choose antigravity, claude-code, codex or opencode. Next step: rerun from a
+supported host harness and confirm it when asked."
+<!-- host-gate-protocol:end -->
+
+## Failure reporting and optional context
+
+Whenever any command in this skill exits non-zero, report it with the same message format as the host
+gate protocol: failed step, command, `status`/`diagnostics` (or stderr) and next step. A repository
+without Gantry history (no `.gantry/config.json`, `CONTEXT.md`, `PRD.md`, `docs/adr/` or `.scratch/`) is
+valid: missing optional context is reported as absent and planning continues.
 
 ## Dual Entry Modes
 
