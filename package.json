@@ -45,7 +45,7 @@
     "prepublishOnly": "node scripts/ensure-npm-author.mjs && npm test && npm run test:package"
   },
   "dependencies": {
-    "skills": "1.7.6"
+    "skills": "1.9.0"
   },
   "publishConfig": {
     "access": "public",
