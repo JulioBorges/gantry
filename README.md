@@ -41,6 +41,19 @@ alone does not rewrite previously generated hook commands. Review the proposed
 policy and hook changes before applying them. Restart Cursor if it retains the old
 configuration.
 
+## Release 1.3.0
+
+Gantry adds per-operator machine profiles for Host Harness settings, a verified
+bounded role execution adapter, and Run execution reliability improvements: Runs
+pause cleanly when verification prerequisites are unavailable, report attributable
+waiting states with truthful timing, and let stopped Runs resume in the same
+worktree or be discarded.
+
+Planning and board workflows now include cost and effort tracking, plan reuse,
+board CLI support, and explicit host prompting in `gantry-plan` instead of
+stopping silently. Hook templates return `PreToolUse` JSON compatible with both
+Claude and Cursor, and the bundled `skills` dependency is updated to `1.9.0`.
+
 ## Release 1.2.0
 
 Gantry resolves the current invocation's Host Harness independently from the
